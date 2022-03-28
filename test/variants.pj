@@ -1,0 +1,41 @@
+// Variant tests
+
+variant Var1 {
+  x: int64;
+}
+
+variant Var2 {
+  y: int64;
+}
+
+struct BigStruct {
+  _: char8[64];
+}
+
+variant Var3 {
+  x: int64;
+  y: BigStruct;
+}
+
+variant Var4 {
+  w: char8;
+  x: int64;
+}
+
+struct Outer {
+  v: Var4;
+  z: uint8;
+}
+
+struct Outer2 {
+  z: uint8;
+}
+
+struct Outer3 {
+  a: Var4;
+  b: Var4;
+}
+
+struct BigOuter {
+  v: Var3;
+}

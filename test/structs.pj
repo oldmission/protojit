@@ -1,0 +1,54 @@
+// Struct tests
+
+struct S_x {
+  x: int64;
+}
+
+struct S_xy {
+  x: int64;
+  y: int32;
+}
+
+struct S_y {
+  y: int32;
+}
+
+// Nested struct tests
+
+struct SI {
+  x: int64;
+  y: int32;
+}
+
+struct SO {
+  s1: SI;
+  s2: SI;
+}
+
+struct SIS {
+  x: int64;
+}
+
+struct SOS {
+  s1: SIS;
+  s2: SI;
+}
+
+struct TI {
+  x: int8;
+  y: int64;
+}
+
+struct TI2 {
+  x: int8;
+}
+
+struct TO {
+  x: TI;
+  y: TI;
+}
+
+struct TO2 {
+  x: TI2;
+  y: TI2;
+}

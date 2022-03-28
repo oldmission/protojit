@@ -1,0 +1,31 @@
+# https://macromates.com/manual/en/language_grammars
+# https://macromates.com/manual/en/regular_expressions
+# https://www.sublimetext.com/docs/3/scope_naming.html
+
+# Coloring
+# https://code.visualstudio.com/docs/getstarted/themes
+# https://code.visualstudio.com/api/extension-guides/color-theme#syntax-colors
+# https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide
+# https://code.visualstudio.com/docs/cpp/colorization-cpp
+
+$schema: https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json
+name: Protocol JIT
+scopeName: source.protojit
+patterns:
+  - match: "\\bstruct\\b|\
+            \\bvariant\\b|\
+            \\btype\\b|\
+            \\bspace\\b|\
+            \\bexternal\\b|\
+            \\benum\\b|\
+            \\bimport\\b|\
+            \\bprotocol"
+    name: keyword.other
+  - match: "\\bint\\d+\\b|\
+            \\buint\\d+\\b|\
+            \\bchar\\d+"
+    name: storage.type
+  - match: "//.*$"
+    name: comment
+  - match: "'.'"
+    name: string.quoted

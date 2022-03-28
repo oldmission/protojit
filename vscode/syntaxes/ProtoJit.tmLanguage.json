@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Protocol JIT",
+  "scopeName": "source.protojit",
+  "patterns": [
+    {
+      "match": "\\bstruct\\b|\\bvariant\\b|\\btype\\b|\\bspace\\b|\\bexternal\\b|\\benum\\b|\\bimport\\b|\\bprotocol",
+      "name": "keyword.other"
+    },
+    {
+      "match": "\\bint\\d+\\b|\\buint\\d+\\b|\\bchar\\d+",
+      "name": "storage.type"
+    },
+    {
+      "match": "//.*$",
+      "name": "comment"
+    },
+    {
+      "match": "'.'",
+      "name": "string.quoted"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+    "name": "protojit",
+    "displayName": "protojit",
+    "description": "VS Code Externsion for Protocol JIT",
+    "publisher": "omc",
+    "version": "0.0.1",
+    "repository": "somewhere",
+    "engines": {
+        "vscode": "^1.54.3"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "activationEvents": [
+        "onCommand:workbench.action.tasks.runTask"
+    ],
+    "main": "./out/extension",
+    "contributes": {
+        "languages": [
+            {
+                "id": "protojit",
+                "aliases": [
+                    "ProtoJIT",
+                    "ProtoJit"
+                ],
+                "extensions": [
+                    ".pj"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "protojit",
+                "scopeName": "source.protojit",
+                "path": "./syntaxes/ProtoJit.tmLanguage.json"
+            }
+        ]
+    },
+    "devDependencies": {
+        "@types/node": "^8.10.66",
+        "@types/vscode": "^1.54.3",
+        "js-yaml": "^3.14.1",
+        "tslint": "^5.16.0",
+        "typescript": "^3.9.9"
+    },
+    "scripts": {
+        "vscode:prepublish": "npx js-yaml syntaxes/ProtoJit.tmLanguage.yaml > syntaxes/ProtoJit.tmLanguage.json && tsc -b",
+        "watch": "tsc -b -w"
+    },
+    "dependencies": {
+        "vsce": "^1.88.0"
+    }
+}

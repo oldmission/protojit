@@ -1,0 +1,5 @@
+node_modules
+*~
+syntaxes/ProtoJit.tmLanguage.json
+out/
+protojit-*.vsix

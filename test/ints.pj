@@ -1,0 +1,18 @@
+// Int tests
+
+struct Int32 {
+  i: int32;
+}
+
+struct Int64 {
+  i: int64;
+}
+
+struct UInt32 {
+  i: uint32;
+}
+
+struct UInt64 {
+  i: uint64;
+}
+

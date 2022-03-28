@@ -1,0 +1,4 @@
+// Array tests
+
+type A1 = char8[4];
+type A2 = char8[6];

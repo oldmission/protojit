@@ -1,0 +1,7 @@
+import test.ints;
+import test.spaces;
+
+struct X {
+  i: Int32;
+  w: test.internal.W;
+}
