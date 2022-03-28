@@ -1,5 +1,6 @@
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Dialect/LLVMIR/LLVMOpBase.td"
 
 include "types.td"
 
@@ -37,11 +38,11 @@ def EncodeOp : ProtoJit_Op<"encode"> {
 //
 // Receives a buffer which it may use to store outline data. Returns a new
 // buffer object referencing the remaining space in the original buffer.
-// Throws an 'exception' if the buffer is not large enough (exception
-// ultimately involves returning 'false' from DecodeFunctionOp).
+// Throws an "exception" if the is insufficient space in the buffer.
 def DecodeOp : ProtoJit_Op<"decode"> {
   let arguments = (
-     ins ValueType:$tag, ValueType:$src, ValueType:$dst, BoundedBufferType:$buf
+     ins ValueType:$src, ValueType:$dst, BoundedBufferType:$buf,
+     TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
   );
   let results = (outs BoundedBufferType);
 }
@@ -126,6 +127,50 @@ def ReflectOp : ProtoJit_Op<"reflect"> {
   let results = (outs BufferType);
 }
 
+// Register a callback to be invoked when decoding is complete.
+def SetCallbackOp : ProtoJit_Op<"callback"> {
+  let arguments = (ins IndexAttr:$target);
+}
+
+// Invoke a callback with the result of decoding.
+def InvokeCallbackOp : ProtoJit_Op<"invoke"> {
+  let arguments = (ins ValueType:$arg, UserStateType:$state);
+}
+
+// Catches buffer exhaustion exceptions thrown during decoding.
+// Also serves as the anchor for setting the decoder callback.
+//
+// If an exception is thrown inside, returns the 'default' input.
+// Otherwise, returns whatever Yield returns.
+//
+// Should only have one block in the body.
+def DecodeCatchOp : ProtoJit_Op<"catch"> {
+  let arguments = (ins AnyType:$exc_result);
+  let results = (outs AnyType);
+  let regions = (region AnyRegion:$body);
+}
+
+// Terminate execution inside a DecodeCatchOp, and make it return the
+// provided value. Must be the last operation in a DecodeCatchOp's body.
+def YieldOp : ProtoJit_Op<"yield", [Terminator]> {
+  let arguments = (ins AnyType:$result);
+}
+
+////////////////////////////////////////////////////////////////
+// These operations are created during the first phase of LLVM lowering
+// and removed during the second.
+//
+// They will only be found at the beginning of a DecodeCatchOp's body
+// during lowering.
+
+def ExcCheckAnchor : ProtoJit_Op<"check_anchor"> {
+  let results = (outs LLVM_i8Ptr);
+}
+
+def CallbackAnchor : ProtoJit_Op<"callback_anchor"> {
+  let results = (outs LLVM_AnyPointer);
+}
+
 ////////////////////////////////////////////////////////////////
 // These operations represent functions whose compilation was requested by
 // the user. They merely serve as markers which get elaborated during the
@@ -140,7 +185,7 @@ def EncodeFunctionOp : ProtoJit_Op<"encodefunc"> {
 def DecodeFunctionOp : ProtoJit_Op<"decodefunc"> {
   let arguments = (
     ins StrAttr:$name, TypeAttr:$src, TypeAttr:$dst,
-                    TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
+    TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
   );
 }
 

@@ -272,12 +272,17 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   llvm::ArrayRef<llvm::StringRef> getValue() const { return getImpl()->key; }
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 
-  PathAttr into(llvm::StringRef prefix) const {
+  bool startsWith(llvm::StringRef prefix) const {
     auto& path = getImpl()->key;
-    if (path.size() == 0) {
-      return *this;
+    if (path.size() == 0) return false;
+    return path[0] == prefix;
+  }
+
+  PathAttr into(llvm::StringRef prefix) const {
+    if (startsWith(prefix)) {
+      return get(getContext(), getImpl()->key.slice(1));
     }
-    return path[0] == prefix ? get(getContext(), path.slice(1)) : *this;
+    return *this;
   }
 };
 

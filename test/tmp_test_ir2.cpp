@@ -9,7 +9,7 @@ struct TmpIR2Test : public ::testing::Test {
   ProtoJitContext ctx_;
 };
 
-#if 0
+#if 1
 TEST_F(TmpIR2Test, BasicStructTest) {
   auto int_m_ty =
       types::IntType::get(&ctx_.ctx_, types::Int{
@@ -24,8 +24,8 @@ TEST_F(TmpIR2Test, BasicStructTest) {
                                           .sign = types::Int::Sign::kSigned,
                                       });
 
-  llvm::SmallVector<types::StructField, 2> m_fields;
-  m_fields.push_back(types::StructField{
+  llvm::SmallVector<types::StructField, 2> fields;
+  fields.push_back(types::StructField{
       .type = int_m_ty,
       .name = "fld",
       .offset = Bytes(0),
@@ -34,13 +34,13 @@ TEST_F(TmpIR2Test, BasicStructTest) {
   auto struct_m_ty = types::StructType::get(
       &ctx_.ctx_, types::TypeDomain::kHost, "thing");
   struct_m_ty.setTypeData({
-      .fields = m_fields,
+      .fields = fields,
       .size = Bytes(8),
       .alignment = Bytes(8),
   });
 
-  m_fields.clear();
-  m_fields.push_back(types::StructField{
+  fields.clear();
+  fields.push_back(types::StructField{
       .type = int_p_ty,
       .name = "fld",
       .offset = Bytes(0),
@@ -48,7 +48,7 @@ TEST_F(TmpIR2Test, BasicStructTest) {
   auto struct_p_ty = types::StructType::get(
       &ctx_.ctx_, types::TypeDomain::kWire, "thing");
   struct_p_ty.setTypeData({
-      .fields = m_fields,
+      .fields = fields,
       .size = Bytes(8),
       .alignment = Bytes(1),
   });
@@ -56,7 +56,8 @@ TEST_F(TmpIR2Test, BasicStructTest) {
   auto proto = types::ProtocolType::get(&ctx_.ctx_,
                                         types::Protocol{.head = struct_p_ty});
 
-  ctx_.addEncodeFunction("encode", struct_m_ty, {}, proto);
+  // ctx_.addEncodeFunction("encode", struct_m_ty, {}, proto);
+  ctx_.addDecodeFunction("decode", proto, struct_m_ty, {});
 
   ctx_.compile(/*new_pipeline=*/true);
 
