@@ -7,195 +7,264 @@
 
 #include "concrete_types.hpp"
 #include "protogen.hpp"
+#include "types.hpp"
 
 namespace pj {
 
-void PlanMemory(Scope* scope, ParsedProtoFile& file) {
-  std::unordered_map<const AType*, const CType*> memo;
-
-  for (auto& decl : file.decls) {
-#if 0
-    if (decl.kind == ParsedProtoFile::DeclKind::kProtocol) {
-      continue;
-    }
-#endif
-
-    // We can't call PlanMemo directly here, because the type inside
-    // may itself be a named type, in the event of a typedef.
-    auto inner = decl.atype->AsNamed()->named;
-    const CType* type = nullptr;
-    if (inner->IsVariant() && !decl.explicit_tags.empty()) {
-      type = inner->AsVariant()->PlanWithTags(scope, memo, decl.explicit_tags);
-    } else if (inner->IsStruct()) {
-      type =
-          inner->AsStruct()->PlanWithFieldOrder(scope, memo, decl.field_order);
-    } else {
-      type = decl.atype->AsNamed()->named->Plan(scope, memo);
-    }
-    type = new (scope) CNamedType(decl.atype->AsNamed(), type);
-    memo[decl.atype] = type;
-    decl.ctype = type;
-  }
-}
-
-void GenerateSourceIdRef(const SourceId& source, std::ostream& output) {
-  for (intptr_t i = 0; i < source.size(); ++i) {
-    output << source[i];
-    if (i < source.size() - 1) {
+void GenerateNameRef(types::Name name, std::ostream& output) {
+  for (uintptr_t i = 0; i < name.size(); ++i) {
+    output << std::string_view(name[i]);
+    if (i < name.size() - 1) {
       output << "::";
     }
   }
 }
 
-void GenerateNamespaceBegin(const SourceId& source, std::ostream& output) {
-  for (intptr_t i = 0; i < source.size() - 1; ++i) {
-    output << "namespace " << source[i] << "{";
+void GenerateNamespaceBegin(types::Name name, std::ostream& output) {
+  for (uintptr_t i = 0; i < name.size() - 1; ++i) {
+    output << "namespace " << std::string_view(name[i]) << "{";
   }
 }
 
-void GenerateNamespaceEnd(const SourceId& source, std::ostream& output) {
-  for (intptr_t i = 0; i < source.size() - 1; ++i) {
+void GenerateNamespaceEnd(types::Name name, std::ostream& output) {
+  for (uintptr_t i = 0; i < name.size() - 1; ++i) {
     output << "}\n";
   }
   output << '\n';
 }
 
 // TODO: platform-specific
-const char* kIntTypes[4] = {"char", "short", "int", "long"};
+std::array<std::string_view, 4> kIntTypes{"char", "short", "int", "long"};
 
-void GenerateTypeRef(const AType* type, std::ostream& output) {
-  if (type->IsNamed()) {
-    GenerateSourceIdRef(type->AsNamed()->name, output);
-  } else if (type->IsInt()) {
-    auto* T = type->AsInt();
-    if (T->conv == AIntType::Conversion::kChar) {
-      // TODO: maybe use wchar_t?
-    }
-    if (T->conv == AIntType::Conversion::kUnsigned) {
-      output << "unsigned ";
-    }
-    // TODO: validate?
-    auto log = static_cast<intptr_t>(std::log2(T->len.bytes()));
-    output << kIntTypes[log];
-  } else if (type->IsArray()) {
+pj::Width GenerateIntTypeRef(pj::Width width, types::Int::Sign sign,
+                             std::ostream& output) {
+  assert(width.bytes() > 0);
+  if (sign == types::Int::kSignless) {
+    // TODO: maybe use wchar_t?
+  }
+  if (sign == types::Int::kUnsigned) {
+    output << "unsigned ";
+  }
+  auto log = static_cast<uintptr_t>(std::ceil(std::log2(width.bytes())));
+  assert(log <= kIntTypes.size());
+  output << kIntTypes[log];
+
+  return pj::Bytes(1 << log);
+}
+
+void GenerateTypeRef(mlir::Type type, std::ostream& output) {
+  if (auto named = type.dyn_cast<types::NominalType>()) {
+    GenerateNameRef(named.name(), output);
+  } else if (auto I = type.dyn_cast<types::IntType>()) {
+    GenerateIntTypeRef(I->width, I->sign, output);
+  } else if (auto A = type.dyn_cast<types::ArrayType>()) {
     output << "std::array<";
-    GenerateTypeRef(type->AsArray()->el, output);
-    output << ", " << type->AsArray()->length << ">";
-  } else if (type->IsList()) {
-    auto* L = type->AsList();
-
+    GenerateTypeRef(A->elem, output);
+    output << ", " << A->length << ">";
+  } else if (auto V = type.dyn_cast<types::VectorType>()) {
     output << "pj::ArrayView<";
-    GenerateTypeRef(L->el, output);
-    output << "," << L->min_len << "," << L->max_len << ">";
+    GenerateTypeRef(V->elem, output);
+    output << "," << V->min_length << "," << V->max_length << ">";
   } else {
     UNREACHABLE();
   }
 }
 
-void PrintNamespacedName(const SourceId& name, std::ostream& output) {
-  for (auto& p : name) output << "::" << p;
+std::string GenerateTypeRef(mlir::Type type) {
+  std::ostringstream o;
+  GenerateTypeRef(type, o);
+  return o.str();
 }
 
-void BuildTypeGeneratorStmt(const AType* type, std::ostream& output) {
+void PrintNamespacedName(types::Name name, std::ostream& output) {
+  for (auto& p : name) output << "::" << std::string_view(p);
+}
+
+std::pair<std::string, std::string> BuildPJVariableDecl(mlir::Type type,
+                                                        std::ostream& output) {
+  static uintptr_t counter = 0;
+  std::string rt_type;
+  std::string var;
+  if (!type) {
+    output << (rt_type = "const PJUnitType*") << " "
+           << (var = "unit" + std::to_string(counter++));
+  } else if (type.isa<types::StructType>()) {
+    output << (rt_type = "const PJStructType*") << " "
+           << (var = "struct" + std::to_string(counter++));
+  } else if (type.isa<types::InlineVariantType>()) {
+    output << (rt_type = "const PJInlineVariantType*") << " "
+           << (var = "inline_variant" + std::to_string(counter++));
+  } else if (type.isa<types::OutlineVariantType>()) {
+    // OutlineVariants only exist on the wire
+    UNREACHABLE();
+  } else if (type.isa<types::IntType>()) {
+    output << (rt_type = "const PJIntType*") << " "
+           << (var = "int" + std::to_string(counter++));
+  } else if (type.isa<types::ArrayType>()) {
+    output << (rt_type = "const PJArrayType*") << " "
+           << (var = "arr" + std::to_string(counter++));
+  } else if (type.isa<types::VectorType>()) {
+    output << (rt_type = "const PJVectorType*") << " "
+           << (var = "vector" + std::to_string(counter++));
+  } else {
+    UNREACHABLE();
+  }
+  return std::make_pair(rt_type, var);
+}
+
+std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   if (!type) {
     // Normalize null types to the unit type for the rest of ProtoJIT.
     // These are represented differently from an empty struct in the
     // source generator because in C++ an empty struct has size 8 bits,
     // not 0 bits.
-    output << "type = scope->CUnit();";
-    return;
+    auto [_, var] = BuildPJVariableDecl(type, output);
+    output << " = PJCreateUnitType(context);";
+    return var;
   }
-  if (type->IsInt()) {
-    auto* itype = type->AsInt();
-    output << "type = new (scope) CIntType(";
-    // First arg: abstract type
-    output << "new (scope) AIntType(Bits(" << itype->len.bits() << "),";
-    switch (itype->conv) {
-      case AIntType::Conversion::kSigned:
-        output << "AIntType::Conversion::kSigned";
-        break;
-      case AIntType::Conversion::kUnsigned:
-        output << "AIntType::Conversion::kUnsigned";
-        break;
-      case AIntType::Conversion::kChar:
-        output << "AIntType::Conversion::kChar";
-        break;
+
+  std::string type_ref = GenerateTypeRef(type);
+  if (auto named = type.dyn_cast<types::NominalType>()) {
+    auto [rt_type, var] = BuildPJVariableDecl(type, output);
+    output << " = static_cast<" << rt_type << ">(BuildPJType<";
+    PrintNamespacedName(named.name(), output);
+    output << ">::Build(context));\n";
+    return var;
+  }
+
+  if (auto I = type.dyn_cast<types::IntType>()) {
+    auto [_, var] = BuildPJVariableDecl(type, output);
+    output << " = PJCreateIntType(context";
+    output << ", /*width=*/" << I->width.bits();
+    {
+      output << ", /*alignment=*/alignof(";
+      pj::Width actual_width = GenerateIntTypeRef(I->width, I->sign, output);
+      output << ") << 3";
+      // TODO: come back to this when implementing bitfields
+      assert(I->width == actual_width);
     }
-    output << "),\n";
-
-    assert(itype->len.bytes() <= kMaxCppIntSize);
-
-    // Second arg: alignment
-    output << "Bytes(" << itype->len.bytes() << "),\n";
-
-    // Thid arg: total size
-    output << "Bytes(" << itype->len.bytes() << "));\n";
-  } else if (type->IsArray()) {
-    BuildTypeGeneratorStmt(type->AsArray()->el, output);
-    output << "type = new (scope) CArrayType(\n";
-    // First arg: abstract type
-    output << "new (scope) AArrayType(type->abs(), " << type->AsArray()->length
-           << "),";
-    // Second arg: concrete element type
-    output << "type,";
-    // Third arg: alignment
-    output << "Bytes(alignof(";
-    GenerateTypeRef(type, output);
-    output << ")),\n";
-    // Last arg: total size
-    output << "Bytes(sizeof(";
-    GenerateTypeRef(type, output);
-    output << ")));\n";
-  } else if (type->IsNamed()) {
-    output << "type = BuildConcreteType<";
-    PrintNamespacedName(type->AsNamed()->name, output);
-    output << ">::Build(scope);";
-  } else {
-    UNREACHABLE();
+    output << ", /*sign=*/";
+    switch (I->sign) {
+      case types::Int::kSigned:
+        output << "PJ_SIGN_SIGNED);\n";
+        break;
+      case types::Int::kUnsigned:
+        output << "PJ_SIGN_UNSIGNED);\n";
+        break;
+      case types::Int::kSignless:
+        output << "PJ_SIGN_SIGNLESS);\n";
+        break;
+      default:
+        UNREACHABLE();
+    }
+    return var;
   }
+
+  if (auto A = type.dyn_cast<types::ArrayType>()) {
+    std::string elem_type_ref = GenerateTypeRef(A->elem);
+    std::string elem_var = BuildTypeGeneratorStmt(A->elem, output);
+    auto [_, var] = BuildPJVariableDecl(type, output);
+    output << " = PJCreateArrayType(context";
+    output << ", /*elem=*/" << elem_var;
+    output << ", /*length=*/" << A->length;
+    output << ", /*elem_size=*/sizeof(" << elem_type_ref << ") << 3";
+    output << ", /*alignment=*/alignof(" << type_ref << ") << 3);\n";
+    return var;
+  }
+
+  if (auto V = type.dyn_cast<types::VectorType>()) {
+    std::string elem_var = BuildTypeGeneratorStmt(V->elem, output);
+    auto [_, var] = BuildPJVariableDecl(type, output);
+    output << " = PJCreateVectorType(context";
+    output << ", /*elem=*/" << elem_var;
+    output << ", /*min_length=*/" << V->min_length;
+    output << ", /*max_length=*/" << V->max_length;
+    output << ", /*ppl_count=*/0";
+    output << ", /*length_offset=*/offsetof(" << type_ref << ", length) << 3";
+    output << ", /*length_size=*/sizeof(" << type_ref << "::length) << 3";
+    output << ", /*ref_offset=*/offsetof(" << type_ref << ", offset) << 3";
+    output << ", /*ref_size=*/sizeof(" << type_ref << "::offset) << 3";
+    output << ", /*reference_mode=*/PJ_REFERENCE_MODE_OFFSET";
+    output << ", /*inline_payload_offset=*/-1";
+    output << ", /*inline_payload_size=*/0";
+    output << ", /*partial_payload_offset=*/-1";
+    output << ", /*partial_payload_size=*/0";
+    output << ", /*size=*/sizeof(" << type_ref << ") << 3";
+    output << ", /*alignment=*/alignof(" << type_ref << ") << 3";
+    output << ", /*outlined_payload_alignment=*/64);\n";
+    return var;
+  }
+
+  UNREACHABLE();
+}
+
+void BuildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
+                       std::string_view var, std::ostream& output) {
+  output << "const char* " << var << "[" << arr.size() << "] = {";
+  for (uintptr_t i = 0; i < arr.size(); ++i) {
+    output << "\"" << std::string_view(arr[i]) << "\"";
+    if (i < arr.size() - 1) {
+      output << ", ";
+    }
+  }
+  output << "};\n";
 }
 
 void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
-                     const AType* type, std::ostream& output,
-                     std::ostream& back) {
-  auto* V = type->AsVariant();
+                     std::ostream& output, std::ostream& back) {
+  auto type = decl.type.dyn_cast<types::InlineVariantType>();
+  assert(type);
+
+  auto nominal = type.template dyn_cast<types::NominalType>();
+  assert(nominal);
+
+  auto name = nominal.name();
 
   const bool has_value =
-      std::any_of(V->terms.begin(), V->terms.end(),
-                  [](auto& t) { return t.second != nullptr; });
+      std::any_of(type->terms.begin(), type->terms.end(),
+                  [](auto& term) { return bool(term.type); });
 
-  GenerateNamespaceBegin(decl.name, output);
+  GenerateNamespaceBegin(name, output);
 
   if (!decl.is_enum) {
-    output << "struct " << decl.name.back() << " {\n";
+    output << "struct " << std::string_view(name.back()) << " {\n";
     if (has_value) {
       output << "union {\n";
-      for (auto& [name, type] : V->terms) {
-        if (type) {
-          GenerateTypeRef(type, output);
-          output << " " << name << ";\n";
+      for (auto& term : type->terms) {
+        if (term.type) {
+          GenerateTypeRef(term.type, output);
+          output << " " << std::string_view(term.name) << ";\n";
         }
       }
       output << "} value;\n";
     }
   }
 
-  // Define an enum class with all options.
-  // SAMIR_TODO: use the right type
-  if (decl.is_enum) {
-    output << "enum class " << decl.name.back() << " : uint8_t {\n";
-  } else {
-    output << "enum class Kind : uint8_t {\n";
+  pj::Width min_tag_width = pj::Bytes(1);
+  if (type->terms.size() > 0) {
+    auto max_tag =
+        std::max_element(type->terms.begin(), type->terms.end(),
+                         [](const types::Term& a, const types::Term& b) {
+                           return a.tag < b.tag;
+                         });
+    // The maximum tag value is always greater than or equal to the total
+    // number of terms because of undef taking up the 0 slot.
+    min_tag_width = pj::Bytes(std::ceil(std::log2(max_tag->tag) / 8));
   }
 
+  // Define an enum class with all options.
+  if (decl.is_enum) {
+    output << "enum class " << std::string_view(name.back()) << " : ";
+  } else {
+    output << "enum class Kind : ";
+  }
+  pj::Width tag_width =
+      GenerateIntTypeRef(min_tag_width, types::Int::Sign::kUnsigned, output);
+  output << " {\n";
   output << "undef = " << 0 << ",\n";
-  for (auto& [name, _] : V->terms) {
-    if (auto ti = decl.explicit_tags.find(name);
-        ti != decl.explicit_tags.end()) {
-      output << name << " = " << static_cast<uint64_t>(ti->second) << ",\n";
-    } else {
-      output << name << ",\n";
-    }
+  for (auto& term : type->terms) {
+    std::string term_name = term.name.str();
+    output << term_name << " = " << term.tag << ",\n";
   }
 
   if (decl.is_enum) {
@@ -203,96 +272,72 @@ void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
   } else {
     output << "} tag;\n};\n";
   }
-  GenerateNamespaceEnd(decl.name, output);
+  GenerateNamespaceEnd(name, output);
 
-  // Generate a BuildConcreteType specialization for this type.
+  // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";
   back << "namespace gen {\n";
   back << "template <>\n"
-       << "struct BuildConcreteType<";
-  PrintNamespacedName(decl.name, back);
+       << "struct BuildPJType<";
+  PrintNamespacedName(name, back);
   back << "> {\n";
 
-  back << "static const CType* Build(Scope* scope) {\n";
-  back << "const CType* type;\n";
-  back << "std::map<std::string, const AType*> aterms;\n";
-  back << "std::map<std::string, CVariantType::CTerm> cterms;\n";
+  back << "static const void* Build(PJContext* context) {\n";
 
-  for (auto& [n, t] : V->terms) {
-    BuildTypeGeneratorStmt(t, back);
+  back << "const PJTerm* terms[" << type->terms.size() << "];\n";
+  uintptr_t term_num = 0;
+  for (auto& term : type->terms) {
+    std::string var = BuildTypeGeneratorStmt(term.type, back);
 
-    back << "cterms.emplace(\"" << n << "\", CVariantType::CTerm{\n"
-         << ".tag = static_cast<intptr_t>(";
-    PrintNamespacedName(decl.name, back);
-    if (!decl.is_enum) {
-      back << "::Kind";
-    }
-    back << "::" << n << "), .type = type\n});\n";
-    back << "aterms.emplace(\"" << n << "\", type->abs());\n";
+    back << "terms[" << term_num++ << "] = PJCreateTerm(context";
+    back << ", /*name=*/\"" << std::string_view(term.name) << "\"";
+    back << ", /*type=*/" << var;
+    back << ", /*tag=*/" << term.tag << ");\n";
   }
 
-  back << "AVariantType* abstract = new(scope) "
-          "AVariantType(std::move(aterms));\n";
+  BuildCStringArray(name, "name", back);
 
-  back << "type = new (scope) CVariantType(\n";
-
-  // First arg: abs
-  back << "abstract,";
-
-  // Second arg: alignment
-  back << "Bytes(alignof(";
-  PrintNamespacedName(decl.name, back);
-  back << ") ),";
-
-  // Third arg: total size
-  back << "Bytes(sizeof(";
-  PrintNamespacedName(decl.name, back);
-  back << ")),";
-
-  // Fourth arg: concrete terms
-  back << "std::move(cterms),\n";
-
-  // Fifth arg: term offset
-  if (has_value) {
-    back << "Bytes(offsetof(";
-    PrintNamespacedName(decl.name, back);
-    back << ", value)),\n";
+  auto [_, variant_var] = BuildPJVariableDecl(type, back);
+  back << " = PJCreateInlineVariantType(context";
+  back << ", /*name_size=*/" << name.size();
+  back << ", /*name=*/name";
+  back << ", /*type_domain=*/"
+       << (nominal.type_domain() == types::TypeDomain::kHost
+               ? "PJ_TYPE_DOMAIN_HOST"
+               : "PJ_TYPE_DOMAIN_WIRE");
+  back << ", /*num_terms=*/" << type->terms.size();
+  back << ", /*terms=*/terms";
+  if (decl.is_enum || !has_value) {
+    back << ", /*term_offset=*/-1, /*term_size=*/0";
   } else {
-    back << "Bytes(0),\n";
+    back << ", /*term_offset=*/offsetof(";
+    PrintNamespacedName(name, back);
+    back << ", value) << 3";
+    back << ", /*term_size=*/sizeof(";
+    PrintNamespacedName(name, back);
+    back << "::value) << 3";
   }
-
-  // Sixth arg: term size
-  if (has_value) {
-    back << "Bytes(sizeof(decltype(";
-    PrintNamespacedName(decl.name, back);
-    back << "::value))),\n";
-  } else {
-    back << "Bytes(0),\n";
-  }
-
-  // Seventh arg: tag offset
   if (decl.is_enum) {
-    back << "Bytes(0),\n";
+    back << ", /*tag_offset=*/0";
   } else {
-    back << "Bytes(offsetof(";
-    PrintNamespacedName(decl.name, back);
-    back << ", tag)),\n";
+    back << ", /*tag_offset=*/offsetof(";
+    PrintNamespacedName(name, back);
+    back << ", tag) << 3";
   }
-
-  // Last arg: tag size
-  if (decl.is_enum) {
-    back << "Bytes(sizeof(";
-    PrintNamespacedName(decl.name, back);
-    back << "))\n";
-    back << ");\n";
-  } else {
-    back << "Bytes(sizeof(decltype(";
-    PrintNamespacedName(decl.name, back);
-    back << "::tag)))\n";
-    back << ");\n";
+  back << ", /*tag_width=*/" << tag_width.bits();
+  {
+    back << ", /*size=*/sizeof(";
+    PrintNamespacedName(name, back);
+    back << ") << 3";
   }
+  {
+    back << ", /*alignment=*/alignof(";
+    PrintNamespacedName(name, back);
+    back << ") << 3";
+  }
+  back << ");\n";
 
-  back << "return type;\n"
+  back << "return " << variant_var << ";\n"
        << "}\n"
        << "};\n"
        << "}  // namespace gen\n"
@@ -302,97 +347,82 @@ void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
 
 void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
                     std::ostream& output, std::ostream& back) {
-  const auto* type = decl.ctype->AsNamed()->named->AsStruct();
-  const auto& name = decl.name;
+  auto type = decl.type.dyn_cast<types::StructType>();
+  assert(type);
 
-  std::vector<std::pair<std::string, CStructType::CStructField>>
-      fields_by_offset;
-  for (auto& pair : type->fields) fields_by_offset.emplace_back(pair);
-  std::sort(fields_by_offset.begin(), fields_by_offset.end(),
-            [&](const auto& x, const auto& y) {
-              return x.second.offset < y.second.offset;
-            });
+  auto nominal = type.dyn_cast<types::NominalType>();
+  assert(nominal);
+
+  auto name = nominal.name();
 
   GenerateNamespaceBegin(name, output);
 
-  output << "struct " << name.back() << " {\n";
+  output << "struct " << std::string_view(name.back()) << " {\n";
 
-  for (auto& [n, field] : fields_by_offset) {
-    GenerateTypeRef(field.type->abs(), output);
-    output << " " << n << ";\n";
+  for (auto& field : type->fields) {
+    GenerateTypeRef(field.type, output);
+    output << " " << std::string_view(field.name) << ";\n";
   }
   output << "};\n\n";
 
-  for (auto& [n, field] : fields_by_offset) {
-    back << "static_assert(sizeof(";
-    PrintNamespacedName(name, back);
-    back << "::" << n << ") == " << field.type->total_size().bytes() << ");\n";
-    back << "static_assert(offsetof(";
-    PrintNamespacedName(name, back);
-    back << ", " << n << ") == " << field.offset.bytes() << ");\n";
-  }
-
-  back << "static_assert(sizeof(";
-  PrintNamespacedName(name, back);
-  back << ") == " << type->total_size().bytes() << ");\n";
-
   GenerateNamespaceEnd(name, output);
 
-  // Generate a BuildConcreteType specialization for this type.
+  // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";
   back << "namespace gen {\n";
   back << "template <>\n"
-       << "struct BuildConcreteType<";
+       << "struct BuildPJType<";
   PrintNamespacedName(name, back);
   back << "> {\n";
 
   // For each field:
-  //   - Build a concrete type for this field:
+  //   - Build an MLIR type for this field:
   //     - either inline for primitive types
-  //     - or a call to another specialization of BuildConcreteType
-  //       for a composite type
-  // Generate an abstract type from created abstract types.
-  // Generate a concrete type from created concrete types.
+  //     - or a call to a specialization of BuildPJType for a composite type
 
-  back << "static const CType* Build(Scope* scope) {\n";
-  back << "const CType* type;\n";
-  back << "std::map<std::string, const AType*> afields;\n";
-  back << "std::map<std::string, CStructType::CStructField> cfields;\n";
+  back << "static const void* Build(PJContext* context) {\n";
 
-  for (auto& [n, field] : type->fields) {
-    BuildTypeGeneratorStmt(field.type->abs(), back);
+  back << "const PJStructField* fields[" << type->fields.size() << "];\n";
+  uintptr_t field_num = 0;
+  for (auto& field : type->fields) {
+    std::string var = BuildTypeGeneratorStmt(field.type, back);
 
-    back << "cfields.emplace(\"" << n << "\", CStructType::CStructField{\n"
-         << ".offset = Bytes(offsetof(";
-    PrintNamespacedName(name, back);
-    back << "," << n << ")),\n"
-         << ".type = type\n});\n";
-    back << "afields[\"" << n << "\"] = type->abs();\n";
+    back << "fields[" << field_num++ << "] = PJCreateStructField(context";
+    back << ", /*name=*/\"" << std::string_view(field.name) << "\"";
+    back << ", /*type=*/" << var;
+    {
+      back << ", /*offset=*/offsetof(";
+      PrintNamespacedName(name, back);
+      back << ", " << std::string_view(field.name) << ") << 3";
+    }
+    back << ");\n";
   }
 
-  back << "AType* abstract = new (scope) "
-          "AStructType(std::move(afields));\n";
+  BuildCStringArray(name, "name", back);
 
-  back << "type = new (scope) CStructType(";
+  auto [_, struct_var] = BuildPJVariableDecl(type, back);
+  back << " = PJCreateStructType(context";
+  back << ", /*name_size=*/" << name.size();
+  back << ", /*name=*/name";
+  back << ", /*type_domain=*/"
+       << (nominal.type_domain() == types::TypeDomain::kHost
+               ? "PJ_TYPE_DOMAIN_HOST"
+               : "PJ_TYPE_DOMAIN_WIRE");
+  back << ", /*num_fields=*/" << type->fields.size();
+  back << ", /*fields=*/fields";
+  {
+    back << ", /*size=*/sizeof(";
+    PrintNamespacedName(name, back);
+    back << ") << 3";
+  }
+  {
+    back << ", /*alignment=*/alignof(";
+    PrintNamespacedName(name, back);
+    back << ") << 3";
+  }
+  back << ");\n";
 
-  // First arg: abstract type
-  back << "abstract,\n";
-
-  // Second arg: alignment
-  back << "Bytes(alignof(";
-  PrintNamespacedName(name, back);
-  back << ")),\n";
-
-  // Third arg: total size
-  back << "Bytes(sizeof(";
-  PrintNamespacedName(name, back);
-  back << ")),\n";
-
-  // Last arg: fields
-  back << "std::move(cfields)\n";
-
-  back << ");\n"
-       << "return type;\n"
+  back << "return " << struct_var << ";\n"
        << "}\n"
        << "};\n"
        << "}  // namespace gen\n"
@@ -402,14 +432,12 @@ void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
 
 void GenerateComposite(Scope* scope, ParsedProtoFile::Decl decl,
                        std::ostream& output, std::ostream& back) {
-  auto type = decl.atype;
+  auto type = decl.type;
 
-  type = type->AsNamed()->named;
-
-  if (type->IsStruct()) {
+  if (type.isa<types::StructType>()) {
     GenerateStruct(scope, decl, output, back);
-  } else if (type->IsVariant()) {
-    GenerateVariant(scope, decl, type, output, back);
+  } else if (type.isa<types::InlineVariantType>()) {
+    GenerateVariant(scope, decl, output, back);
   } else {
     UNREACHABLE();
   }
@@ -417,17 +445,18 @@ void GenerateComposite(Scope* scope, ParsedProtoFile::Decl decl,
 
 void GenerateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
   GenerateNamespaceBegin(decl.name, output);
-  output << "using " << decl.name.back();
+  output << "using " << std::string_view(decl.name.back());
   output << " = ";
-  GenerateTypeRef(decl.atype->AsNamed()->named, output);
+  GenerateTypeRef(decl.type, output);
   output << ";\n";
   GenerateNamespaceEnd(decl.name, output);
 }
 
-void GenerateProtocol(Scope* scope, const SourceId& name, const AType* type,
+#if 0
+void GenerateProtocol(Scope* scope, types::Name name, const AType* type,
                       std::ostream& output, std::ostream& back) {
   GenerateNamespaceBegin(name, output);
-  output << "struct " << name.back() << "{};\n";
+  output << "struct " << std::string_view(name.back()) << "{};\n";
   GenerateNamespaceEnd(name, output);
 
   back << "namespace pj {\n";
@@ -442,14 +471,14 @@ void GenerateProtocol(Scope* scope, const SourceId& name, const AType* type,
   back << "};\n}  // namespace gen\n\n";
   back << "\n}  // namespace pj\n\n";
 }
+#endif
 
 void GenerateHeader(Scope* scope, const ArchDetails& arch,
                     const ParsedProtoFile& file, std::ostream& output) {
   output << "#pragma once\n"
          << "#include<cstddef>\n "
          << "#include \"pj/protojit.hpp\"\n"
-         << "#include \"pj/abstract_types.hpp\"\n"
-         << "#include \"pj/concrete_types.hpp\"\n"
+         << "#include \"pj/runtime.h\"\n"
          << "\n";
 
   for (auto& import : file.imports) {
@@ -468,7 +497,7 @@ void GenerateHeader(Scope* scope, const ArchDetails& arch,
         break;
 #if 0
       case ParsedProtoFile::DeclKind::kProtocol:
-        GenerateProtocol(scope, decl.name, decl.atype, output, back);
+        GenerateProtocol(scope, decl.name, decl.type, output, back);
         break;
 #endif
     }
