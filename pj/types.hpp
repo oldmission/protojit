@@ -97,7 +97,7 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
           sizeof(StructField) * key.fields.size(), alignof(StructField))),
       key.fields.size());
 
-  for (intptr_t i = 0; i < key.fields.size(); ++i) {
+  for (uintptr_t i = 0; i < key.fields.size(); ++i) {
     fields[i] = StructField{
         .type = key.fields[i].type,
         .name = allocator.copyInto(key.fields[i].name),
@@ -111,12 +111,12 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
 
 struct StructType
     : public mlir::Type::TypeBase<
-          StructType, NominalTypeBase<ValueType, Struct, StructType>,
+          StructType, NominalTypeBase<NominalType, Struct, StructType>,
           NominalTypeStorage<Struct>> {
   using Base::Base;
   using Base::get;
 
-  friend struct NominalTypeBase<ValueType, Struct, StructType>;
+  friend struct NominalTypeBase<NominalType, Struct, StructType>;
 };
 
 struct Term {
@@ -171,38 +171,38 @@ struct OutlineVariant {
 };
 
 template <typename V>
-inline V intern_variant(mlir::TypeStorageAllocator& allocator, const V& key) {
+inline V intern_variant(mlir::TypeStorageAllocator& allocator,
+                        const V& type_data) {
   auto terms = llvm::makeMutableArrayRef<Term>(
-      reinterpret_cast<Term*>(
-          allocator.allocate(sizeof(Term) * key.terms.size(), alignof(Term))),
-      key.terms.size());
+      reinterpret_cast<Term*>(allocator.allocate(
+          sizeof(Term) * type_data.terms.size(), alignof(Term))),
+      type_data.terms.size());
 
-  for (intptr_t i = 0; i < key.terms.size(); ++i) {
+  for (uintptr_t i = 0; i < type_data.terms.size(); ++i) {
     terms[i] = Term{
-        .name = allocator.copyInto(key.terms[i].name),
-        .type = key.terms[i].type,
-        .tag = key.terms[i].tag,
+        .name = allocator.copyInto(type_data.terms[i].name),
+        .type = type_data.terms[i].type,
+        .tag = type_data.terms[i].tag,
     };
   }
-  std::sort(terms.begin(), terms.end());
 
-  V result = key;
+  V result = type_data;
   result.terms = terms;
   return result;
 }
 
 inline InlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
-                                 const InlineVariant& key) {
-  return intern_variant(allocator, key);
+                                 const InlineVariant& type_data) {
+  return intern_variant(allocator, type_data);
 }
 
 inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
-                                  const OutlineVariant& key) {
-  return intern_variant(allocator, key);
+                                  const OutlineVariant& type_data) {
+  return intern_variant(allocator, type_data);
 }
 
-struct VariantType : public ValueType {
-  using ValueType::ValueType;
+struct VariantType : public NominalType {
+  using NominalType::NominalType;
 
   static constexpr intptr_t kUndefTag = 0;
 
@@ -457,6 +457,11 @@ inline ::llvm::hash_code hash_value(const Vector& V) {
       hash_value(V.partial_payload_offset), hash_value(V.partial_payload_size),
       hash_value(V.size), hash_value(V.alignment),
       hash_value(V.outlined_payload_alignment));
+}
+
+inline Vector type_intern(mlir::TypeStorageAllocator& allocator,
+                          const Vector& V) {
+  return V;
 }
 
 struct VectorType
