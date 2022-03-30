@@ -11,9 +11,6 @@
 
 namespace pj {
 
-class AType;
-class CType;
-
 struct Scoped {
   virtual ~Scoped();
 };
@@ -34,16 +31,14 @@ class Scope {
     return result;
   }
 
-  AType* AUnit();
-  CType* CUnit();
   mlir::MLIRContext* Context() { return context_; }
+  mlir::Type Unit();
 
  private:
   std::vector<Scoped*> allocations;
 
-  AType* aunit_ = nullptr;
-  CType* cunit_ = nullptr;
   mlir::MLIRContext* context_;
+  mlir::Type unit_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(Scope);
 };
