@@ -45,5 +45,10 @@ PathAttr PathAttr::fromString(mlir::MLIRContext* C, llvm::StringRef src_path) {
   return get(C, vec);
 }
 
+bool NominalType::classof(mlir::Type val) {
+  return val.getTypeID() == StructType::getTypeID() ||
+         VariantType::classof(val);
+}
+
 }  // namespace types
 }  // namespace pj

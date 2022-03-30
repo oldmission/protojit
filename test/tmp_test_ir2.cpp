@@ -32,8 +32,7 @@ TEST_F(TmpIR2Test, BasicStructTest) {
   });
 
   auto struct_m_ty = types::StructType::get(
-      &ctx_.ctx_, std::make_pair<types::TypeDomain, llvm::StringRef>(
-                      types::TypeDomain::kHost, "thing"));
+      &ctx_.ctx_, types::TypeDomain::kHost, "thing");
   struct_m_ty.setTypeData({
       .fields = m_fields,
       .size = Bytes(8),
@@ -47,8 +46,7 @@ TEST_F(TmpIR2Test, BasicStructTest) {
       .offset = Bytes(0),
   });
   auto struct_p_ty = types::StructType::get(
-      &ctx_.ctx_, std::make_pair<types::TypeDomain, llvm::StringRef>(
-                      types::TypeDomain::kWire, "thing"));
+      &ctx_.ctx_, types::TypeDomain::kWire, "thing");
   struct_p_ty.setTypeData({
       .fields = m_fields,
       .size = Bytes(8),
@@ -88,8 +86,8 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
   });
 
   auto var_m_ty = types::InlineVariantType::get(
-      &ctx_.ctx_, std::make_pair<types::TypeDomain, llvm::StringRef>(
-                      types::TypeDomain::kHost, "thing"));
+      &ctx_.ctx_, types::TypeDomain::kHost, types::Name{"thing"},
+      types::InlineVariant{});
   var_m_ty.setTypeData(types::InlineVariant{
       .terms = terms,
       .term_offset = Bytes(0),
@@ -108,8 +106,8 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
   });
 
   auto var_p_ty = types::OutlineVariantType::get(
-      &ctx_.ctx_, std::make_pair<types::TypeDomain, llvm::StringRef>(
-                      types::TypeDomain::kWire, "thing"));
+      &ctx_.ctx_, types::TypeDomain::kWire, types::Name{"thing"},
+      types::OutlineVariant{});
 
   var_p_ty.setTypeData(types::OutlineVariant{
       .terms = terms,
