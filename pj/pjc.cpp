@@ -40,8 +40,6 @@ int main(int argc, char** argv) {
 
   auto& parsed_file = parse_scope.parsed_files.at(path);
 
-  pj::PlanMemory(&scope, parsed_file);
-
   // TODO: support cross-compilation
   pj::GenerateHeader(&scope, pj::ArchDetails::Host(), parsed_file, std::cout);
   return 0;
