@@ -20,7 +20,7 @@ class Scope {
   Scope() {}
   ~Scope() {
     for (auto* x : allocations) {
-      delete x;
+      free(x);
     }
   }
 
@@ -47,3 +47,5 @@ class Scope {
 
 void* operator new(size_t size, pj::Scope& scope);
 void* operator new(size_t size, pj::Scope* scope);
+void* operator new[](size_t size, pj::Scope& scope);
+void* operator new[](size_t size, pj::Scope* scope);

@@ -13,7 +13,6 @@ namespace pj {
 class CType;
 struct ParsedProtoFile;
 
-using SourceId = std::vector<std::string>;
 using Path = std::vector<std::string>;
 
 #define FOR_EACH_TYPE(V) \
@@ -165,10 +164,10 @@ class AOutlinedType : public AType {
 
 class ANamedType : public AType {
  public:
-  const SourceId name;
+  // const SourceId name;
   const AType* const named;
 
-  ANamedType(SourceId&& name, const AType* named) : name(name), named(named) {
+  ANamedType(/*SourceId&& name, */const AType* named) : named(named) {
     assert(named);
   }
 

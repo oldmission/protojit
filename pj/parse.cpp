@@ -1,13 +1,19 @@
+#include <mlir/IR/MLIRContext.h>
 #include <charconv>
 #include <pegtl.hpp>
 #include <pegtl/contrib/analyze.hpp>
 
 #include "protogen.hpp"
 #include "protojit.hpp"
+#include "types.hpp"
+
+#include <unordered_set>
 
 using namespace tao::pegtl;
 
 namespace pj {
+
+using SourceId = std::vector<std::string>;
 
 struct ParseState {
   ParsingScope& parse_scope;
@@ -18,15 +24,15 @@ struct ParseState {
 
   // Updated after parsing a 'FieldDecl' rule.
   // Cleared when done with a struct/variant decl.
-  std::map<std::string, const AType*> fields;
+  std::map<std::string, mlir::Type> fields;
 
   // Populated after parsing a `VariantFieldDecl` or `EnumFieldDecl` rule.
   // Cleared after parsing a `VariantDecl` or `EnumDecl` rule.
-  std::map<std::string, uint8_t> explicit_tags;
+  std::map<std::string, uint64_t> explicit_tags;
 
   // Used when parsing int types and modifiers.
   // Populated after parsing a 'Type' rule.
-  const AType* type = nullptr;
+  mlir::Type type;
 
   // Populated after parsing Len, MinLen, and MaxLen rules.
   intptr_t array_len = kNone;
@@ -45,12 +51,7 @@ struct ParseState {
   // An explicit tag cannot be 0, since that is reserved for
   // the undefined case. Thus, 0 means no explicit tag was
   // specified.
-  uint8_t explicit_tag = 0;
-
-  template <typename T, typename... Args>
-  T* New(Args&&... args) {
-    return new (scope) T(std::forward<Args>(args)...);
-  }
+  uint64_t explicit_tag = 0;
 
   SourceId space;
 
@@ -70,7 +71,7 @@ struct ParseState {
   }
 
   SourceId PopScopedId(bool include_space = true) {
-    SourceId result = ids[ids.size() - 2];
+    SourceId result = std::move(ids[ids.size() - 2]);
 
     std::swap(ids[ids.size() - 2], ids.back());
     ids.pop_back();
@@ -86,23 +87,38 @@ struct ParseState {
     return s;
   }
 
+  pj::types::Name PopScopedIdAsName() {
+    SourceId id = PopScopedId();
+
+    auto* pieces = new (scope) llvm::StringRef[id.size()];
+    uintptr_t i = 0;
+    for (const auto& p : id) {
+      char* buffer = new (scope) char[p.length()];
+      std::memcpy(buffer, p.c_str(), p.length());
+      pieces[i++] = llvm::StringRef{buffer, p.length()};
+    }
+
+    return pj::types::Name{pieces, id.size()};
+  }
+
   template <typename I>
-  const AType* ResolveType(const I& in, const SourceId& id) {
-    // TODO: this is super inefficient!
-    // Use twine or iterators instead.
+  mlir::Type ResolveType(const I& in, const SourceId& id) {
+    std::vector<llvm::StringRef> id_;
+    id_.reserve(space.size() + id.size());
     for (intptr_t i = space.size(); i >= 0; --i) {
-      SourceId id_;
       for (intptr_t j = 0; j < i; ++j) {
         id_.push_back(space[j]);
       }
       for (auto& p : id) {
-        id_.emplace_back(p);
+        id_.push_back(p);
       }
 
-      if (auto it = parse_scope.type_defs.find(id_);
+      auto name = pj::types::Name::from_vector(id_);
+      if (auto it = parse_scope.type_defs.find(name);
           it != parse_scope.type_defs.end()) {
         return it->second;
       }
+      id_.clear();
     }
     // for (auto& [k, v] : parse_scope.type_defs) {
     //   std::cerr << "! ";
@@ -119,11 +135,11 @@ struct ParseState {
   }
 
   template <typename I>
-  void DefineType(const I& in, const SourceId& id, const AType* type) {
-    if (parse_scope.type_defs.count(id)) {
+  void DefineType(const I& in, const pj::types::Name& name, mlir::Type type) {
+    if (parse_scope.type_defs.count(name)) {
       throw parse_error("Cannot re-define type", in.position());
     }
-    parse_scope.type_defs.emplace(std::move(id), type->AsNamed());
+    parse_scope.type_defs.emplace(name, type);
   }
 };
 
@@ -163,7 +179,7 @@ using RB = tok<'}'>;
 struct struct_key : pad<TAO_PEGTL_KEYWORD("struct"), space> {};
 struct variant_key : pad<TAO_PEGTL_KEYWORD("variant"), space> {};
 
-template <intptr_t kPrefix, AIntType::Conversion conv, typename ActionInput>
+template <intptr_t kPrefix, pj::types::Int::Sign sign, typename ActionInput>
 static void parse_int(const ActionInput& in, ParseState* state) {
   assert(in.size() > kPrefix);
   const char* num_start = in.begin() + kPrefix;
@@ -171,26 +187,29 @@ static void parse_int(const ActionInput& in, ParseState* state) {
   DEBUG_ONLY(auto result =) std::from_chars(num_start, in.end(), bits);
   assert(result.ptr == in.end());
   // SAMIR_TODO: validate bits
-  __ type = __ New<AIntType>(Bits(bits), conv);
+  __ type = pj::types::IntType::get(
+      __ scope.Context(), pj::types::Int{.width = Bits(bits), .sign = sign});
 }
 
 struct UIntType : seq<string<'u', 'i', 'n', 't'>, num> {};
 
 BEGIN_ACTION(UIntType) {
-  parse_int<4, AIntType::Conversion::kUnsigned>(in, state);
+  parse_int<4, pj::types::Int::Sign::kUnsigned>(in, state);
 }
 END_ACTION()
 
 struct IntType : seq<string<'i', 'n', 't'>, num> {};
 
 BEGIN_ACTION(IntType) {
-  parse_int<3, AIntType::Conversion::kSigned>(in, state);
+  parse_int<3, pj::types::Int::Sign::kSigned>(in, state);
 }
 END_ACTION()
 
 struct CharType : seq<string<'c', 'h', 'a', 'r'>, num> {};
 
-BEGIN_ACTION(CharType) { parse_int<4, AIntType::Conversion::kChar>(in, state); }
+BEGIN_ACTION(CharType) {
+  parse_int<4, pj::types::Int::Sign::kSignless>(in, state);
+}
 END_ACTION()
 
 struct Identifier : identifier {};
@@ -212,7 +231,7 @@ struct ScopedId : must<Identifier, star<IdSuffix>, EndId> {};
 struct TypeRef : ScopedId {};
 
 BEGIN_ACTION(TypeRef) {
-  assert(__ type == nullptr);
+  assert(!__ type);
   auto id = __ PopScopedId(false);
   __ type = __ ResolveType(in, id);
 }
@@ -233,8 +252,10 @@ END_ACTION()
 
 BEGIN_ACTION(FixedArrayModifier) {
   assert(__ array_len != kNone);
-  assert(__ type != nullptr);
-  __ type = __ New<AArrayType>(__ type, __ array_len);
+  assert(__ type);
+  __ type = pj::types::ArrayType::get(
+      __ scope.Context(),
+      pj::types::Array{.elem = __ type, .length = __ array_len});
   __ array_len = kNone;
 }
 END_ACTION()
@@ -263,8 +284,11 @@ struct VarArrayModifier
     : seq<tok<'['>, opt<MinLen>, tok<':'>, opt<MaxLen>, tok<']'>> {};
 
 BEGIN_ACTION(VarArrayModifier) {
-  assert(__ type != nullptr);
-  __ type = __ New<AListType>(__ type, __ array_min_len, __ array_max_len);
+  assert(__ type);
+  __ type = pj::types::VectorType::get(
+      __ scope.Context(), pj::types::Vector{.elem = __ type,
+                                            .min_length = __ array_min_len,
+                                            .max_length = __ array_max_len});
   __ array_max_len = kNone;
   __ array_min_len = kNone;
 }
@@ -278,7 +302,7 @@ struct FieldDecl : if_must<Id, tok<':'>, Type, tok<';'>> {};
 
 BEGIN_ACTION(FieldDecl) {
   auto field_name = __ PopId();
-  assert(__ type != nullptr);
+  assert(__ type);
   __ fields[field_name] = __ type;
   __ type = nullptr;
   __ field_order.push_back(field_name);
@@ -290,16 +314,14 @@ struct TopDecl;
 struct TypeDecl : if_must<KEYWORD("type"), Id, tok<'='>, Type, tok<';'>> {};
 
 BEGIN_ACTION(TypeDecl) {
-  assert(__ type != nullptr);
-  auto name = __ PopScopedId();
-  auto type = __ New<ANamedType>(SourceId(name), __ type);
-  __ DefineType(in, name, type);
+  assert(__ type);
+  auto name = __ PopScopedIdAsName();
+  __ DefineType(in, name, __ type);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kType,
-      .name = std::move(name),
-      .atype = type,
-      .ctype = nullptr,
+      .name = name,
+      .type = __ type,
   });
   __ type = nullptr;
 }
@@ -314,24 +336,34 @@ struct StructDecl : if_must<KEYWORD("struct"), Id, opt<ExternalDecl>, LB,
                             star<FieldDecl>, RB> {};
 
 BEGIN_ACTION(StructDecl) {
-  decltype(ParseState::fields) fields;
-  std::swap(fields, __ fields);
-  auto name = __ PopScopedId();
-  auto type = __ New<ANamedType>(SourceId(name),
-                                 __ New<AStructType>(std::move(fields)));
+  std::vector<pj::types::StructField> fields;
+  for (const std::string& name : __ field_order) {
+    auto it = __ fields.find(name);
+    assert(it != __ fields.end());
+
+    auto type = it->second;
+    assert(type);
+
+    fields.push_back(pj::types::StructField{
+        .type = type, .name = llvm::StringRef{name.c_str(), name.length()}});
+  }
+
+  auto name = __ PopScopedIdAsName();
+  auto type = pj::types::StructType::get(
+      __ scope.Context(), pj::types::TypeDomain::kHost, name,
+      pj::types::Struct{.fields = llvm::ArrayRef<pj::types::StructField>{
+                            &fields[0], fields.size()}});
   __ DefineType(in, name, type);
-  decltype(__ field_order) field_order;
-  std::swap(field_order, __ field_order);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = std::move(name),
-      .atype = type,
-      .ctype = nullptr,
-      .field_order = std::move(field_order),
+      .name = {},
+      .type = type,
       .is_external = __ is_external,
   });
 
+  __ fields.clear();
+  __ field_order.clear();
   __ is_external = false;
 }
 END_ACTION()
@@ -342,9 +374,12 @@ BEGIN_ACTION(ExplicitTag) {
   if (*in.begin() == '\'') {
     __ explicit_tag = in.begin()[1];
   } else {
-    DEBUG_ONLY(auto result =)
-    std::from_chars(in.begin(), in.end(), __ explicit_tag);
-    assert(result.ptr == in.end());
+    auto result = std::from_chars(in.begin(), in.end(), __ explicit_tag);
+    if (result.ptr != in.end()) {
+      throw parse_error("Invalid tag value '" +
+                            std::string(in.begin(), in.end()) + "' provided.\n",
+                        in.position());
+    }
   }
   if (__ explicit_tag == 0) {
     throw parse_error("Cannot use 0 as a tag value (reserved for undefined).\n",
@@ -363,6 +398,7 @@ BEGIN_ACTION(VariantFieldDecl) {
   // The type may be null, indicating no payload is attached.
   __ fields[field_name] = __ type;
   __ type = nullptr;
+  __ field_order.push_back(field_name);
   if (__ explicit_tag) {
     __ explicit_tags[field_name] = __ explicit_tag;
     __ explicit_tag = 0;
@@ -373,24 +409,49 @@ END_ACTION()
 template <typename ActionInput>
 static void HandleVariant(const ActionInput& in, ParseState* state,
                           bool is_enum) {
-  decltype(ParseState::fields) terms;
-  std::swap(terms, __ fields);
+  std::vector<pj::types::Term> terms;
 
-  decltype(ParseState::explicit_tags) tags;
-  std::swap(tags, __ explicit_tags);
+  // Set the tags for all the terms.
+  std::unordered_set<uint64_t> reserved_tags;
+  uint64_t cur_tag = 1;
+  for (const auto& name : __ field_order) {
+    auto it = __ fields.find(name);
+    assert(it != __ fields.end());
 
-  auto name = __ PopScopedId();
-  auto type = __ New<ANamedType>(std::move(name),
-                                 __ New<AVariantType>(std::move(terms)));
+    uint64_t tag;
+    if (auto tag_it = __ explicit_tags.find(name);
+        tag_it != __ explicit_tags.end()) {
+      tag = tag_it->second;
+      cur_tag = tag_it->second + 1;
+    } else {
+      while (reserved_tags.find(cur_tag) != reserved_tags.end()) {
+        cur_tag++;
+      }
+      tag = cur_tag;
+    }
+    reserved_tags.insert(tag);
+    terms.push_back(
+        pj::types::Term{.name = llvm::StringRef{name.c_str(), name.length()},
+                        .type = it->second,
+                        .tag = tag});
+  }
+
+  auto name = __ PopScopedIdAsName();
+  auto type = pj::types::InlineVariantType::get(
+      __ scope.Context(), pj::types::TypeDomain::kHost, name,
+      pj::types::InlineVariant{
+          .terms = llvm::ArrayRef<pj::types::Term>{&terms[0], terms.size()}});
   __ DefineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = std::move(name),
-      .atype = type,
-      .ctype = nullptr,
+      .name = {},
+      .type = type,
       .is_enum = is_enum,
-      .explicit_tags = std::move(tags),
   });
+
+  __ fields.clear();
+  __ field_order.clear();
+  __ explicit_tags.clear();
 }
 
 struct VariantDecl
@@ -404,6 +465,7 @@ struct EnumFieldDecl : if_must<Id, ExplicitTagDecl, tok<';'>> {};
 BEGIN_ACTION(EnumFieldDecl) {
   auto field_name = __ PopId();
   __ fields[field_name] = nullptr;
+  __ field_order.push_back(field_name);
   if (__ explicit_tag) {
     __ explicit_tags[field_name] = __ explicit_tag;
     __ explicit_tag = 0;
