@@ -1,3 +1,5 @@
+#pragma once
+
 #include <llvm/ADT/ilist.h>
 #include <llvm/ADT/ilist_node.h>
 #include <llvm/Support/raw_ostream.h>
@@ -7,6 +9,38 @@
 #include <mlir/IR/Types.h>
 
 #include "arch.hpp"
+
+namespace pj {
+namespace types {
+
+// Contains the pieces of a fully qualified name
+struct Name : public llvm::ArrayRef<llvm::StringRef> {
+  using llvm::ArrayRef<llvm::StringRef>::ArrayRef;
+
+  Name(llvm::ArrayRef<llvm::StringRef> o) : ArrayRef(o) {}
+
+  static Name from_vector(const std::vector<llvm::StringRef>& v) {
+    return Name{&v[0], v.size()};
+  }
+};
+
+}  // namespace types
+}  // namespace pj
+
+namespace llvm {
+
+inline bool operator<(const pj::types::Name a, const pj::types::Name b) {
+  uintptr_t limit = std::min(a.size(), b.size());
+  for (uintptr_t i = 0; i < limit; ++i) {
+    int cmp = a[i].compare(b[i]);
+    if (cmp != 0) {
+      return cmp == -1;
+    }
+  }
+  return a.size() < b.size();
+}
+
+}  // namespace llvm
 
 namespace pj {
 namespace types {
@@ -38,6 +72,14 @@ struct ValueType : public mlir::Type {
 template <typename T>
 T type_intern(mlir::TypeStorageAllocator& allocator, const T& W);
 
+inline Name type_intern(mlir::TypeStorageAllocator& allocator, Name n) {
+  std::vector<llvm::StringRef> pieces;
+  for (llvm::StringRef piece : n) {
+    pieces.push_back(allocator.copyInto(piece));
+  }
+  return allocator.copyInto(Name::from_vector(pieces));
+}
+
 template <typename T>
 struct StructuralTypeStorage : public ValueTypeStorage {
   using KeyTy = T;
@@ -67,45 +109,68 @@ template <typename D, typename T>
 struct StructuralTypeBase : public ValueType {
   using ValueType::ValueType;
 
-  llvm::StringRef name() const { return T::getImpl()->name; }
+  operator const D&() const { return storage()->key; }
 
-  const D* operator->() const {
-    auto* storage = static_cast<const StructuralTypeStorage<D>*>(impl);
-    return &storage->key;
+  const D* operator->() const { return &storage()->key; }
+
+ private:
+  const StructuralTypeStorage<D>* storage() const {
+    return static_cast<const StructuralTypeStorage<D>*>(impl);
   }
 };
 
 enum class TypeDomain { kHost, kWire };
 
+struct NominalTypeStorageBase : public ValueTypeStorage {
+  virtual ~NominalTypeStorageBase() {}
+  virtual Name name() const = 0;
+  virtual TypeDomain type_domain() const = 0;
+};
+
 template <typename T>
-struct NominalTypeStorage : public ValueTypeStorage {
-  using KeyTy = std::pair<TypeDomain, llvm::StringRef>;
+struct NominalTypeStorage : public NominalTypeStorageBase {
+  using KeyTy = std::tuple<TypeDomain, Name, T>;
 
-  NominalTypeStorage(const KeyTy& key) : key(key) {}
+  NominalTypeStorage(TypeDomain type_domain, Name name, const T& type_data)
+      : type_domain_(type_domain), name_(name), type_data_(type_data) {}
 
-  bool operator==(const KeyTy& k) const { return key == k; }
+  bool operator==(const KeyTy& k) const {
+    return type_domain_ == std::get<TypeDomain>(k) &&
+           name_ == std::get<Name>(k);
+  }
 
   static llvm::hash_code hashKey(const KeyTy& k) {
+    using ::llvm::hash_combine;
     using ::llvm::hash_value;
-    return hash_value(k);
+    return hash_combine(hash_value(std::get<TypeDomain>(k)),
+                        hash_value(std::get<Name>(k)));
   }
 
   static NominalTypeStorage* construct(mlir::TypeStorageAllocator& allocator,
                                        const KeyTy& key) {
-    return new (allocator.allocate<NominalTypeStorage>())
-        NominalTypeStorage({key.first, allocator.copyInto(key.second)});
+    return new (allocator.allocate<NominalTypeStorage>()) NominalTypeStorage(
+        std::get<TypeDomain>(key), type_intern(allocator, std::get<Name>(key)),
+        type_intern(allocator, std::get<T>(key)));
   }
 
   void print(llvm::raw_ostream& os) const override {
-    switch (key.first) {
+    switch (type_domain_) {
       case TypeDomain::kHost:
-        os << "host::";
+        os << "host";
         break;
       case TypeDomain::kWire:
-        os << "wire::";
+        os << "wire";
         break;
     }
-    os << key.second;
+
+    bool first = true;
+    for (auto p : name_) {
+      if (first) {
+        os << "::";
+        first = false;
+      }
+      os << p;
+    }
   }
 
   Width head_size() const override { return type_data_.head_size(); }
@@ -116,21 +181,47 @@ struct NominalTypeStorage : public ValueTypeStorage {
     return mlir::success();
   }
 
-  KeyTy key;
+  Name name() const override { return name_; }
+
+  TypeDomain type_domain() const override { return type_domain_; }
+
+  TypeDomain type_domain_;
+  Name name_;
   T type_data_;
+};
+
+// Base class for all PJ types that have a name (derived from NominalTypeBase).
+struct NominalType : public ValueType {
+  using ValueType::ValueType;
+
+  static bool classof(mlir::Type val);
+
+  Name name() const { return storage()->name(); };
+
+  TypeDomain type_domain() const { return storage()->type_domain(); };
+
+ private:
+  const NominalTypeStorageBase* storage() const {
+    return static_cast<const NominalTypeStorageBase*>(impl);
+  }
 };
 
 template <typename Base, typename D, typename T>
 struct NominalTypeBase : public Base {
+  static_assert(std::is_base_of_v<NominalType, Base>);
   using Base::Base;
 
-  llvm::StringRef name() const { return this->T::getImpl()->name; }
-  const D* operator->() const {
-    return &static_cast<const NominalTypeStorage<D>*>(this->impl)->type_data_;
-  }
+  operator const D&() const { return storage()->type_data_; }
+
+  const D* operator->() const { return &storage()->type_data_; }
 
   void setTypeData(const D& type_data) {
     (void)static_cast<T*>(this)->mutate(type_data);
+  }
+
+ private:
+  const NominalTypeStorage<D>* storage() const {
+    return static_cast<const NominalTypeStorage<D>*>(this->impl);
   }
 };
 
@@ -160,7 +251,7 @@ struct PathAttrStorage : public mlir::AttributeStorage {
             sizeof(llvm::StringRef) * key.size(), alignof(llvm::StringRef))),
         key.size());
 
-    for (intptr_t i = 0; i < key.size(); ++i) {
+    for (uintptr_t i = 0; i < key.size(); ++i) {
       list[i] = allocator.copyInto(key[i]);
     }
 

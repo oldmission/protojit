@@ -4,12 +4,12 @@
 
 #include <vector>
 
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Types.h>
+
 #include "util.hpp"
 
 namespace pj {
-
-class AType;
-class CType;
 
 struct Scoped {
   virtual ~Scoped();
@@ -17,10 +17,10 @@ struct Scoped {
 
 class Scope {
  public:
-  Scope() {}
+  Scope(mlir::MLIRContext* context) : context_(context) {}
   ~Scope() {
     for (auto* x : allocations) {
-      delete x;
+      free(x);
     }
   }
 
@@ -31,14 +31,14 @@ class Scope {
     return result;
   }
 
-  AType* AUnit();
-  CType* CUnit();
+  mlir::MLIRContext* Context() { return context_; }
+  mlir::Type Unit();
 
  private:
   std::vector<Scoped*> allocations;
 
-  AType* aunit_ = nullptr;
-  CType* cunit_ = nullptr;
+  mlir::MLIRContext* context_;
+  mlir::Type unit_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(Scope);
 };
@@ -47,3 +47,5 @@ class Scope {
 
 void* operator new(size_t size, pj::Scope& scope);
 void* operator new(size_t size, pj::Scope* scope);
+void* operator new[](size_t size, pj::Scope& scope);
+void* operator new[](size_t size, pj::Scope* scope);

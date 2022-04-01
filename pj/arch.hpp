@@ -33,6 +33,8 @@ inline Width Bits(intptr_t bits);
 inline Width Bytes(intptr_t bytes);
 
 struct Width {
+  Width() : bits_(kNone) {}
+
   intptr_t bits() const { return bits_; }
   intptr_t bytes() const {
     if (bits_ == kNone) return bits_;

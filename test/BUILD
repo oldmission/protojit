@@ -5,7 +5,7 @@ cc_library(
     name = "test_base",
     srcs = ["harness.hpp"],
     deps = [
-        "//pj:compiler",
+        "//pj:runtime",
         "@gtest//:gtest_main",
     ],
 )
