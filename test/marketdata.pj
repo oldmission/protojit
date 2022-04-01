@@ -1,0 +1,750 @@
+space pj {
+space marketdata {
+
+type Symbol = char8[24];
+
+enum PriceType {
+  UNDEF;
+  PRICE;
+  SPREAD;
+  YIELD;
+}
+
+enum Currency {
+  UNDEF;
+  AUD;
+  BRL;
+  CAD;
+  CHF;
+  CLP;
+  CNH;
+  CNY;
+  COP;
+  CZK;
+  DKK;
+  EUR;
+  GBX;
+  GBP;
+  HKD;
+  HUF;
+  IDR;
+  ILS;
+  INR;
+  JPY;
+  KRW;
+  MXN;
+  MYR;
+  NOK;
+  NZD;
+  PHP;
+  PLN;
+  RUB;
+  SEK;
+  SGD;
+  THB;
+  TRY;
+  UAH;
+  USc;
+  USD;
+  ZAX;
+  ZAR;
+  XTS;
+  XOF;
+  NIO;
+  FKP;
+  MDL;
+  BHD;
+  XBA;
+  CDF;
+  MOP;
+  PKR;
+  AED;
+  MZN;
+  PAB;
+  ETB;
+  ISK;
+  NPR;
+  UYU;
+  XPD;
+  IRR;
+  JOD;
+  BND;
+  KYD;
+  GNF;
+  ANG;
+  MVR;
+  XBB;
+  SYP;
+  GHS;
+  GYD;
+  CHW;
+  DOP;
+  COU;
+  BGN;
+  LSL;
+  GEL;
+  MWK;
+  WST;
+  PEN;
+  XFU;
+  SZL;
+  VND;
+  CUP;
+  ARS;
+  TOP;
+  BAM;
+  XBD;
+  CUC;
+  MUR;
+  BTN;
+  JMD;
+  BOB;
+  LVL;
+  XPF;
+  XCD;
+  KZT;
+  BBD;
+  LRD;
+  SDG;
+  MXV;
+  AWG;
+  KGS;
+  GIP;
+  BMD;
+  MRO;
+  DJF;
+  ILX;
+  VEF;
+  MNT;
+  XXX;
+  BDT;
+  GMD;
+  LDB;
+  LAK;
+  MKD;
+  TMT;
+  GTQ;
+  HTG;
+  ALL;
+  UZS;
+  BZD;
+  XAU;
+  KES;
+  RWF;
+  TJS;
+  TND;
+  EGP;
+  SOS;
+  BIF;
+  SBD;
+  LYD;
+  SRD;
+  XAF;
+  AOA;
+  USX;
+  CVE;
+  SSP;
+  TTD;
+  XBC;
+  XPT;
+  PGK;
+  OMR;
+  IQD;
+  HRK;
+  RON;
+  KWD;
+  LTL;
+  STD;
+  ERN;
+  MGA;
+  SLL;
+  CRC;
+  BWP;
+  BYR;
+  MAD;
+  CHE;
+  CLF;
+  NAD;
+  AFN;
+  USN;
+  AMZ;
+  TZS;
+  VUV;
+  PYG;
+  HNL;
+  XAG;
+  LKR;
+  SHP;
+  MMK;
+  XDR;
+  KHR;
+  KWX;
+  USS;
+  AZN;
+  FJD;
+  SAR;
+  ZMX;
+  NGN;
+  KMF;
+  QUR;
+  BOV;
+  DZD;
+  SCR;
+  KPW;
+  UYI;
+  YER;
+  RSD;
+  BSD;
+  UGX;
+  TWD;
+  LBP;
+  AMD;
+  ZMW;
+  QAR;
+  BTC;
+  ETH;
+  USDT;
+  BNB;
+}
+
+struct Decimal external {
+  data: int64;
+}
+
+enum Platform {
+  NATIVE;
+  CONSOLIDATED_TAPE;
+  QUINCY;
+  ACTIV;
+  BPIPE;
+  BASKETCALC;
+  OMP;
+}
+
+enum Exchange {
+  NBBO;
+  INSIDE;
+  COMPOSITE;
+  TEST;
+  NONE;
+
+  AMEX;
+  BX;
+  NSX;
+  FINRA;
+  ISE;
+  EDGEA;
+  EDGEX;
+  CHX;
+  NYSE;
+  ARCA;
+  NSDQ;
+  PSX;
+  BATSY;
+  BATS;
+  ADF;
+
+  TSX;          // Toronto: Using instead of XTSE for historical compatibility
+  TSXV;
+
+  GLOBEX;
+  GBI;
+  ICE;
+  IEX;
+
+  XASX;         // Australia
+  XHKG;         // Hong Kong
+
+  XLON;         // London Stock Exchange
+  XPAR;         // Euronext - Paris
+  XAMS;         // Euronext - Amsterdam
+  XBRU;         // Euronext - Brussels
+  XLIS;         // Euronext - Lisbon
+  XETR;         // Deutsche Borse Xetra
+  CHIX;         // CHI-X
+  TRQX;         // Turquoise
+  BATE;         // BATS Europe
+  MTAA;         // Milan - Borsa Italiano
+  ETFP;         // Milan - Electronic ETFs
+  XOSL;         // OSLO
+  XSWX;         // Swiss
+  XVTX;         // Swiss Vertex
+  XMAD;         // Madrid
+  XCSE;         // Copenhagen
+  XHEL;         // Helsinki
+  XSTO;         // Stockholm
+  FNSE;         // First North Stockholm
+  XWBO;         // Vienna
+  XJSE;         // Johannesburg
+
+  XEUR;         // EUREX
+  XEUE;         // Euronext Commodities/Futures/Options
+  XMON;         // Euronext MONEP Paris Stock Options
+  IFLL;         // ICE Futures Europe Financials
+  XMRV;         // MEFF Renta Variable
+  XDMI;         // Italian Derivatives Market (IDEM)
+
+  BGM;          // Bloomberg RFQE New York
+  BMTF;         // Bloomberg RFQE MTF London
+  BTFE;         // Bloomberg RFQE MTF Amsterdam
+
+  TRWB;         // Tradeweb US ETF
+  TREU;         // Tradeweb EU ETF
+
+  BBERG;        // Bloomberg Bpipe
+  FIXNETIX;     // Fixnetix Feed
+  XMEX;         // Mexico
+  XTAE;         // Tel Aviv
+
+  AMXO;         // NYSE AMEX
+  XBOX;         // Boston Options Exchange
+  XCBO;         // Chicago Board Options Exchange
+  EDGO;         // EDGX Options
+  GMNI;         // ISE GEMINI
+  MCRY;         // ISE MERCURY
+  XMIO;         // Miami International Securities Exchange
+  MPRL;         // MIAX PEARL
+  ARCO;         // NYSE ARCA Options
+  OPRA;         // Options Price Reporting Authority
+  XNDQ;         // NASDAQ OMX Options
+  XBXO;         // NASDAQ OMX BX Options
+  C2OX;         // CBOE C2
+  XPHO;         // NASDAQ OMX PHLX
+  BATO;         // BATS Options
+  XISX;         // ISE Options
+
+  CURRENEX;     // Currenex Feed
+
+  CFE;          // Chicago Futures Exchange (L1/Book Depth)
+
+  OTC;          // OTC Markets
+  GLOBAL_OTC;   // Arca Global OTC
+
+  XTKS;         // Tokyo
+  XSIM;         // Singapore
+  XOSE;         // Osaka
+  XHKF;         // Hong Kong Futures
+  XSFE;         // Sydney Futures
+  XKFE;         // Korean Futures
+
+  MTXX;         // MarketAxess Bonds
+  TMC;          // TMC Bonds
+  BONDPORT;     // UBS Bondport
+  VABD;         // Bondpoint
+  MTSB;         // Bondspro
+  BNDD_TWI;     // TradeWeb Insitutional Bonds
+  BNDD_TWD;     // TradeWeb Direct Bonds
+
+  QUINCY;       // Quincy prototype exchange
+  TRACE;        // FINRA TRACE data
+
+  CEP;          // exchange for ICE SEP data
+
+  MISX;         // MISX (Russian futures)
+
+  LTSE;         // Long-Term Stock Exchange
+  MEMX;         // Members Exchange
+  EPRL;         // MIAX Pearl Exchange
+}
+
+struct NanoTimestamp external {
+  ns_since_epoch: uint64;
+}
+
+type Quantity = Decimal;
+
+struct Price external {
+  value_: Decimal;
+  currency_: Currency;
+  price_type_: PriceType;
+}
+
+enum TradeIndicator {
+  REGULAR_SALE = '@';
+  CANCELED = '-';
+  CASH_ONLY = 'A';
+  BUNCHED_TRADE = 'B';
+  CASH_SALE = 'C';
+  NEXT_DAY_SETTLEMENT = 'D';
+  AUTOMATIC_EXECUTION = 'E';
+  INTERMARKET_SWEEP = 'F';
+  BUNCHED_SOLD_TRADE = 'G';
+  PRICE_VARIATION_TRADE = 'H';
+  ODD_LOT_TRADE = 'I';
+  RULE_127 = 'J';
+  RULE_155 = 'K';
+  SOLD_LAST = 'L';
+  OFFICIAL_CLOSING_PRICE = 'M';
+  NEXT_DAY = 'N';
+  OPENING_PRICE = 'O';
+  PRIOR_REFERENCE_PRICE = 'P';
+  OFFICIAL_OPENING_PRICE = 'Q';
+  SELLER = 'R';
+  SPLIT_TRADE = 'S';
+  FORM_T = 'T';
+  EXTENDED_TRADING_HOURS = 'U';
+  STOCK_OPTION_TRADE = 'V';
+  AVERAGE_PRICE_TRADE = 'W';
+  CROSS_TRADE = 'X';
+  YELLOW_FLAG_REGULAR_TRADE = 'Y';
+  SOLD_OUT_OF_SEQUENCE = 'Z';
+  STOPPED_STOCK_REGULAR_TRADE = '1';
+  STOPPED_STOCK_SOLD_LAST = '2';
+  STOPPED_STOCK_SOLD_OUT_OF_SEQUENCE = '3';
+  DERIVATIVELY_PRICED = '4';
+  REOPENING_PRINTS = '5';
+  CLOSING_PRINTS = '6';
+  PLACEHOLDER_FOR_611_EXEMPT_1 = '7';
+  PLACEHOLDER_FOR_611_EXEMPT_2 = '8';
+  CORRECTED_CONSOLIDATED_CLOSE_PRICE = '9';
+  NONE = 16;
+  NA = 32;
+  INTERNAL = 'a';
+  BASIS = 'b';
+  CONTINGENT = 'c';
+  SPECIAL_TRADING = 'd';
+  VWAP = 'e';
+  SPREAD_TRADE = 'k';
+  COMBO_TRADE = 'l';
+  EXCHANGE_FOR_PHYSICAL = 'f';
+  EXCHANGE_FOR_PHYSICAL_PREVIOUS_DAY = 'g';
+  BENCHMARK_TRADE = 'h';
+  AGGRESSOR_SELL = 'm';
+  AGGRESSOR_BUY = 'n';
+  AGGRESSOR_NONE = 'o';
+  SLOW_QUOTE = 'p';
+}
+
+enum QuoteIndicator {
+  SLOW_QUOTE_ASK = '0';
+  SUB_PENNEY_TRADING = '1';
+  EQUIPMENT_CHANGEOVER = '2';
+  MARKET_ORDER = '3';
+  NONE = '4';
+  PRICE_ONLY = '9';
+  MANUAL_ASK_AUTO_BID = 'A';
+  MANUAL_BID_AUTO_ASK = 'B';
+  CLOSING = 'C';
+  NEWS = 'D';
+  SLOW_QUOTE_BID = 'E';
+  FAST_TRADING = 'F';
+  TRADING_RANGE_INDICATION = 'G';
+  MANUAL_BID_AND_ASK = 'H';
+  ORDER_IMBALANCE = 'I';
+  RELATED_SECURITY_NEWS_DISSEMINATION = 'J';
+  RELATED_SECURITY_NEWS_PENDING = 'K';
+  CLOSED_QUOTE = 'L';
+  ADDITIONAL_INFORMATION = 'M';
+  NON_FIRM_QUOTE = 'N';
+  OPENING_QUOTE_AUTOMATED = 'O';
+  NEWS_PENDING = 'P';
+  RELATED_SECURITY_INFORMATION = 'Q';
+  AUTOMATED_QUOTE = 'R';
+  DUE_TO_RELATED_SECURITY = 'S';
+  RESUME = 'T';
+  MANUAL_BID_AND_ASK_NON_FIRM = 'U';
+  IN_VIEW_OF_COMMON = 'V';
+  SLOW_QUOTE = 'W';
+  ORDER_INFLUX = 'X';
+  ONE_SIDE_AUTOMATED = 'Y';
+  NO_OPEN_NO_RESUME = 'Z';
+  TRADING_HALT = 'a';
+  AUTHORIZED_DELAYED = 'b';
+  INHIBITED_DELAYED = 'c';
+  AUTHORIZED_HALTED = 'd';
+  INHIBITED_HALTED = 'e';
+  AUTHORIZED_PRICE_MOVEMENT_DELAYED = 'h';
+  INHIBITED_PRICE_MOVEMENT_DELAYED = 'j';
+  AUTHORIZED = 'l';
+  INHIBITED = 'm';
+  MARKET_PREOPEN = 'n';
+  ASK_CUSTOMER_INTEREST = 'o';
+  BID_CUSTOMER_INTEREST = 'p';
+  CUSTOMER_INTEREST = 'q';
+  ROTATION = 'r';
+  UNPRICED = 'u';
+  NONFIRM = 'y';
+  CUSTOMER = 'z';
+}
+
+type TradeIndicators = TradeIndicator[4];
+
+enum Side {
+  BUY = 'B';
+  SELL = 'S';
+  SELL_SHORT = 'T';
+  SELL_SHORT_EXEMPT = 'E';
+}
+
+type ReferenceId = uint64;
+
+type FirmId = char8[8];
+
+struct Heartbeat external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  session_id: int64;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+}
+
+struct Trade external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  price: Price;
+  quantity: Quantity;
+  sequence_number: uint64;
+  indicators: TradeIndicators;
+}
+
+struct Quote external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  bid_price: Price;
+  bid_quantity: Quantity;
+  bid_exchange: Exchange;
+  bid_indicator: QuoteIndicator;
+  ask_price: Price;
+  ask_quantity: Quantity;
+  ask_exchange: Exchange;
+  ask_indicator: QuoteIndicator;
+  sequence_number: uint64;
+}
+
+struct AddOrder external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  price: Price;
+  quantity: Quantity;
+  side: Side;
+  reference: ReferenceId;
+  sequence_number: uint64;
+  firm: FirmId;
+  exchange_specific_data: int64;
+}
+
+struct ExecuteOrder external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  price: Price;
+  quantity: Quantity;
+  reference: ReferenceId;
+  sequence_number: uint64;
+}
+
+struct DeleteOrder external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  reference: ReferenceId;
+  sequence_number: uint64;
+}
+
+struct ModifyOrder external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  price: Price;
+  quantity: Quantity;
+  reference: ReferenceId;
+  new_reference: ReferenceId;
+  sequence_number: uint64;
+  exchange_specific_data: int64;
+}
+
+struct TradePriceRecord external {
+  price: Price;
+  quantity: Quantity;
+  exchange: Exchange;
+  indicators: TradeIndicators;
+}
+
+struct PriceRecord external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  bid_price: Price;
+  bid_quantity: Quantity;
+  bid_exchange: Exchange;
+  bid_indicator: QuoteIndicator;
+  ask_price: Price;
+  ask_quantity: Quantity;
+  ask_exchange: Exchange;
+  ask_indicator: QuoteIndicator;
+  last: TradePriceRecord;
+}
+
+type FairChannel = char8[32];
+
+enum FairStatus {
+  OK;
+  FV_INVALID;
+  FV_CROSSED;
+  PARSE_ERROR;
+  BPIPE_TIMEOUT;
+  FIXNETIX_TIMEOUT;
+  PEER;
+  FV_DELETE;
+}
+
+struct FairQuote external {
+  symbol: Symbol;
+  channel: FairChannel;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  fair_bid: Price;
+  fair_ask: Price;
+  fair_crm: Price;
+  status: FairStatus;
+  in_bp: int8;
+  publish_omp: int8;
+  index_symbol: Symbol;
+  index_price: Price;
+}
+
+type IoiId = char8[64];
+
+enum RfqSweepType {
+  kDefault;
+  kAggressiveDisplay;
+}
+
+struct RfqFairQuote external {
+  symbol: Symbol;
+  channel: FairChannel;
+  timestamp: NanoTimestamp;
+  exchange_time : NanoTimestamp;
+  quote_id: IoiId;
+  bid_price: Price;
+  ask_price: Price;
+  bid_quantity: Quantity;
+  ask_quantity: Quantity;
+  bid_sweep_type: RfqSweepType;
+  ask_sweep_type: RfqSweepType;
+  status: FairStatus;
+}
+
+enum ImbalanceSide {
+  BUY = 'B';
+  SELL = 'S';
+  NO_IMBALANCE = 'N';
+  INSUFFICIENT = 'O';
+}
+
+enum AuctionType {
+  OPEN = 'O';
+  MARKET = 'M';
+  HALT = 'H';
+  CLOSE = 'C';
+  REGULATORY = 'R';
+  IPO = 'I';
+  EXTREME_IMBALANCE = 'P';
+}
+
+struct Imbalance external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  side: ImbalanceSide;
+  auction_type: AuctionType;
+  matched_quantity: Quantity;
+  total_imbalance_quantity: Quantity;
+  market_imbalance_quantity: Quantity;
+  reference_price: Price;
+  continuous_price: Price;
+  closing_price: Price;
+}
+
+struct Cross external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  cross_types: AuctionType;
+  price: Price;
+  quantity: Quantity;
+}
+
+struct CrossedQuantity external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  quantity: Quantity;
+  sequence_number: uint64;
+}
+
+struct BondQuote external {
+  symbol: Symbol;
+  platform: Platform;
+  exchange: Exchange;
+  timestamp: NanoTimestamp;
+  exchange_time: NanoTimestamp;
+  bid_price: Price;
+  bid_quantity: Quantity;
+  bid_exchange: Exchange;
+  bid_indicator: QuoteIndicator;
+  ask_price: Price;
+  ask_quantity: Quantity;
+  ask_exchange: Exchange;
+  ask_indicator: QuoteIndicator;
+  sequence_number: uint64;
+}
+
+variant Marketdata {
+  Heartbeat: Heartbeat = 1;
+  Trade: Trade = 2;
+  Quote: Quote = 3;
+  // BondQuote: BondQuote = 4;
+  // RequestForQuote: RequestForQuote = 5;
+  PriceRecord: PriceRecord = 6;
+  Imbalance: Imbalance = 7;
+  Cross: Cross = 8;
+  CrossedQuantity: CrossedQuantity = 9;
+  AddOrder: AddOrder = 10;
+  // AddBondOrder: AddBondOrder = 11;
+  ExecuteOrder: ExecuteOrder = 12;
+  DeleteOrder: DeleteOrder = 13;
+  // DeleteBondOrder: DeleteBondOrder = 14;
+  ModifyOrder: ModifyOrder = 15;
+  // modify_bond_order: ModifyBondOrder = 16;
+  // level_quote: LevelQuote = 17;
+  // clear_book: ClearBook = 18;
+  // clear_all_books: ClearAllBooks = 19;
+  // fair_quote: FairQuote = 20;
+  // rfq_fair_quote: RfqFairQuote = 21;
+  // replay_request : ReplayRequest = 22;
+  // replay_complete: ReplayComplete = 23;
+  // security_status: SecurityStatus = 24;
+  // subscription_request: SubscriptionRequest = 25;
+  // trace_trade_report: TraceTradeReport = 26;
+  // trace_trade_cancel: TraceTradeCancel = 27;
+  // trace_trade_correction: TraceTradeCorrection = 28;
+  // bond_price: BondPrice = 29;
+}
+
+}  // space marketdata
+}  // space pj
