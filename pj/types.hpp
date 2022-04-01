@@ -11,9 +11,13 @@ using llvm::ArrayRef;
 using llvm::StringRef;
 
 struct Int {
+  /*** Parsed ***/
   Width width;
+
+  /*** Generated ***/
   Width alignment;
 
+  /*** Parsed ***/
   enum Sign {
     kSigned,    // implies sign-extension is used for conversion
     kUnsigned,  // implies zero-extension is used for conversion
@@ -70,8 +74,11 @@ struct IntType
 };
 
 struct StructField {
+  /*** Parsed ***/
   mlir::Type type;
   StringRef name;
+
+  /*** Generated ***/
   Width offset;
 
   bool operator==(const StructField& other) const {
@@ -82,8 +89,11 @@ struct StructField {
 };
 
 struct Struct {
+  /*** Parsed ***/
   // Invariant: fields are listed in alphabetical order.
   ArrayRef<StructField> fields = {};
+
+  /*** Generated ***/
   Width size = Width::None();
   Width alignment = Width::None();
 
@@ -97,32 +107,32 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
           sizeof(StructField) * key.fields.size(), alignof(StructField))),
       key.fields.size());
 
-  for (intptr_t i = 0; i < key.fields.size(); ++i) {
+  for (uintptr_t i = 0; i < key.fields.size(); ++i) {
     fields[i] = StructField{
         .type = key.fields[i].type,
         .name = allocator.copyInto(key.fields[i].name),
         .offset = key.fields[i].offset,
     };
   }
-  std::sort(fields.begin(), fields.end());
 
   return Struct{.fields = fields, .size = key.size, .alignment = key.alignment};
 }
 
 struct StructType
     : public mlir::Type::TypeBase<
-          StructType, NominalTypeBase<ValueType, Struct, StructType>,
+          StructType, NominalTypeBase<NominalType, Struct, StructType>,
           NominalTypeStorage<Struct>> {
   using Base::Base;
   using Base::get;
 
-  friend struct NominalTypeBase<ValueType, Struct, StructType>;
+  friend struct NominalTypeBase<NominalType, Struct, StructType>;
 };
 
 struct Term {
+  /*** Parsed ***/
   StringRef name;
   mlir::Type type;
-  intptr_t tag;  // Must be >0. 0 is reserved for UNDEF.
+  uint64_t tag;  // Must be >0. 0 is reserved for UNDEF.
 
   bool operator==(const Term& other) const {
     return name == other.name && type == other.type && tag == other.tag;
@@ -137,8 +147,10 @@ struct Term {
 // in memory, within a region of static size. This entails that the static size
 // is at least as large as the size of the largest term.
 struct InlineVariant {
+  /*** Parsed ***/
   ArrayRef<Term> terms;
 
+  /*** Generated ***/
   // Invariant: term and tag should not overlap.
   Width term_offset = Width::None();
   Width term_size = Width::None();
@@ -171,38 +183,38 @@ struct OutlineVariant {
 };
 
 template <typename V>
-inline V intern_variant(mlir::TypeStorageAllocator& allocator, const V& key) {
+inline V intern_variant(mlir::TypeStorageAllocator& allocator,
+                        const V& type_data) {
   auto terms = llvm::makeMutableArrayRef<Term>(
-      reinterpret_cast<Term*>(
-          allocator.allocate(sizeof(Term) * key.terms.size(), alignof(Term))),
-      key.terms.size());
+      reinterpret_cast<Term*>(allocator.allocate(
+          sizeof(Term) * type_data.terms.size(), alignof(Term))),
+      type_data.terms.size());
 
-  for (intptr_t i = 0; i < key.terms.size(); ++i) {
+  for (uintptr_t i = 0; i < type_data.terms.size(); ++i) {
     terms[i] = Term{
-        .name = allocator.copyInto(key.terms[i].name),
-        .type = key.terms[i].type,
-        .tag = key.terms[i].tag,
+        .name = allocator.copyInto(type_data.terms[i].name),
+        .type = type_data.terms[i].type,
+        .tag = type_data.terms[i].tag,
     };
   }
-  std::sort(terms.begin(), terms.end());
 
-  V result = key;
+  V result = type_data;
   result.terms = terms;
   return result;
 }
 
 inline InlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
-                                 const InlineVariant& key) {
-  return intern_variant(allocator, key);
+                                 const InlineVariant& type_data) {
+  return intern_variant(allocator, type_data);
 }
 
 inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
-                                  const OutlineVariant& key) {
-  return intern_variant(allocator, key);
+                                  const OutlineVariant& type_data) {
+  return intern_variant(allocator, type_data);
 }
 
-struct VariantType : public ValueType {
-  using ValueType::ValueType;
+struct VariantType : public NominalType {
+  using NominalType::NominalType;
 
   static constexpr intptr_t kUndefTag = 0;
 
@@ -293,9 +305,11 @@ inline bool VariantType::classof(mlir::Type val) {
 
 // Arrays are fixed-length sequences of values.
 struct Array {
+  /*** Parsed ***/
   mlir::Type elem;
   intptr_t length;
 
+  /*** Generated ***/
   // elem_size may be larger than the size of the inner element type
   // in the event that extra padding is needed for alignment reasons.
   Width elem_size;
@@ -379,6 +393,7 @@ struct ArrayType
 // If min_length == 0, only representation B is possible.
 // If min_length == max_length, only representation A is possible.
 struct Vector {
+  /*** Parsed ***/
   mlir::Type elem;
 
   // Never None. 0 implies no inline storage.
@@ -387,6 +402,7 @@ struct Vector {
   // May be None. May not be 0.
   intptr_t max_length;
 
+  /*** Generated ***/
   // Partial payload length -- number of elements stored inline, when the total
   // number of elements exceeds min_length. Never None, also never guaranteed to
   // be greater than 0.
@@ -457,6 +473,11 @@ inline ::llvm::hash_code hash_value(const Vector& V) {
       hash_value(V.partial_payload_offset), hash_value(V.partial_payload_size),
       hash_value(V.size), hash_value(V.alignment),
       hash_value(V.outlined_payload_alignment));
+}
+
+inline Vector type_intern(mlir::TypeStorageAllocator& allocator,
+                          const Vector& V) {
+  return V;
 }
 
 struct VectorType

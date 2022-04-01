@@ -120,11 +120,22 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "runtime",
+    srcs = ["runtime.cpp"],
+    hdrs = ["runtime.h"],
+    linkopts = ["-lstdc++"],
+    deps = [
+        ":compiler",
+    ],
+)
+
 cc_shared_library(
     name = "protojit",
-    roots = [":compiler"],
+    roots = [":runtime"],
     # Yes... all transitive dependencies have to be listed here :(
     static_deps = [
+        ":compiler",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
         "@llvm-project//llvm:AggressiveInstCombine",

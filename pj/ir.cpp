@@ -122,7 +122,7 @@ static void print(mlir::OpAsmPrinter& p, IterOp op) {
   p << "pj.iter[" << op.start() << " -> " << op.end() << "]";
 
   p << "(";
-  for (intptr_t i = 0; i < op.induction_variables().size(); ++i) {
+  for (uintptr_t i = 0; i < op.induction_variables().size(); ++i) {
     if (i != 0) p << ", ";
     p << op.induction_variables()[i];
   }

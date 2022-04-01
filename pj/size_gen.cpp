@@ -91,7 +91,8 @@ mlir::Value CVariantType::GenSize(Scope* S, mlir::MLIRContext* C,
     auto* undef = new Block();
     body->push_back(undef);
     _.setInsertionPointToStart(undef);
-    auto sz = GenTermSize(C, S, "undef", {}, this, S->CUnit(), cto, _, source);
+    auto sz = GenTermSize(C, S, "undef", {}, this, /*S->CUnit()*/ nullptr, cto,
+                          _, source);
     _.create<RetOp>(L, sz);
     successors.push_back(undef);
     tags.push_back(kUndefTag);
