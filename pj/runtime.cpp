@@ -1,6 +1,7 @@
 #include "runtime.h"
 #include "arch.hpp"
-#include "scope.hpp"
+#include "context.hpp"
+#include "defer.hpp"
 #include "types.hpp"
 
 #include <cstring>
@@ -31,43 +32,34 @@ pj::types::Int::Sign ConvertSign(PJSign sign) {
   }
 }
 
-llvm::ArrayRef<llvm::StringRef> ConvertStringArray(pj::Scope* S, uintptr_t size,
-                                                   const char* strings[]) {
-  llvm::StringRef* storage = reinterpret_cast<llvm::StringRef*>(
-      S->Allocate(size * sizeof(llvm::StringRef)));
-
-  for (uintptr_t i = 0; i < size; ++i) {
-    uintptr_t len = std::strlen(strings[i]);
-    char* buffer = reinterpret_cast<char*>(S->Allocate(len * sizeof(char)));
-    std::memcpy(buffer, strings[i], len);
-    storage[i] = llvm::StringRef{buffer, len};
-  }
-
-  return llvm::ArrayRef<llvm::StringRef>{storage, size};
-}
-
 const PJUnitType* PJCreateUnitType(PJContext* c) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
-  return reinterpret_cast<const PJUnitType*>(S->Unit().getAsOpaquePointer());
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
+
+  auto unit_type = pj::types::StructType::get(
+      &ctx->ctx_, pj::types::TypeDomain::kHost, "<unit>");
+  unit_type.setTypeData(
+      {.fields = llvm::ArrayRef<pj::types::StructField>{nullptr, 0ul},
+       .size = pj::Bytes(0),
+       .alignment = pj::Bytes(0)});
+  return reinterpret_cast<const PJUnitType*>(unit_type.getAsOpaquePointer());
 }
 
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign) {
   auto int_type =
-      pj::types::IntType::get(reinterpret_cast<pj::Scope*>(c)->Context(),
+      pj::types::IntType::get(&reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
                               pj::types::Int{.width = pj::Bits(width),
                                              .alignment = pj::Bits(alignment),
                                              .sign = ConvertSign(sign)});
   return reinterpret_cast<const PJIntType*>(int_type.getAsOpaquePointer());
 }
 
-const PJStructField* PJCreateStructField(PJContext* c, const char* name,
-                                         const void* type, Bits offset) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
-  const auto* field = new (S)
-      pj::types::StructField{.type = mlir::Type::getFromOpaquePointer(type),
-                             .name = name,
-                             .offset = pj::Bits(offset)};
+const PJStructField* PJCreateStructField(const char* name, const void* type,
+                                         Bits offset) {
+  const auto* field =
+      new pj::types::StructField{.type = mlir::Type::getFromOpaquePointer(type),
+                                 .name = name,
+                                 .offset = pj::Bits(offset)};
   return reinterpret_cast<const PJStructField*>(field);
 }
 
@@ -77,31 +69,27 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        uintptr_t num_fields,
                                        const PJStructField* fields[], Bits size,
                                        Bits alignment) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  std::vector<pj::types::StructField> storage;
-  for (uintptr_t i = 0; i < num_fields; ++i) {
-    storage.push_back(
-        *reinterpret_cast<const pj::types::StructField*>(fields[i]));
-  }
-
+  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::types::ArrayRefConverter<pj::types::StructField> fields_converter{
+      fields, num_fields, [](const PJStructField* f) {
+        auto casted = reinterpret_cast<const pj::types::StructField*>(f);
+        DEFER(delete casted);
+        return *casted;
+      }};
   auto struct_type = pj::types::StructType::get(
-      S->Context(), ConvertTypeDomain(type_domain),
-      ConvertStringArray(S, name_size, name),
-      pj::types::Struct{
-          .fields =
-              llvm::ArrayRef<pj::types::StructField>{&storage[0], num_fields},
-          .size = pj::Bits(size),
-          .alignment = pj::Bits(alignment)});
+      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+  struct_type.setTypeData({.fields = fields_converter.get(),
+                           .size = pj::Bits(size),
+                           .alignment = pj::Bits(alignment)});
 
   return reinterpret_cast<const PJStructType*>(
       struct_type.getAsOpaquePointer());
 }
 
-const PJTerm* PJCreateTerm(PJContext* c, const char* name, const void* type,
-                           uint64_t tag) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
-  const auto* term = new (S) pj::types::Term{
+const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag) {
+  const auto* term = new pj::types::Term{
       .name = name, .type = mlir::Type::getFromOpaquePointer(type), .tag = tag};
   return reinterpret_cast<const PJTerm*>(term);
 }
@@ -111,24 +99,24 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_width,
     Bits size, Bits alignment) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  std::vector<pj::types::Term> storage;
-  for (uintptr_t i = 0; i < num_terms; ++i) {
-    storage.push_back(*reinterpret_cast<const pj::types::Term*>(terms[i]));
-  }
-
+  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::types::ArrayRefConverter<pj::types::Term> terms_converter{
+      terms, num_terms, [](const PJTerm* t) {
+        auto casted = reinterpret_cast<const pj::types::Term*>(t);
+        DEFER(delete casted);
+        return *casted;
+      }};
   auto inline_variant_type = pj::types::InlineVariantType::get(
-      S->Context(), ConvertTypeDomain(type_domain),
-      ConvertStringArray(S, name_size, name),
-      pj::types::InlineVariant{
-          .terms = llvm::ArrayRef<pj::types::Term>{&storage[0], num_terms},
-          .term_offset = pj::Bits(term_offset),
-          .term_size = pj::Bits(term_size),
-          .tag_offset = pj::Bits(tag_offset),
-          .tag_width = pj::Bits(tag_width),
-          .size = pj::Bits(size),
-          .alignment = pj::Bits(alignment)});
+      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+  inline_variant_type.setTypeData({.terms = terms_converter.get(),
+                                   .term_offset = pj::Bits(term_offset),
+                                   .term_size = pj::Bits(term_size),
+                                   .tag_offset = pj::Bits(tag_offset),
+                                   .tag_width = pj::Bits(tag_width),
+                                   .size = pj::Bits(size),
+                                   .alignment = pj::Bits(alignment)});
 
   return reinterpret_cast<const PJInlineVariantType*>(
       inline_variant_type.getAsOpaquePointer());
@@ -138,21 +126,21 @@ const PJOutlineVariantType* PJCreateOutlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
     PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits tag_width, Bits tag_alignment, Bits term_offset) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  std::vector<pj::types::Term> storage;
-  for (uintptr_t i = 0; i < num_terms; ++i) {
-    storage.push_back(*reinterpret_cast<const pj::types::Term*>(terms[i]));
-  }
-
+  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::types::ArrayRefConverter<pj::types::Term> terms_converter{
+      terms, num_terms, [](const PJTerm* t) {
+        auto casted = reinterpret_cast<const pj::types::Term*>(t);
+        DEFER(delete casted);
+        return *casted;
+      }};
   auto outline_variant_type = pj::types::OutlineVariantType::get(
-      S->Context(), ConvertTypeDomain(type_domain),
-      ConvertStringArray(S, name_size, name),
-      pj::types::OutlineVariant{
-          .terms = llvm::ArrayRef<pj::types::Term>{&storage[0], num_terms},
-          .tag_width = pj::Bits(tag_width),
-          .tag_alignment = pj::Bits(tag_alignment),
-          .term_offset = pj::Bits(term_offset)});
+      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+  outline_variant_type.setTypeData({.terms = terms_converter.get(),
+                                    .tag_width = pj::Bits(tag_width),
+                                    .tag_alignment = pj::Bits(tag_alignment),
+                                    .term_offset = pj::Bits(term_offset)});
 
   return reinterpret_cast<const PJOutlineVariantType*>(
       outline_variant_type.getAsOpaquePointer());
@@ -162,7 +150,7 @@ const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      intptr_t length, Bits elem_size,
                                      Bits alignment) {
   auto array_type = pj::types::ArrayType::get(
-      reinterpret_cast<pj::Scope*>(c)->Context(),
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
       pj::types::Array{.elem = mlir::Type::getFromOpaquePointer(type),
                        .length = length,
                        .elem_size = pj::Bits(elem_size),
@@ -178,7 +166,7 @@ const PJVectorType* PJCreateVectorType(
     Bits partial_payload_size, Bits size, Bits alignment,
     Bits outlined_payload_alignment) {
   auto vector_type = pj::types::VectorType::get(
-      reinterpret_cast<pj::Scope*>(c)->Context(),
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
       pj::types::Vector{
           .elem = mlir::Type::getFromOpaquePointer(type),
           .min_length = min_length,
@@ -207,7 +195,7 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
                                  Bits version_offset, Bits size,
                                  Bits alignment) {
   auto any_type = pj::types::AnyType::get(
-      reinterpret_cast<pj::Scope*>(c)->Context(),
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
       pj::types::Any{.data_ref_width = pj::Bits(data_ref_width),
                      .data_ref_offset = pj::Bits(data_ref_offset),
                      .type_ref_width = pj::Bits(type_ref_width),
@@ -223,28 +211,28 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
 
 const PJProtocolType* PJCreateProtocolType(PJContext* c,
                                            const void* head_type) {
-  pj::Scope* S = reinterpret_cast<pj::Scope*>(c);
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
   pj::types::ValueType head = mlir::Type::getFromOpaquePointer(head_type)
                                   .dyn_cast<pj::types::ValueType>();
   if (!head) {
     return nullptr;
   }
   auto protocol_type = pj::types::ProtocolType::get(
-      S->Context(), pj::types::Protocol{.head = head});
+      &ctx->ctx_, pj::types::Protocol{.head = head});
   return reinterpret_cast<const PJProtocolType*>(
       protocol_type.getAsOpaquePointer());
 }
 
 const PJRawBufferType* PJCreateRawBufferType(PJContext* c) {
-  auto buffer_type =
-      pj::types::RawBufferType::get(reinterpret_cast<pj::Scope*>(c)->Context());
+  auto buffer_type = pj::types::RawBufferType::get(
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);
   return reinterpret_cast<const PJRawBufferType*>(
       buffer_type.getAsOpaquePointer());
 }
 
 const PJBoundedBufferType* PJCreateBoundedBufferType(PJContext* c) {
   auto buffer_type = pj::types::BoundedBufferType::get(
-      reinterpret_cast<pj::Scope*>(c)->Context());
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);
   return reinterpret_cast<const PJBoundedBufferType*>(
       buffer_type.getAsOpaquePointer());
 }

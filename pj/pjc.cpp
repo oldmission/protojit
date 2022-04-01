@@ -23,11 +23,8 @@ int main(int argc, char** argv) {
   cl::HideUnrelatedOptions(ProtogenOptionsCategory);
   cl::ParseCommandLineOptions(argc, argv);
 
-  mlir::MLIRContext ctx;
-  ctx.getOrLoadDialect<pj::ir::ProtoJitDialect>();
-
-  pj::Scope scope{&ctx};
-  pj::ParsingScope parse_scope{.scope = scope};
+  pj::ProtoJitContext ctx;
+  pj::ParsingScope parse_scope{.ctx = ctx};
 
   const auto path = std::filesystem::path(InputFile.getValue());
 
@@ -45,6 +42,6 @@ int main(int argc, char** argv) {
   auto& parsed_file = parse_scope.parsed_files.at(path);
 
   // TODO: support cross-compilation
-  pj::GenerateHeader(&scope, pj::ArchDetails::Host(), parsed_file, std::cout);
+  pj::GenerateHeader(pj::ArchDetails::Host(), parsed_file, std::cout);
   return 0;
 }

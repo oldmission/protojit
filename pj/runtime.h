@@ -37,8 +37,8 @@ const PJUnitType* PJCreateUnitType(PJContext* c);
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
 
-const PJStructField* PJCreateStructField(PJContext* c, const char* name,
-                                         const void* type, Bits offset);
+const PJStructField* PJCreateStructField(const char* name, const void* type,
+                                         Bits offset);
 
 const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        const char* name[],
@@ -47,8 +47,7 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        const PJStructField* fields[], Bits size,
                                        Bits alignment);
 
-const PJTerm* PJCreateTerm(PJContext* c, const char* name, const void* type,
-                           uint64_t tag);
+const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 
 const PJInlineVariantType* PJCreateInlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
