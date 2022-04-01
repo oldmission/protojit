@@ -1,0 +1,3 @@
+#!/bin/bash
+EXPORT_PATH=$(env -i bash -c 'echo "$PATH"'):$(dirname $(which python3))
+exec env -i PATH=$EXPORT_PATH $(which bazel) $@

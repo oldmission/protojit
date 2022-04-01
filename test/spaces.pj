@@ -1,0 +1,23 @@
+space test {
+struct X {}
+
+struct Y {
+  x: X;
+}
+
+struct Z {
+  x: test.X;
+}
+
+space internal {
+  struct W {}
+}
+
+struct V {
+  w: internal.W;
+}
+}
+
+struct U {
+  w: test.internal.W;
+}

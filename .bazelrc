@@ -1,0 +1,39 @@
+build --repo_env=CC=/tmp/llvm/bin/clang
+build --action_env=BAZEL_CXXOPTS="-std=c++17:-fno-rtti"
+
+build:test --repo_env=ASAN_OPTIONS=detect_leaks=1
+build:test --copt -fsanitize=address
+build:test --copt -fsanitize=undefined
+build:test --copt -fno-omit-frame-pointer
+build:test --copt -fno-sanitize=vptr,function
+build:test --copt -Werror
+build:test --copt -O3
+build:test --linkopt -fuse-ld=lld
+build:test --linkopt -fsanitize=address
+build:test --linkopt -fsanitize=undefined
+build:test -c opt
+build:test --experimental_cc_shared_library
+
+build:debug --repo_env=ASAN_OPTIONS=detect_leaks=1
+build:debug -c dbg
+build:debug --strip=never
+build:debug --copt -fsanitize=address
+build:debug --copt -fsanitize=undefined
+build:debug --copt -O0
+build:debug --copt -g3
+build:debug --copt -fno-omit-frame-pointer
+build:debug --copt -fno-sanitize=vptr,function
+build:debug --linkopt -fuse-ld=lld
+build:debug --linkopt -fsanitize=address
+build:debug --linkopt -fsanitize=undefined
+build:debug --linkopt -Wl,--gdb-index
+build:debug --experimental_cc_shared_library
+
+build:release --copt -Werror
+build:release --copt -flto
+build:release --copt -O3
+build:release --copt -DNDEBUG
+build:release --linkopt -fuse-ld=lld
+build:release --linkopt -flto
+build:release -c opt
+build:release --experimental_cc_shared_library
