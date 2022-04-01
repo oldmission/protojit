@@ -9,7 +9,7 @@ struct TmpIR2Test : public ::testing::Test {
   ProtoJitContext ctx_;
 };
 
-#if 1
+#if 0
 TEST_F(TmpIR2Test, BasicStructTest) {
   auto int_m_ty =
       types::IntType::get(&ctx_.ctx_, types::Int{
@@ -89,8 +89,7 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
   });
 
   auto var_m_ty = types::InlineVariantType::get(
-      &ctx_.ctx_, types::TypeDomain::kHost, types::Name{"thing"},
-      types::InlineVariant{});
+      &ctx_.ctx_, types::TypeDomain::kHost, types::Name{"thing"});
   var_m_ty.setTypeData(types::InlineVariant{
       .terms = terms,
       .term_offset = Bytes(0),
@@ -109,8 +108,7 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
   });
 
   auto var_p_ty = types::OutlineVariantType::get(
-      &ctx_.ctx_, types::TypeDomain::kWire, types::Name{"thing"},
-      types::OutlineVariant{});
+      &ctx_.ctx_, types::TypeDomain::kWire, types::Name{"thing"});
 
   var_p_ty.setTypeData(types::OutlineVariant{
       .terms = terms,
@@ -123,7 +121,11 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
                                                         .head = var_p_ty,
                                                     });
 
-  ctx_.addEncodeFunction("encode", var_m_ty, {}, proto);
+  ctx_.addDecodeFunction("decode", proto, var_m_ty,
+                         {
+                             {"undef", reinterpret_cast<void*>(0x2345)},
+                             {"term", reinterpret_cast<void*>(0x1234)},
+                         });
 
   ctx_.compile(/*new_pipeline=*/true);
 

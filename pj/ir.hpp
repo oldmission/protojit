@@ -198,5 +198,7 @@ inline mlir::Value GetIntegerConstant(const mlir::Location& L,
   return _.create<ConstantOp>(L, type, attr);
 }
 
+void printAttrForFunctionName(llvm::raw_ostream& os, mlir::Attribute attr);
+
 }  // namespace ir
 }  // namespace pj

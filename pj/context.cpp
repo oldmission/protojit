@@ -24,11 +24,8 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/Passes.h>
 
-#include "generate_ir.hpp"
-#include "inline_regions.hpp"
 #include "ir.hpp"
-#include "llvm_gen.hpp"
-#include "llvm_gen2.hpp"
+#include "passes.hpp"
 #include "portal.hpp"
 #include "portal_impl.hpp"
 
@@ -59,14 +56,14 @@ void ProtoJitContext::addDecodeFunction(
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
 
-  llvm::SmallVector<mlir::Attribute> handlers_;
-  for (const auto& H : handlers) {
-    handlers_.push_back(types::DispatchHandlerAttr::get(
-        &ctx_, types::PathAttr::fromString(&ctx_, H.first), H.second));
+  llvm::SmallVector<mlir::Attribute> handler_attrs;
+  for (const auto& hand : handlers) {
+    handler_attrs.push_back(types::DispatchHandlerAttr::get(
+        &ctx_, types::PathAttr::fromString(&ctx_, hand.first), hand.second));
   }
 
   module_->push_back(builder_.create<DecodeFunctionOp>(
-      loc, name, src, dst, mlir::ArrayAttr::get(&ctx_, handlers_)));
+      loc, name, src, dst, mlir::ArrayAttr::get(&ctx_, handler_attrs)));
 }
 
 void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
@@ -85,25 +82,26 @@ void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
 
 static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
   // Setup the machine properties from the current architecture.
-  auto targetTriple = llvm::sys::getDefaultTargetTriple();
-  std::string errorMessage;
-  auto target = llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
+  auto target_triple = llvm::sys::getDefaultTargetTriple();
+  std::string error_message;
+  auto* target =
+      llvm::TargetRegistry::lookupTarget(target_triple, error_message);
   if (!target) {
-    throw InternalError("Cannot find LLVM target!");
+    throw InternalError("Cannot find LLVM target (" + error_message + ")!");
   }
 
   std::string cpu(llvm::sys::getHostCPUName());
   llvm::SubtargetFeatures features;
-  llvm::StringMap<bool> hostFeatures;
+  llvm::StringMap<bool> host_features;
 
-  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
-    for (auto& f : hostFeatures) {
+  if (llvm::sys::getHostCPUFeatures(host_features)) {
+    for (auto& f : host_features) {
       features.AddFeature(f.first(), f.second);
     }
   }
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      targetTriple, cpu, features.getString(), {}, {}));
+      target_triple, cpu, features.getString(), {}, {}));
   if (!machine) {
     throw InternalError("Cannot create LLVM target machinue!");
   }
@@ -119,7 +117,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
       module_->dump());
 
   mlir::PassManager pj_lower(&ctx_);
-  pj_lower.addPass(pj::createGeneratePass());
+  pj_lower.addPass(pj::createIRGenPass());
 
   if (mlir::failed(pj_lower.run(*module_))) {
     throw InternalError("Error generating PJIR.");
@@ -132,7 +130,6 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
       module_->dump());
 
   mlir::PassManager pjpm(&ctx_);
-  pjpm.addPass(pj::createGeneratePass());
   pjpm.addPass(pj::createInlineRegionsPass());
   pjpm.addPass(mlir::createCanonicalizerPass());
 
@@ -153,7 +150,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
   if (new_pipeline) {
     pm.addPass(pj::createLLVMGenPass(machine.get()));
   } else {
-    pm.addPass(pj::ir::createLowerToLLVMPass());
+    pm.addPass(createLowerToLLVMPass());
   }
   pm.addPass(mlir::createCanonicalizerPass());
 
@@ -167,20 +164,20 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
                       "==================================================\n";
       module_->dump());
 
-  std::unique_ptr<llvm::LLVMContext> llvmContext(new llvm::LLVMContext());
+  std::unique_ptr<llvm::LLVMContext> llvm_context(new llvm::LLVMContext());
   mlir::registerLLVMDialectTranslation(*module_->getContext());
-  auto llvmModule = mlir::translateModuleToLLVMIR(*module_, *llvmContext);
-  if (!llvmModule) {
+  auto llvm_module = mlir::translateModuleToLLVMIR(*module_, *llvm_context);
+  if (!llvm_module) {
     throw InternalError("Failed to emit LLVM IR");
   }
 
-  mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
+  mlir::ExecutionEngine::setupTargetTriple(llvm_module.get());
 
-  auto optPipeline = mlir::makeOptimizingTransformer(
+  auto opt_pipeline = mlir::makeOptimizingTransformer(
       /*optLevel=*/3, /*sizeLevel=*/0,
       /*targetMachine=*/nullptr);
 
-  if (auto err = optPipeline(llvmModule.get())) {
+  if (auto err = opt_pipeline(llvm_module.get())) {
     std::string msg;
     llvm::raw_string_ostream str(msg);
     str << "Failed to optimize LLVM IR " << err << "\n";
@@ -191,7 +188,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
       llvm::errs() << "==================================================\n"
                       "After LLVM optimization:\n"
                       "==================================================\n";
-      llvm::errs() << *llvmModule << "\n");
+      llvm::errs() << *llvm_module << "\n");
 
   llvm::SmallVector<char, 0x1000> out;
 
@@ -202,7 +199,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
     llvm::legacy::PassManager asm_pass;
     machine->addPassesToEmitFile(asm_pass, asm_dest, nullptr,
                                  llvm::CodeGenFileType::CGFT_AssemblyFile);
-    asm_pass.run(*llvmModule);
+    asm_pass.run(*llvm_module);
 
     llvm::errs() << "==================================================\n"
                     "Assembly:\n"
@@ -225,7 +222,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
     llvm::legacy::PassManager asm_pass;
     machine->addPassesToEmitFile(asm_pass, dest, nullptr,
                                  llvm::CodeGenFileType::CGFT_ObjectFile);
-    asm_pass.run(*llvmModule);
+    asm_pass.run(*llvm_module);
   });
 
   llvm::raw_svector_ostream dest(out);
@@ -233,26 +230,23 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
   llvm::legacy::PassManager pass;
   machine->addPassesToEmitFile(pass, dest, nullptr,
                                llvm::CodeGenFileType::CGFT_ObjectFile);
-  pass.run(*llvmModule);
+  pass.run(*llvm_module);
 
   auto jit = llvm::orc::LLJITBuilder().create();
 
-  if (!jit) {
-    // SAMIR_TODO
-    abort();
-  }
+  if (!jit) abort();
 
-  if (auto Err = jit.get()->addIRModule(llvm::orc::ThreadSafeModule(
-          std::move(llvmModule), std::move(llvmContext)))) {
+  if (auto err = jit.get()->addIRModule(llvm::orc::ThreadSafeModule(
+          std::move(llvm_module), std::move(llvm_context)))) {
     abort();
   }
 
   auto buffer = std::make_unique<llvm::SmallVectorMemoryBuffer>(std::move(out));
 
-  auto LoadedObject =
+  auto loaded_object =
       llvm::object::ObjectFile::createObjectFile(buffer->getMemBufferRef());
 
-  if (!LoadedObject) {
+  if (!loaded_object) {
     throw InternalError("Failed to generate machine code.");
   }
 

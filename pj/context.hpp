@@ -6,6 +6,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 
+#include "passes.hpp"
 #include "portal.hpp"
 #include "types.hpp"
 #include "util.hpp"

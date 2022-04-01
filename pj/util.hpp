@@ -9,9 +9,15 @@ namespace pj {
   TypeName(const TypeName&);               \
   void operator=(const TypeName&)
 
-#define UNREACHABLE()              \
-  assert(false && "Unreachable!"); \
+#define UNREACHABLE()                           \
+  assert(false && "Unreachable!"); /* NOLINT */ \
   throw ::pj::InternalError("Unreachable!");
+
+#ifndef NDEBUG
+#define ASSERT(X) assert(X)
+#else
+#define ASSERT(X) if (false) { (void)(X); }
+#endif
 
 template <typename T>
 inline T DivideUp(T x, T multiple);
