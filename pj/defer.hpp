@@ -28,10 +28,11 @@ struct Defer {
 // We must put it on the stack to specify its storage and use
 // std::reference_wrapper to prevent it from being copied into the heap
 // by the std::function constructor.
-#define DEFER_COUNTER(CODE, CTR, STRUCT_NAME)                                 \
-  auto deferred_capture_##CTR = [&]() { CODE; };                              \
-  Defer STRUCT_NAME{std::reference_wrapper<decltype(deferred_capture_##CTR)>( \
-      deferred_capture_##CTR)};
+#define DEFER_COUNTER(CODE, CTR, STRUCT_NAME)                   \
+  auto deferred_capture_##CTR = [&]() { CODE; };                \
+  pj::Defer STRUCT_NAME{                                        \
+      std::reference_wrapper<decltype(deferred_capture_##CTR)>( \
+          deferred_capture_##CTR)};
 
 // We need to pass the arguments to DEFER_COUNTER (specifically CTR) through
 // an extra "expander" macro to ensure that the counter is evaluated *before*

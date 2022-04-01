@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "arch.hpp"
+#include "context.hpp"
 #include "exceptions.hpp"
 #include "portal.hpp"
 #include "protocol.hpp"
-#include "scope.hpp"
 #include "tag.hpp"
 #include "target.hpp"
 
@@ -27,16 +27,12 @@ struct NegotiateOptions {
   bool allow_truncation = true;
 };
 
-const Protocol* PlanProtocol(Scope* scope, const ProtoSpec* spec);
+const Protocol* PlanProtocol(ProtoJitContext* ctx, const ProtoSpec* spec);
 
-const Protocol* Negotiate(  //
-    Scope* scope, const ProtoSpec* recv, const ProtoSpec* send,
-    NegotiateOptions opts);
+const Protocol* Negotiate(ProtoJitContext* scope, const ProtoSpec* recv,
+                          const ProtoSpec* send, NegotiateOptions opts);
 
-void Validate(const Protocol* proto, const ProtoSpec* spec, Side side,
-              NegotiateOptions opts);
-
-std::unique_ptr<Portal> Compile(Scope* scope, const PortalSpec* spec);
+std::unique_ptr<Portal> Compile(ProtoJitContext* ctx, const PortalSpec* spec);
 
 template <typename T, size_t N, size_t M>
 struct ArrayView {
