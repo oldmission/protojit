@@ -8,7 +8,10 @@
 #include <mlir/IR/TypeSupport.h>
 #include <mlir/IR/Types.h>
 
+#include <functional>
+
 #include "arch.hpp"
+#include "util.hpp"
 
 namespace pj {
 namespace types {
@@ -18,10 +21,28 @@ struct Name : public llvm::ArrayRef<llvm::StringRef> {
   using llvm::ArrayRef<llvm::StringRef>::ArrayRef;
 
   Name(llvm::ArrayRef<llvm::StringRef> o) : ArrayRef(o) {}
+};
 
-  static Name from_vector(const std::vector<llvm::StringRef>& v) {
-    return Name{&v[0], v.size()};
+template <typename T>
+struct ArrayRefConverter {
+  template <typename Array, typename Convert = pj::Identity>
+  ArrayRefConverter(const Array& arr, uintptr_t size, Convert&& convert = {}) {
+    storage.reserve(size);
+    for (uintptr_t i = 0; i < size; ++i) {
+      storage.push_back(convert(arr[i]));
+    }
   }
+
+  template <typename Array, typename Convert = pj::Identity>
+  ArrayRefConverter(const Array& arr, Convert&& convert = {})
+      : ArrayRefConverter(arr, arr.size(), std::forward<Convert>(convert)) {}
+
+  llvm::ArrayRef<T> get() {
+    return llvm::ArrayRef<T>{&storage[0], storage.size()};
+  }
+
+ private:
+  std::vector<T> storage;
 };
 
 }  // namespace types
@@ -77,7 +98,7 @@ inline Name type_intern(mlir::TypeStorageAllocator& allocator, Name n) {
   for (llvm::StringRef piece : n) {
     pieces.push_back(allocator.copyInto(piece));
   }
-  return allocator.copyInto(Name::from_vector(pieces));
+  return allocator.copyInto(Name{&pieces[0], pieces.size()});
 }
 
 template <typename T>

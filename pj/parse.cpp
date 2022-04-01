@@ -17,7 +17,7 @@ using SourceId = std::vector<std::string>;
 
 struct ParseState {
   ParsingScope& parse_scope;
-  Scope& scope;
+  ProtoJitContext& ctx;
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
@@ -87,20 +87,6 @@ struct ParseState {
     return s;
   }
 
-  pj::types::Name PopScopedIdAsName() {
-    SourceId id = PopScopedId();
-
-    auto* pieces = new (scope) llvm::StringRef[id.size()];
-    uintptr_t i = 0;
-    for (const auto& p : id) {
-      char* buffer = new (scope) char[p.length()];
-      std::memcpy(buffer, p.c_str(), p.length());
-      pieces[i++] = llvm::StringRef{buffer, p.length()};
-    }
-
-    return pj::types::Name{pieces, id.size()};
-  }
-
   template <typename I>
   mlir::Type ResolveType(const I& in, const SourceId& id) {
     std::vector<llvm::StringRef> id_;
@@ -113,29 +99,17 @@ struct ParseState {
         id_.push_back(p);
       }
 
-      auto name = pj::types::Name::from_vector(id_);
-      if (auto it = parse_scope.type_defs.find(name);
+      if (auto it = parse_scope.type_defs.find(id_);
           it != parse_scope.type_defs.end()) {
         return it->second;
       }
       id_.clear();
     }
-    // for (auto& [k, v] : parse_scope.type_defs) {
-    //   std::cerr << "! ";
-    //   for (auto& p : k) {
-    //     std::cerr << p << " ";
-    //   }
-    //   std::cerr << " -> ";
-    //   for (auto& p : v->name) {
-    //     std::cerr << p << " ";
-    //   }
-    //   std::cerr << "\n";
-    // }
     throw parse_error("Cannot resolve ID.", in.position());
   }
 
   template <typename I>
-  void DefineType(const I& in, const pj::types::Name& name, mlir::Type type) {
+  void DefineType(const I& in, const SourceId& name, mlir::Type type) {
     if (parse_scope.type_defs.count(name)) {
       throw parse_error("Cannot re-define type", in.position());
     }
@@ -179,7 +153,7 @@ using RB = tok<'}'>;
 struct struct_key : pad<TAO_PEGTL_KEYWORD("struct"), space> {};
 struct variant_key : pad<TAO_PEGTL_KEYWORD("variant"), space> {};
 
-template <intptr_t kPrefix, pj::types::Int::Sign sign, typename ActionInput>
+template <intptr_t kPrefix, types::Int::Sign sign, typename ActionInput>
 static void parse_int(const ActionInput& in, ParseState* state) {
   assert(in.size() > kPrefix);
   const char* num_start = in.begin() + kPrefix;
@@ -187,29 +161,23 @@ static void parse_int(const ActionInput& in, ParseState* state) {
   DEBUG_ONLY(auto result =) std::from_chars(num_start, in.end(), bits);
   assert(result.ptr == in.end());
   // SAMIR_TODO: validate bits
-  __ type = pj::types::IntType::get(
-      __ scope.Context(), pj::types::Int{.width = Bits(bits), .sign = sign});
+  __ type = types::IntType::get(&__ ctx.ctx_,
+                                types::Int{.width = Bits(bits), .sign = sign});
 }
 
 struct UIntType : seq<string<'u', 'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(UIntType) {
-  parse_int<4, pj::types::Int::Sign::kUnsigned>(in, state);
-}
+BEGIN_ACTION(UIntType) { parse_int<4, types::Int::Sign::kUnsigned>(in, state); }
 END_ACTION()
 
 struct IntType : seq<string<'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(IntType) {
-  parse_int<3, pj::types::Int::Sign::kSigned>(in, state);
-}
+BEGIN_ACTION(IntType) { parse_int<3, types::Int::Sign::kSigned>(in, state); }
 END_ACTION()
 
 struct CharType : seq<string<'c', 'h', 'a', 'r'>, num> {};
 
-BEGIN_ACTION(CharType) {
-  parse_int<4, pj::types::Int::Sign::kSignless>(in, state);
-}
+BEGIN_ACTION(CharType) { parse_int<4, types::Int::Sign::kSignless>(in, state); }
 END_ACTION()
 
 struct Identifier : identifier {};
@@ -253,9 +221,8 @@ END_ACTION()
 BEGIN_ACTION(FixedArrayModifier) {
   assert(__ array_len != kNone);
   assert(__ type);
-  __ type = pj::types::ArrayType::get(
-      __ scope.Context(),
-      pj::types::Array{.elem = __ type, .length = __ array_len});
+  __ type = types::ArrayType::get(
+      &__ ctx.ctx_, types::Array{.elem = __ type, .length = __ array_len});
   __ array_len = kNone;
 }
 END_ACTION()
@@ -285,10 +252,10 @@ struct VarArrayModifier
 
 BEGIN_ACTION(VarArrayModifier) {
   assert(__ type);
-  __ type = pj::types::VectorType::get(
-      __ scope.Context(), pj::types::Vector{.elem = __ type,
-                                            .min_length = __ array_min_len,
-                                            .max_length = __ array_max_len});
+  __ type = types::VectorType::get(
+      &__ ctx.ctx_, types::Vector{.elem = __ type,
+                                  .min_length = __ array_min_len,
+                                  .max_length = __ array_max_len});
   __ array_max_len = kNone;
   __ array_min_len = kNone;
 }
@@ -315,7 +282,7 @@ struct TypeDecl : if_must<KEYWORD("type"), Id, tok<'='>, Type, tok<';'>> {};
 
 BEGIN_ACTION(TypeDecl) {
   assert(__ type);
-  auto name = __ PopScopedIdAsName();
+  auto name = __ PopScopedId();
   __ DefineType(in, name, __ type);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
@@ -336,7 +303,7 @@ struct StructDecl : if_must<KEYWORD("struct"), Id, opt<ExternalDecl>, LB,
                             star<FieldDecl>, RB> {};
 
 BEGIN_ACTION(StructDecl) {
-  std::vector<pj::types::StructField> fields;
+  std::vector<types::StructField> fields;
   for (const std::string& name : __ field_order) {
     auto it = __ fields.find(name);
     assert(it != __ fields.end());
@@ -344,16 +311,16 @@ BEGIN_ACTION(StructDecl) {
     auto type = it->second;
     assert(type);
 
-    fields.push_back(pj::types::StructField{
+    fields.push_back(types::StructField{
         .type = type, .name = llvm::StringRef{name.c_str(), name.length()}});
   }
 
-  auto name = __ PopScopedIdAsName();
-  auto type = pj::types::StructType::get(__ scope.Context(),
-                                         pj::types::TypeDomain::kHost, name);
-  type.setTypeData(
-      pj::types::Struct{.fields = llvm::ArrayRef<pj::types::StructField>{
-                            &fields[0], fields.size()}});
+  auto name = __ PopScopedId();
+  types::ArrayRefConverter<llvm::StringRef> name_converter{name};
+  auto type = types::StructType::get(&__ ctx.ctx_, types::TypeDomain::kHost,
+                                     name_converter.get());
+  type.setTypeData({.fields = llvm::ArrayRef<types::StructField>{
+                        &fields[0], fields.size()}});
   __ DefineType(in, name, type);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
@@ -410,7 +377,7 @@ END_ACTION()
 template <typename ActionInput>
 static void HandleVariant(const ActionInput& in, ParseState* state,
                           bool is_enum) {
-  std::vector<pj::types::Term> terms;
+  std::vector<types::Term> terms;
 
   // Set the tags for all the terms.
   std::unordered_set<uint64_t> reserved_tags;
@@ -432,16 +399,17 @@ static void HandleVariant(const ActionInput& in, ParseState* state,
     }
     reserved_tags.insert(tag);
     terms.push_back(
-        pj::types::Term{.name = llvm::StringRef{name.c_str(), name.length()},
-                        .type = it->second,
-                        .tag = tag});
+        types::Term{.name = llvm::StringRef{name.c_str(), name.length()},
+                    .type = it->second,
+                    .tag = tag});
   }
 
-  auto name = __ PopScopedIdAsName();
-  auto type = pj::types::InlineVariantType::get(
-      __ scope.Context(), pj::types::TypeDomain::kHost, name);
-  type.setTypeData(pj::types::InlineVariant{
-      .terms = llvm::ArrayRef<pj::types::Term>{&terms[0], terms.size()}});
+  auto name = __ PopScopedId();
+  types::ArrayRefConverter<llvm::StringRef> name_converter{name};
+  auto type = types::InlineVariantType::get(
+      &__ ctx.ctx_, types::TypeDomain::kHost, name_converter.get());
+  type.setTypeData(
+      {.terms = llvm::ArrayRef<types::Term>{&terms[0], terms.size()}});
   __ DefineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
@@ -544,7 +512,7 @@ void ParseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
   auto& parsed = scope.parsed_files[path];
   ParseState state{
       .parse_scope = scope,
-      .scope = scope.scope,
+      .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
   };

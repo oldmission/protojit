@@ -20,13 +20,15 @@ void GenerateNameRef(types::Name name, std::ostream& output) {
   }
 }
 
-void GenerateNamespaceBegin(types::Name name, std::ostream& output) {
+template <typename T>
+void GenerateNamespaceBegin(const T& name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size() - 1; ++i) {
     output << "namespace " << std::string_view(name[i]) << "{";
   }
 }
 
-void GenerateNamespaceEnd(types::Name name, std::ostream& output) {
+template <typename T>
+void GenerateNamespaceEnd(const T& name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size() - 1; ++i) {
     output << "}\n";
   }
@@ -119,7 +121,7 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
     // source generator because in C++ an empty struct has size 8 bits,
     // not 0 bits.
     auto [_, var] = BuildPJVariableDecl(type, output);
-    output << " = PJCreateUnitType(context);";
+    output << " = PJCreateUnitType(ctx);";
     return var;
   }
 
@@ -128,13 +130,13 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
     auto [rt_type, var] = BuildPJVariableDecl(type, output);
     output << " = static_cast<" << rt_type << ">(BuildPJType<";
     PrintNamespacedName(named.name(), output);
-    output << ">::Build(context));\n";
+    output << ">::Build(ctx));\n";
     return var;
   }
 
   if (auto I = type.dyn_cast<types::IntType>()) {
     auto [_, var] = BuildPJVariableDecl(type, output);
-    output << " = PJCreateIntType(context";
+    output << " = PJCreateIntType(ctx";
     output << ", /*width=*/" << I->width.bits();
     {
       output << ", /*alignment=*/alignof(";
@@ -164,7 +166,7 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
     std::string elem_type_ref = GenerateTypeRef(A->elem);
     std::string elem_var = BuildTypeGeneratorStmt(A->elem, output);
     auto [_, var] = BuildPJVariableDecl(type, output);
-    output << " = PJCreateArrayType(context";
+    output << " = PJCreateArrayType(ctx";
     output << ", /*elem=*/" << elem_var;
     output << ", /*length=*/" << A->length;
     output << ", /*elem_size=*/sizeof(" << elem_type_ref << ") << 3";
@@ -175,7 +177,7 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   if (auto V = type.dyn_cast<types::VectorType>()) {
     std::string elem_var = BuildTypeGeneratorStmt(V->elem, output);
     auto [_, var] = BuildPJVariableDecl(type, output);
-    output << " = PJCreateVectorType(context";
+    output << " = PJCreateVectorType(ctx";
     output << ", /*elem=*/" << elem_var;
     output << ", /*min_length=*/" << V->min_length;
     output << ", /*max_length=*/" << V->max_length;
@@ -210,8 +212,8 @@ void BuildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
   output << "};\n";
 }
 
-void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
-                     std::ostream& output, std::ostream& back) {
+void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
+                     std::ostream& back) {
   auto type = decl.type.dyn_cast<types::InlineVariantType>();
   assert(type);
 
@@ -282,15 +284,15 @@ void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
   PrintNamespacedName(name, back);
   back << "> {\n";
 
-  back << "static const void* Build(PJContext* context) {\n";
+  back << "static const void* Build(PJContext* ctx) {\n";
 
   back << "const PJTerm* terms[" << type->terms.size() << "];\n";
   uintptr_t term_num = 0;
   for (auto& term : type->terms) {
     std::string var = BuildTypeGeneratorStmt(term.type, back);
 
-    back << "terms[" << term_num++ << "] = PJCreateTerm(context";
-    back << ", /*name=*/\"" << std::string_view(term.name) << "\"";
+    back << "terms[" << term_num++ << "] = PJCreateTerm(";
+    back << "/*name=*/\"" << std::string_view(term.name) << "\"";
     back << ", /*type=*/" << var;
     back << ", /*tag=*/" << term.tag << ");\n";
   }
@@ -298,7 +300,7 @@ void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
   BuildCStringArray(name, "name", back);
 
   auto [_, variant_var] = BuildPJVariableDecl(type, back);
-  back << " = PJCreateInlineVariantType(context";
+  back << " = PJCreateInlineVariantType(ctx";
   back << ", /*name_size=*/" << name.size();
   back << ", /*name=*/name";
   back << ", /*type_domain=*/"
@@ -345,8 +347,8 @@ void GenerateVariant(Scope* scope, const ParsedProtoFile::Decl& decl,
        << "\n";
 }
 
-void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
-                    std::ostream& output, std::ostream& back) {
+void GenerateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
+                    std::ostream& back) {
   auto type = decl.type.dyn_cast<types::StructType>();
   assert(type);
 
@@ -380,15 +382,15 @@ void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
   //     - either inline for primitive types
   //     - or a call to a specialization of BuildPJType for a composite type
 
-  back << "static const void* Build(PJContext* context) {\n";
+  back << "static const void* Build(PJContext* ctx) {\n";
 
   back << "const PJStructField* fields[" << type->fields.size() << "];\n";
   uintptr_t field_num = 0;
   for (auto& field : type->fields) {
     std::string var = BuildTypeGeneratorStmt(field.type, back);
 
-    back << "fields[" << field_num++ << "] = PJCreateStructField(context";
-    back << ", /*name=*/\"" << std::string_view(field.name) << "\"";
+    back << "fields[" << field_num++ << "] = PJCreateStructField(";
+    back << "/*name=*/\"" << std::string_view(field.name) << "\"";
     back << ", /*type=*/" << var;
     {
       back << ", /*offset=*/offsetof(";
@@ -401,7 +403,7 @@ void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
   BuildCStringArray(name, "name", back);
 
   auto [_, struct_var] = BuildPJVariableDecl(type, back);
-  back << " = PJCreateStructType(context";
+  back << " = PJCreateStructType(ctx";
   back << ", /*name_size=*/" << name.size();
   back << ", /*name=*/name";
   back << ", /*type_domain=*/"
@@ -430,14 +432,14 @@ void GenerateStruct(Scope* scope, const ParsedProtoFile::Decl& decl,
        << "\n";
 }
 
-void GenerateComposite(Scope* scope, ParsedProtoFile::Decl decl,
-                       std::ostream& output, std::ostream& back) {
+void GenerateComposite(ParsedProtoFile::Decl decl, std::ostream& output,
+                       std::ostream& back) {
   auto type = decl.type;
 
   if (type.isa<types::StructType>()) {
-    GenerateStruct(scope, decl, output, back);
+    GenerateStruct(decl, output, back);
   } else if (type.isa<types::InlineVariantType>()) {
-    GenerateVariant(scope, decl, output, back);
+    GenerateVariant(decl, output, back);
   } else {
     UNREACHABLE();
   }
@@ -453,7 +455,7 @@ void GenerateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
 }
 
 #if 0
-void GenerateProtocol(Scope* scope, types::Name name, const AType* type,
+void GenerateProtocol(types::Name name, const AType* type,
                       std::ostream& output, std::ostream& back) {
   GenerateNamespaceBegin(name, output);
   output << "struct " << std::string_view(name.back()) << "{};\n";
@@ -473,8 +475,8 @@ void GenerateProtocol(Scope* scope, types::Name name, const AType* type,
 }
 #endif
 
-void GenerateHeader(Scope* scope, const ArchDetails& arch,
-                    const ParsedProtoFile& file, std::ostream& output) {
+void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
+                    std::ostream& output) {
   output << "#pragma once\n"
          << "#include<cstddef>\n "
          << "#include \"pj/protojit.hpp\"\n"
@@ -493,11 +495,11 @@ void GenerateHeader(Scope* scope, const ArchDetails& arch,
         GenerateTypedef(decl, output);
         break;
       case ParsedProtoFile::DeclKind::kComposite:
-        GenerateComposite(scope, decl, output, back);
+        GenerateComposite(decl, output, back);
         break;
 #if 0
       case ParsedProtoFile::DeclKind::kProtocol:
-        GenerateProtocol(scope, decl.name, decl.type, output, back);
+        GenerateProtocol(decl.name, decl.type, output, back);
         break;
 #endif
     }

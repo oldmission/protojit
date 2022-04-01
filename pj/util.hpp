@@ -39,6 +39,14 @@ inline T RoundUp(T x, T multiple) {
   return DivideUp(x, multiple) * multiple;
 }
 
+// Stand-in for C++20 std::identity
+struct Identity {
+  template <typename T>
+  constexpr T&& operator()(T&& t) const noexcept {
+    return std::forward<T>(t);
+  }
+};
+
 // Copied from compiler-rt
 
 template <typename T>
