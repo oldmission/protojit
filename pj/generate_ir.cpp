@@ -229,7 +229,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructDecodeFn(mlir::Location loc,
       auto src_field = _.create<ir2::ProjectOp>(loc, from_field->type, src,
                                                 from_field->offset);
 
-      llvm::SmallVector<DispatchHandlerAttr> field_handlers;
+      llvm::SmallVector<mlir::Attribute> field_handlers;
 
       for (auto& attr : handlers) {
         auto handler = attr.cast<DispatchHandlerAttr>();
@@ -241,9 +241,10 @@ mlir::FuncOp GeneratePass::getOrCreateStructDecodeFn(mlir::Location loc,
 
       // If the target field exists in the source struct, encode
       // the source field into the target.
+      auto& ctx = getContext();
       result_buf = _.create<ir2::DecodeOp>(
-          loc, BoundedBufferType::get(&getContext()), src_field, dst_field,
-          result_buf, field_handlers);
+          loc, BoundedBufferType::get(&ctx), src_field, dst_field, result_buf,
+          mlir::ArrayAttr::get(&ctx, field_handlers));
     } else {
       // Otherwise fill in the target field with a default value.
       _.create<ir2::DefaultOp>(loc, dst_field);
