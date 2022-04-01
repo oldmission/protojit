@@ -1,5 +1,5 @@
-#include "llvm_gen.hpp"
-
+#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
@@ -9,16 +9,23 @@
 #include "ir.hpp"
 
 namespace pj {
-namespace ir {
+using namespace ir;
 
-Type llvmInternalType(MLIRContext* C, const CIntType* type) {
-  return IntegerType::get(C, type->abs()->len.bits());
+namespace {
+// Convert ProtoJit IR types to LLVM.
+class ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
+ public:
+  ProtoJitTypeConverter(mlir::MLIRContext* C);
+};
+
+Type llvmInternalType(MLIRContext* c, const CIntType* type) {
+  return IntegerType::get(c, type->abs()->len.bits());
 }
 
-static Value getIntConstant(ConversionPatternRewriter& _, Location L,
+static Value getIntConstant(ConversionPatternRewriter& _, Location l,
                             uint64_t i) {
   auto type = IntegerType::get(_.getContext(), 64);
-  return _.create<LLVM::ConstantOp>(L, type,
+  return _.create<LLVM::ConstantOp>(l, type,
                                     _.getIntegerAttr(_.getIntegerType(64), i));
 }
 
@@ -27,31 +34,31 @@ struct XIntOpLowering : public OpConversionPattern<XIntOp> {
 
   LogicalResult matchAndRewrite(XIntOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto* C = _.getContext();
-    auto fromType = op.from().getType().cast<PJType>()->AsInt();
-    auto toType = op.to().getType().cast<PJType>()->AsInt();
+    auto* c = _.getContext();
+    const auto* from_type = op.from().getType().cast<PJType>()->AsInt();
+    const auto* to_type = op.to().getType().cast<PJType>()->AsInt();
 
-    assert(fromType->alignment().IsBytes() && toType->alignment().IsBytes());
-    assert(fromType->total_size().IsAlignedTo(fromType->alignment()) &&
-           toType->total_size().IsAlignedTo(toType->alignment()));
+    assert(from_type->alignment().IsBytes() && to_type->alignment().IsBytes());
+    assert(from_type->total_size().IsAlignedTo(from_type->alignment()) &&
+           to_type->total_size().IsAlignedTo(to_type->alignment()));
 
     Value value = _.create<LLVM::LoadOp>(op.getLoc(), operands[0],
-                                         fromType->alignment().bytes());
+                                         from_type->alignment().bytes());
 
-    auto toLLVM = llvmInternalType(C, toType);
-    if (fromType->abs()->len < toType->abs()->len) {
-      if (toType->abs()->conv == AIntType::Conversion::kSigned &&
-          fromType->abs()->conv == AIntType::Conversion::kSigned) {
-        value = _.create<LLVM::SExtOp>(op.getLoc(), toLLVM, value);
+    auto to_llvm = llvmInternalType(c, to_type);
+    if (from_type->abs()->len < to_type->abs()->len) {
+      if (to_type->abs()->conv == AIntType::Conversion::kSigned &&
+          from_type->abs()->conv == AIntType::Conversion::kSigned) {
+        value = _.create<LLVM::SExtOp>(op.getLoc(), to_llvm, value);
       } else {
-        value = _.create<LLVM::ZExtOp>(op.getLoc(), toLLVM, value);
+        value = _.create<LLVM::ZExtOp>(op.getLoc(), to_llvm, value);
       }
-    } else if (fromType->abs()->len > toType->abs()->len) {
-      value = _.create<LLVM::TruncOp>(op.getLoc(), toLLVM, value);
+    } else if (from_type->abs()->len > to_type->abs()->len) {
+      value = _.create<LLVM::TruncOp>(op.getLoc(), to_llvm, value);
     }
 
     _.create<LLVM::StoreOp>(op.getLoc(), value, operands[1],
-                            toType->alignment().bytes());
+                            to_type->alignment().bytes());
     _.eraseOp(op);
     return success();
   }
@@ -62,16 +69,16 @@ struct IIntOpLowering : public OpConversionPattern<IIntOp> {
 
   LogicalResult matchAndRewrite(IIntOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
     auto type = op.to().getType().cast<PJType>();
 
     auto llvm_int_type = llvmInternalType(op->getContext(), type->AsInt());
     auto store_val = _.create<LLVM::ConstantOp>(
-        L, llvm_int_type,
+        l, llvm_int_type,
         _.getIntegerAttr(_.getIntegerType(type->AsInt()->abs()->len.bits()),
                          0));
 
-    _.create<LLVM::StoreOp>(L, store_val, operands[0],
+    _.create<LLVM::StoreOp>(l, store_val, operands[0],
                             type->alignment().bytes());
 
     _.eraseOp(op);
@@ -84,11 +91,11 @@ static LogicalResult matchAndRewriteRegionalOp(Operation* operation,
                                                ArrayRef<Value> operands,
                                                ConversionPatternRewriter& _) {
   assert(operation->hasTrait<OpTrait::OneRegion>());
-  auto L = operation->getLoc();
+  auto l = operation->getLoc();
   Region& body = operation->getRegion(0);
 
-  auto start = _.getBlock();
-  auto end = _.splitBlock(start, _.getInsertionPoint());
+  auto* start = _.getBlock();
+  auto* end = _.splitBlock(start, _.getInsertionPoint());
   assert(end->getNumArguments() == 0);
 
   TypeRange types;
@@ -110,12 +117,12 @@ static LogicalResult matchAndRewriteRegionalOp(Operation* operation,
   }
 
   // Remember which block is the entry before inlining.
-  auto entry = &body.front();
+  auto* entry = &body.front();
 
   _.inlineRegionBefore(body, end);
 
   _.setInsertionPointToEnd(start);
-  _.create<BranchOp>(L, entry);
+  _.create<BranchOp>(l, entry);
 
   _.setInsertionPointToStart(end);
   _.eraseOp(operation);
@@ -134,16 +141,16 @@ struct XStrOpLowering : public OpConversionPattern<XStrOp> {
 
 static Value rawGEP(ConversionPatternRewriter& _, Value source, Type target,
                     Value offset) {
-  auto L = source.getLoc();
+  auto l = source.getLoc();
   auto cstar = LLVM::LLVMPointerType::get(IntegerType::get(_.getContext(), 8));
-  Value val = _.create<LLVM::BitcastOp>(L, cstar, source);
-  val = _.create<LLVM::GEPOp>(L, cstar, val, offset);
-  return _.create<LLVM::BitcastOp>(L, target, val);
+  Value val = _.create<LLVM::BitcastOp>(l, cstar, source);
+  val = _.create<LLVM::GEPOp>(l, cstar, val, offset);
+  return _.create<LLVM::BitcastOp>(l, target, val);
 }
 
 // TODO(3): make architecture-independent
 // TODO(7): bitfields
-static Value EmitProject(ConversionPatternRewriter& _, TypeConverter* converter,
+static Value emitProject(ConversionPatternRewriter& _, TypeConverter* converter,
                          Location loc, Value from, Value offset, Type result) {
   return rawGEP(_, from, converter->convertType(result), offset);
 }
@@ -153,7 +160,7 @@ struct XArrayOpLowering : public OpConversionPattern<XArrayOp> {
 
   LogicalResult matchAndRewrite(XArrayOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     auto from_type = op.xvalue().getArgument(0).getType().cast<PJType>();
     auto to_type = op.xvalue().getArgument(1).getType().cast<PJType>();
@@ -174,8 +181,8 @@ struct XArrayOpLowering : public OpConversionPattern<XArrayOp> {
       // Corresponding array type is int*, but the LLVM type corresponding
       // to the PJ int type itself is also int*, so we don't need to wrap
       // in a pointer here (that would in fact be wrong to do).
-      from = _.create<LLVM::BitcastOp>(L, from_type_ll, from);
-      to = _.create<LLVM::BitcastOp>(L, to_type_ll, to);
+      from = _.create<LLVM::BitcastOp>(l, from_type_ll, from);
+      to = _.create<LLVM::BitcastOp>(l, to_type_ll, to);
     }
 
     auto from_len =
@@ -185,8 +192,8 @@ struct XArrayOpLowering : public OpConversionPattern<XArrayOp> {
 
     _.eraseOp(op);
 
-    auto start = _.getBlock();
-    auto end = _.splitBlock(start, _.getInsertionPoint());
+    auto* start = _.getBlock();
+    auto* end = _.splitBlock(start, _.getInsertionPoint());
 
     auto index_type = IntegerType::get(op.getContext(), 64);
 
@@ -199,52 +206,52 @@ struct XArrayOpLowering : public OpConversionPattern<XArrayOp> {
     if (from_len > 0) {
       // Generate a loop to transcode available elements from the
       // source array.
-      auto join = _.createBlock(end, {index_type});
+      auto* join = _.createBlock(end, {index_type});
 
       _.setInsertionPointToEnd(start);
 
       // Initial index is 0.
       auto initial = _.create<LLVM::ConstantOp>(
-          L, index_type, _.getIntegerAttr(_.getIntegerType(64), 0));
+          l, index_type, _.getIntegerAttr(_.getIntegerType(64), 0));
 
-      _.create<LLVM::BrOp>(L, ValueRange{initial}, join);
+      _.create<LLVM::BrOp>(l, ValueRange{initial}, join);
 
       _.setInsertionPointToEnd(join);
 
       auto limit = _.create<LLVM::ConstantOp>(
-          L, index_type,
+          l, index_type,
           _.getIntegerAttr(_.getIntegerType(64), std::min(from_len, to_len)));
       auto cond =
-          _.create<LLVM::ICmpOp>(L, LLVM::ICmpPredicate::ult,
+          _.create<LLVM::ICmpOp>(l, LLVM::ICmpPredicate::ult,
                                  /*current index*/ join->getArgument(0), limit);
 
       Block* body = _.createBlock(end, {index_type});
 
       _.setInsertionPointToEnd(join);
-      _.create<LLVM::CondBrOp>(L, cond, body, ValueRange{join->getArgument(0)},
+      _.create<LLVM::CondBrOp>(l, cond, body, ValueRange{join->getArgument(0)},
                                end, ValueRange{});
 
       _.setInsertionPointToEnd(body);
       auto body_index = body->getArgument(0);
 
-      auto from_elsize_v = getIntConstant(_, L, from_elsize);
-      auto to_elsize_v = getIntConstant(_, L, to_elsize);
-      auto from_offset = _.create<LLVM::MulOp>(L, from_elsize_v, body_index);
-      auto to_offset = _.create<LLVM::MulOp>(L, to_elsize_v, body_index);
+      auto from_elsize_v = getIntConstant(_, l, from_elsize);
+      auto to_elsize_v = getIntConstant(_, l, to_elsize);
+      auto from_offset = _.create<LLVM::MulOp>(l, from_elsize_v, body_index);
+      auto to_offset = _.create<LLVM::MulOp>(l, to_elsize_v, body_index);
 
       auto from_el =
-          EmitProject(_, typeConverter, L, from, from_offset, from_type);
-      auto to_el = EmitProject(_, typeConverter, L, to, to_offset, to_type);
+          emitProject(_, typeConverter, l, from, from_offset, from_type);
+      auto to_el = emitProject(_, typeConverter, l, to, to_offset, to_type);
 
       Block* entry = &op.xvalue().front();
 
-      _.create<LLVM::BrOp>(L, ValueRange{from_el, to_el}, entry);
+      _.create<LLVM::BrOp>(l, ValueRange{from_el, to_el}, entry);
       _.inlineRegionBefore(op.xvalue(), end);
 
       Block* loop_end = _.createBlock(end);
       auto next_index =
-          _.create<LLVM::AddOp>(L, body_index, getIntConstant(_, L, 1));
-      _.create<LLVM::BrOp>(L, ValueRange{next_index}, join);
+          _.create<LLVM::AddOp>(l, body_index, getIntConstant(_, l, 1));
+      _.create<LLVM::BrOp>(l, ValueRange{next_index}, join);
 
       ReplaceTerminators(_, loop_end, Region::iterator(entry),
                          Region::iterator(loop_end));
@@ -256,52 +263,52 @@ struct XArrayOpLowering : public OpConversionPattern<XArrayOp> {
     if (to_len > from_len) {
       // Generate a loop to transcode available elements from the
       // source array.
-      auto join = _.createBlock(end, {index_type});
+      auto* join = _.createBlock(end, {index_type});
 
       _.setInsertionPointToEnd(start);
 
       // Initial index is 0.
       auto initial = _.create<LLVM::ConstantOp>(
-          L, index_type, _.getIntegerAttr(_.getIntegerType(64), from_len));
+          l, index_type, _.getIntegerAttr(_.getIntegerType(64), from_len));
 
-      _.create<LLVM::BrOp>(L, ValueRange{initial}, join);
+      _.create<LLVM::BrOp>(l, ValueRange{initial}, join);
 
       _.setInsertionPointToEnd(join);
 
       auto limit = _.create<LLVM::ConstantOp>(
-          L, index_type, _.getIntegerAttr(_.getIntegerType(64), to_len));
+          l, index_type, _.getIntegerAttr(_.getIntegerType(64), to_len));
       auto cond =
-          _.create<LLVM::ICmpOp>(L, LLVM::ICmpPredicate::ult,
+          _.create<LLVM::ICmpOp>(l, LLVM::ICmpPredicate::ult,
                                  /*current index*/ join->getArgument(0), limit);
 
       Block* body = _.createBlock(end, {index_type});
 
       _.setInsertionPointToEnd(join);
-      _.create<LLVM::CondBrOp>(L, cond, body, ValueRange{join->getArgument(0)},
+      _.create<LLVM::CondBrOp>(l, cond, body, ValueRange{join->getArgument(0)},
                                end, ValueRange{});
 
       _.setInsertionPointToEnd(body);
       auto body_index = body->getArgument(0);
 
-      auto to_elsize_v = getIntConstant(_, L, to_elsize);
-      auto to_offset = _.create<LLVM::MulOp>(L, to_elsize_v, body_index);
-      auto to_el = EmitProject(_, typeConverter, L, to, to_offset, to_type);
+      auto to_elsize_v = getIntConstant(_, l, to_elsize);
+      auto to_offset = _.create<LLVM::MulOp>(l, to_elsize_v, body_index);
+      auto to_el = emitProject(_, typeConverter, l, to, to_offset, to_type);
 
       Block* entry = &op.xdefault().front();
 
-      _.create<LLVM::BrOp>(L, ValueRange{to_el}, entry);
+      _.create<LLVM::BrOp>(l, ValueRange{to_el}, entry);
       _.inlineRegionBefore(op.xdefault(), end);
 
       Block* loop_end = _.createBlock(end);
       auto next_index =
-          _.create<LLVM::AddOp>(L, body_index, getIntConstant(_, L, 1));
-      _.create<LLVM::BrOp>(L, ValueRange{next_index}, join);
+          _.create<LLVM::AddOp>(l, body_index, getIntConstant(_, l, 1));
+      _.create<LLVM::BrOp>(l, ValueRange{next_index}, join);
 
       ReplaceTerminators(_, loop_end, Region::iterator(entry),
                          Region::iterator(loop_end));
     } else {
       _.setInsertionPointToEnd(start);
-      _.create<LLVM::BrOp>(L, ValueRange{}, end);
+      _.create<LLVM::BrOp>(l, ValueRange{}, end);
     }
 
     return success();
@@ -313,7 +320,7 @@ struct ProjectOpLowering : public OpConversionPattern<ProjectOp> {
 
   LogicalResult matchAndRewrite(ProjectOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    _.replaceOp(op, EmitProject(_, typeConverter, op.getLoc(), operands[0],
+    _.replaceOp(op, emitProject(_, typeConverter, op.getLoc(), operands[0],
                                 operands[1], op.getType()));
 
     return success();
@@ -327,7 +334,7 @@ struct ETagOpLowering : public OpConversionPattern<ETagOp> {
 
   LogicalResult matchAndRewrite(ETagOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     assert(op.offset().IsBytes());
 
@@ -340,15 +347,15 @@ struct ETagOpLowering : public OpConversionPattern<ETagOp> {
     auto into = operands[0];
     {
       auto addr_type = IntegerType::get(op.getContext(), 64);
-      into = _.create<LLVM::PtrToIntOp>(L, addr_type, into);
+      into = _.create<LLVM::PtrToIntOp>(l, addr_type, into);
       auto offset_val = _.create<LLVM::ConstantOp>(
-          L, addr_type,
+          l, addr_type,
           _.getIntegerAttr(_.getIntegerType(64), op.offset().bytes()));
-      into = _.create<LLVM::AddOp>(L, into, offset_val);
-      into = _.create<LLVM::IntToPtrOp>(L, store_ptr_type, into);
+      into = _.create<LLVM::AddOp>(l, into, offset_val);
+      into = _.create<LLVM::IntToPtrOp>(l, store_ptr_type, into);
     }
 
-    _.create<LLVM::StoreOp>(L, operands[1], into, /*alignment=*/1);
+    _.create<LLVM::StoreOp>(l, operands[1], into, /*alignment=*/1);
     _.eraseOp(op);
     return success();
   }
@@ -359,7 +366,7 @@ struct DTagOpLowering : public OpConversionPattern<DTagOp> {
 
   LogicalResult matchAndRewrite(DTagOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     auto tag_width = op.getType().cast<IntegerType>().getWidth();
     auto llvm_int_type = IntegerType::get(op.getContext(), tag_width);
@@ -370,15 +377,15 @@ struct DTagOpLowering : public OpConversionPattern<DTagOp> {
     auto from = operands[0];
     {
       auto addr_type = IntegerType::get(op.getContext(), 64);
-      from = _.create<LLVM::PtrToIntOp>(L, addr_type, from);
+      from = _.create<LLVM::PtrToIntOp>(l, addr_type, from);
       auto offset_val = _.create<LLVM::ConstantOp>(
-          L, addr_type,
+          l, addr_type,
           _.getIntegerAttr(_.getIntegerType(64), op.offset().bytes()));
-      from = _.create<LLVM::AddOp>(L, from, offset_val);
-      from = _.create<LLVM::IntToPtrOp>(L, load_ptr_type, from);
+      from = _.create<LLVM::AddOp>(l, from, offset_val);
+      from = _.create<LLVM::IntToPtrOp>(l, load_ptr_type, from);
     }
 
-    Value tag = _.create<LLVM::LoadOp>(L, llvm_int_type, from, /*alignment=*/1);
+    Value tag = _.create<LLVM::LoadOp>(l, llvm_int_type, from, /*alignment=*/1);
     _.replaceOp(op, tag);
     return success();
   }
@@ -389,7 +396,7 @@ struct LTagOpLowering : public OpConversionPattern<LTagOp> {
 
   LogicalResult matchAndRewrite(LTagOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     auto result_tag_width =
         op.getType().isa<IndexType>()
@@ -408,15 +415,15 @@ struct LTagOpLowering : public OpConversionPattern<LTagOp> {
     auto from = operands[0];
     {
       auto addr_type = IntegerType::get(op.getContext(), 64);
-      from = _.create<LLVM::PtrToIntOp>(L, addr_type, from);
-      from = _.create<LLVM::AddOp>(L, from, operands[1]);
-      from = _.create<LLVM::IntToPtrOp>(L, load_ptr_type, from);
+      from = _.create<LLVM::PtrToIntOp>(l, addr_type, from);
+      from = _.create<LLVM::AddOp>(l, from, operands[1]);
+      from = _.create<LLVM::IntToPtrOp>(l, load_ptr_type, from);
     }
 
-    Value tag = _.create<LLVM::LoadOp>(L, load_int_type, from, /*alignment=*/1);
+    Value tag = _.create<LLVM::LoadOp>(l, load_int_type, from, /*alignment=*/1);
     if (result_tag_width != load_tag_width) {
       // Zero-extend
-      tag = _.create<LLVM::ZExtOp>(L, result_int_type, tag);
+      tag = _.create<LLVM::ZExtOp>(l, result_int_type, tag);
     }
     _.replaceOp(op, tag);
     return success();
@@ -428,7 +435,7 @@ struct LRefOpLowering : public OpConversionPattern<LRefOp> {
 
   LogicalResult matchAndRewrite(LRefOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     auto base = operands[0];
     auto ref_offset = op.ref_offset();
@@ -436,20 +443,20 @@ struct LRefOpLowering : public OpConversionPattern<LRefOp> {
 
     auto cstar =
         LLVM::LLVMPointerType::get(IntegerType::get(_.getContext(), 8));
-    auto raw_base = _.create<LLVM::BitcastOp>(L, cstar, base);
+    auto raw_base = _.create<LLVM::BitcastOp>(l, cstar, base);
 
     auto llvm_ref_type = IntegerType::get(op.getContext(), ref_size.bits());
     auto load_ref_type = LLVM::LLVMPointerType::get(llvm_ref_type, 0);
     auto ref_base0 = _.create<LLVM::GEPOp>(
-        L, cstar, raw_base, getIntConstant(_, L, ref_offset.bytes()));
-    auto ref_base = _.create<LLVM::BitcastOp>(L, load_ref_type, ref_base0);
+        l, cstar, raw_base, getIntConstant(_, l, ref_offset.bytes()));
+    auto ref_base = _.create<LLVM::BitcastOp>(l, load_ref_type, ref_base0);
     // TODO: alignment could be more precise.
-    auto ref = _.create<LLVM::LoadOp>(L, ref_base, 1);
+    auto ref = _.create<LLVM::LoadOp>(l, ref_base, 1);
 
     auto raw_result =
-        _.create<LLVM::GEPOp>(L, cstar, raw_base, ValueRange{ref});
+        _.create<LLVM::GEPOp>(l, cstar, raw_base, ValueRange{ref});
     auto result = _.create<LLVM::BitcastOp>(
-        L, typeConverter->convertType(op.getType().cast<PJType>()), raw_result);
+        l, typeConverter->convertType(op.getType().cast<PJType>()), raw_result);
 
     _.replaceOp(op, {result});
     return success();
@@ -461,7 +468,7 @@ struct BTagOpLowering : public OpConversionPattern<BTagOp> {
 
   LogicalResult matchAndRewrite(BTagOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
     auto tag = operands[0];
 
     // TODO(26): how should we treat a missing variant case?
@@ -475,7 +482,7 @@ struct BTagOpLowering : public OpConversionPattern<BTagOp> {
     assert(op.getNumSuccessors() > 0);
 
     if (op.getNumSuccessors() == 1) {
-      _.create<LLVM::BrOp>(L, ValueRange{}, op.getSuccessor(0));
+      _.create<LLVM::BrOp>(l, ValueRange{}, op.getSuccessor(0));
       _.eraseOp(op);
       return success();
     }
@@ -486,9 +493,9 @@ struct BTagOpLowering : public OpConversionPattern<BTagOp> {
 
     for (intptr_t i = 0; i < op.getNumSuccessors() - 1; ++i) {
       const auto match = op.tagOptions().getValue(i);
-      auto match_val = _.create<LLVM::ConstantOp>(L, tag.getType(), match);
+      auto match_val = _.create<LLVM::ConstantOp>(l, tag.getType(), match);
       auto cmp =
-          _.create<LLVM::ICmpOp>(L, LLVM::ICmpPredicate::eq, match_val, tag);
+          _.create<LLVM::ICmpOp>(l, LLVM::ICmpPredicate::eq, match_val, tag);
       Block* fail_block = nullptr;
       if (i == op.getNumSuccessors() - 2) {
         fail_block = op.getSuccessor(i + 1);
@@ -496,7 +503,7 @@ struct BTagOpLowering : public OpConversionPattern<BTagOp> {
         fail_block = _.createBlock(op.getSuccessor(i), TypeRange{});
       }
       _.setInsertionPointToEnd(start);
-      _.create<LLVM::CondBrOp>(L, cmp, op.getSuccessor(i), fail_block);
+      _.create<LLVM::CondBrOp>(l, cmp, op.getSuccessor(i), fail_block);
       _.setInsertionPointToStart(fail_block);
       start = fail_block;
     }
@@ -510,7 +517,7 @@ struct DispatchOpLowering : public OpConversionPattern<DispatchOp> {
 
   LogicalResult matchAndRewrite(DispatchOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
     llvm::SmallVector<Type, 1> dispatch_args = {operands[0].getType(),
                                                 operands[1].getType()};
@@ -521,11 +528,11 @@ struct DispatchOpLowering : public OpConversionPattern<DispatchOp> {
     // TODO: architecture-dependent
     auto llvm_int_type = IntegerType::get(op.getContext(), 64);
     Value target_val = _.create<LLVM::ConstantOp>(
-        L, llvm_int_type,
+        l, llvm_int_type,
         _.getIntegerAttr(_.getIntegerType(64, /*signed=*/false), op.target()));
-    target_val = _.create<LLVM::IntToPtrOp>(L, dispatch_type, target_val);
+    target_val = _.create<LLVM::IntToPtrOp>(l, dispatch_type, target_val);
 
-    _.create<LLVM::CallOp>(L, TypeRange{void_ty},
+    _.create<LLVM::CallOp>(l, TypeRange{void_ty},
                            ValueRange{target_val, operands[0], operands[1]});
     _.eraseOp(op);
 
@@ -538,10 +545,10 @@ struct IterOpLowering : public OpConversionPattern<IterOp> {
 
   LogicalResult matchAndRewrite(IterOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    auto L = op.getLoc();
+    auto l = op.getLoc();
 
-    auto start = _.getBlock();
-    auto end = _.splitBlock(start, _.getInsertionPoint());
+    auto* start = _.getBlock();
+    auto* end = _.splitBlock(start, _.getInsertionPoint());
 
     auto initial_index = operands[0];
     auto limit_index = operands[1];
@@ -573,12 +580,12 @@ struct IterOpLowering : public OpConversionPattern<IterOp> {
       }
 
       _.setInsertionPointToEnd(start);
-      _.create<BranchOp>(L, join, ops);
+      _.create<BranchOp>(l, join, ops);
 
       ops.clear();
     }
 
-    auto body_entry = &op.body().front();
+    auto* body_entry = &op.body().front();
     _.inlineRegionBefore(op.body(), end);
 
     ReplaceTerminators(_, pre_join, Region::iterator{body_entry},
@@ -586,27 +593,27 @@ struct IterOpLowering : public OpConversionPattern<IterOp> {
 
     {
       _.setInsertionPointToStart(pre_join);
-      auto next_index = _.create<LLVM::AddOp>(L, join->getArgument(0),
-                                              getIntConstant(_, L, 1));
+      auto next_index = _.create<LLVM::AddOp>(l, join->getArgument(0),
+                                              getIntConstant(_, l, 1));
       ops.push_back(next_index);
       for (intptr_t i = 0; i < pre_join->getNumArguments(); ++i) {
         ops.push_back(pre_join->getArgument(i));
       }
-      _.create<BranchOp>(L, join, ops);
+      _.create<BranchOp>(l, join, ops);
 
       ops.clear();
     }
 
     {
       _.setInsertionPointToEnd(join);
-      auto cond = _.create<LLVM::ICmpOp>(L, LLVM::ICmpPredicate::ult,
+      auto cond = _.create<LLVM::ICmpOp>(l, LLVM::ICmpPredicate::ult,
                                          join->getArgument(0), limit_index);
 
       for (intptr_t i = 0; i < join->getNumArguments(); ++i) {
         ops.push_back(join->getArgument(i));
       }
       auto end_args = ArrayRef<Value>{ops.data() + 1, ops.size() - 1};
-      _.create<LLVM::CondBrOp>(L, cond, body_entry, ops, end, end_args);
+      _.create<LLVM::CondBrOp>(l, cond, body_entry, ops, end, end_args);
 
       ops.clear();
     }
@@ -638,40 +645,36 @@ struct ProtoJitToLLVMLoweringPass
 }  // namespace
 
 void ProtoJitToLLVMLoweringPass::runOnOperation() {
-  auto* C = &getContext();
+  auto* c = &getContext();
 
-  ConversionTarget target(*C);
+  ConversionTarget target(*c);
   target.addLegalDialect<mlir::LLVM::LLVMDialect>();
   target.addLegalOp<mlir::ModuleOp>();
   target.addLegalOp<ir::CastOp>();
 
-  ir::ProtoJitTypeConverter typeConverter(C);
+  ProtoJitTypeConverter type_converter(c);
 
-  OwningRewritePatternList patterns(C);
-  populateStdToLLVMConversionPatterns(typeConverter, patterns);
-  patterns.insert<             //
-      ir::BTagOpLowering,      //
-      ir::IIntOpLowering,      //
-      ir::DTagOpLowering,      //
-      ir::LTagOpLowering,      //
-      ir::LRefOpLowering,      //
-      ir::ETagOpLowering,      //
-      ir::ProjectOpLowering,   //
-      ir::XIntOpLowering,      //
-      ir::XStrOpLowering,      //
-      ir::DispatchOpLowering,  //
-      ir::XArrayOpLowering,    //
-      ir::IterOpLowering       //
-      >(typeConverter, C);
+  OwningRewritePatternList patterns(c);
+  populateStdToLLVMConversionPatterns(type_converter, patterns);
+  patterns.insert<         //
+      BTagOpLowering,      //
+      IIntOpLowering,      //
+      DTagOpLowering,      //
+      LTagOpLowering,      //
+      LRefOpLowering,      //
+      ETagOpLowering,      //
+      ProjectOpLowering,   //
+      XIntOpLowering,      //
+      XStrOpLowering,      //
+      DispatchOpLowering,  //
+      XArrayOpLowering,    //
+      IterOpLowering       //
+      >(type_converter, c);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {
     signalPassFailure();
   }
-}
-
-std::unique_ptr<Pass> createLowerToLLVMPass() {
-  return std::make_unique<ProtoJitToLLVMLoweringPass>();
 }
 
 static Optional<Value> sourceIndexMaterialization(OpBuilder& _,
@@ -700,22 +703,23 @@ static Optional<Value> targetIndexMaterialization(OpBuilder& _,
   return {_.create<ir::CastOp>(loc, type, inputs[0])};
 }
 
-ProtoJitTypeConverter::ProtoJitTypeConverter(MLIRContext* C)
-    : LLVMTypeConverter(C) {
+ProtoJitTypeConverter::ProtoJitTypeConverter(MLIRContext* c)
+    : LLVMTypeConverter(c) {
   addConversion([](PJType type) { return type.toLLVM(); });
   addConversion([](UserStateType type) { return type.toLLVM(); });
   addSourceMaterialization(sourceIndexMaterialization);
   addTargetMaterialization(targetIndexMaterialization);
 }
 
+}  // namespace
+
 Type PJType::toLLVM() const {
   if ((*this)->IsInt()) {
     return LLVM::LLVMPointerType::get(
         llvmInternalType(getContext(), (*this)->AsInt()), 0);
-  } else {
-    auto internal = LLVM::LLVMStructType::getLiteral(getContext(), {});
-    return LLVM::LLVMPointerType::get(internal, 0);
   }
+  auto internal = LLVM::LLVMStructType::getLiteral(getContext(), {});
+  return LLVM::LLVMPointerType::get(internal, 0);
 }
 
 Type UserStateType::toLLVM() const {
@@ -723,5 +727,8 @@ Type UserStateType::toLLVM() const {
   return LLVM::LLVMPointerType::get(internal, 0);
 }
 
-}  // namespace ir
+std::unique_ptr<Pass> createLowerToLLVMPass() {
+  return std::make_unique<ProtoJitToLLVMLoweringPass>();
+}
+
 }  // namespace pj
