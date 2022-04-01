@@ -349,8 +349,9 @@ BEGIN_ACTION(StructDecl) {
   }
 
   auto name = __ PopScopedIdAsName();
-  auto type = pj::types::StructType::get(
-      __ scope.Context(), pj::types::TypeDomain::kHost, name,
+  auto type = pj::types::StructType::get(__ scope.Context(),
+                                         pj::types::TypeDomain::kHost, name);
+  type.setTypeData(
       pj::types::Struct{.fields = llvm::ArrayRef<pj::types::StructField>{
                             &fields[0], fields.size()}});
   __ DefineType(in, name, type);
@@ -438,9 +439,9 @@ static void HandleVariant(const ActionInput& in, ParseState* state,
 
   auto name = __ PopScopedIdAsName();
   auto type = pj::types::InlineVariantType::get(
-      __ scope.Context(), pj::types::TypeDomain::kHost, name,
-      pj::types::InlineVariant{
-          .terms = llvm::ArrayRef<pj::types::Term>{&terms[0], terms.size()}});
+      __ scope.Context(), pj::types::TypeDomain::kHost, name);
+  type.setTypeData(pj::types::InlineVariant{
+      .terms = llvm::ArrayRef<pj::types::Term>{&terms[0], terms.size()}});
   __ DefineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
