@@ -5,3 +5,6 @@ bazel-*
 external
 .gdb_history
 *.swp
+
+# Produced by ProtoJIT for debugging, when debug types are set.
+output.o

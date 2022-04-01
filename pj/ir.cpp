@@ -10,8 +10,9 @@
 
 namespace pj {
 using namespace types;
+using namespace mlir;
 
-mlir::Type CType::toIR(mlir::MLIRContext* C) const {
+Type CType::toIR(MLIRContext* C) const {
   return pj::ir::PJType::get(C, ir::PJTypeStorage::Params{.type = this});
 }
 
@@ -19,8 +20,7 @@ namespace ir {
 
 ProtoJitDialect::~ProtoJitDialect() {}
 
-void ProtoJitDialect::printType(mlir::Type type,
-                                mlir::DialectAsmPrinter& P) const {
+void ProtoJitDialect::printType(Type type, DialectAsmPrinter& P) const {
   if (type.isa<PJType>()) {
     auto pjtype = type.cast<PJType>();
     P << "val:" << pjtype->total_size().bits() << "/"
@@ -38,8 +38,8 @@ void ProtoJitDialect::printType(mlir::Type type,
   }
 }
 
-void ProtoJitDialect::printAttribute(mlir::Attribute attr,
-                                     mlir::DialectAsmPrinter& P) const {
+void ProtoJitDialect::printAttribute(Attribute attr,
+                                     DialectAsmPrinter& P) const {
   if (auto width = attr.dyn_cast<WidthAttr>()) {
     P << "b" << width->bits();
   } else if (auto path = attr.dyn_cast<PathAttr>()) {
@@ -53,9 +53,8 @@ void ProtoJitDialect::printAttribute(mlir::Attribute attr,
   }
 }
 
-ProtoJitDialect::ProtoJitDialect(mlir::MLIRContext* ctx)
-    : mlir::Dialect(getDialectNamespace(), ctx,
-                    TypeID::get<ProtoJitDialect>()) {
+ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
+    : Dialect(getDialectNamespace(), ctx, TypeID::get<ProtoJitDialect>()) {
   addOperations<
 #define GET_OP_LIST
 #include "pj/ops.cpp.inc"
@@ -77,18 +76,18 @@ ProtoJitDialect::ProtoJitDialect(mlir::MLIRContext* ctx)
            types::BoundedBufferType>();
 }
 
-static void print(mlir::OpAsmPrinter& printer, XIntOp op) {
+static void print(OpAsmPrinter& printer, XIntOp op) {
   printer << "pj.xint(" << op.from() << ", " << op.to() << ")";
   printer.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& printer, LRefOp op) {
+static void print(OpAsmPrinter& printer, LRefOp op) {
   printer << "pj.lref(" << op.base() << ", " << op.ref_offset().bits() << ", "
           << op.ref_size().bits() << ")";
   printer.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& p, XStrOp op) {
+static void print(OpAsmPrinter& p, XStrOp op) {
   p << "pj.xstr(" << op.from() << ", " << op.to() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 
@@ -98,7 +97,7 @@ static void print(mlir::OpAsmPrinter& p, XStrOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, SStrOp op) {
+static void print(OpAsmPrinter& p, SStrOp op) {
   p << "pj.sstr(" << op.source() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 
@@ -108,7 +107,7 @@ static void print(mlir::OpAsmPrinter& p, SStrOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, SListOp op) {
+static void print(OpAsmPrinter& p, SListOp op) {
   p << "pj.slst(" << op.source() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 
@@ -118,7 +117,7 @@ static void print(mlir::OpAsmPrinter& p, SListOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, IterOp op) {
+static void print(OpAsmPrinter& p, IterOp op) {
   p << "pj.iter[" << op.start() << " -> " << op.end() << "]";
 
   p << "(";
@@ -136,17 +135,17 @@ static void print(mlir::OpAsmPrinter& p, IterOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, ProjectOp op) {
+static void print(OpAsmPrinter& p, ProjectOp op) {
   p << "pj.proj(" << op.value() << ", " << op.byte_offset()
     << "): " << op.getType();
 }
 
-static void print(mlir::OpAsmPrinter& p, IIntOp op) {
+static void print(OpAsmPrinter& p, IIntOp op) {
   p << "pj.iint(" << op.to() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& p, MatchVariantOp op) {
+static void print(OpAsmPrinter& p, MatchVariantOp op) {
   p << "pj.match(" << op.from() << ")";
   p.printOptionalAttrDict(op->getAttrs());
   Region& body = op.body();
@@ -155,22 +154,22 @@ static void print(mlir::OpAsmPrinter& p, MatchVariantOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, ETagOp op) {
+static void print(OpAsmPrinter& p, ETagOp op) {
   p << "pj.etag(" << op.to() << ", " << op.tag() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& p, DTagOp op) {
+static void print(OpAsmPrinter& p, DTagOp op) {
   p << "pj.dtag(" << op.from() << "):" << op.getType();
   p.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& p, DispatchOp op) {
+static void print(OpAsmPrinter& p, DispatchOp op) {
   p << "pj.disp: " << llvm::HexNumber(op.target()) << "(" << op.value() << ", "
     << op.state() << ")";
 }
 
-static void print(mlir::OpAsmPrinter& p, LTagOp op) {
+static void print(OpAsmPrinter& p, LTagOp op) {
   p << "pj.ltag(" << op.from() << "[" << op.byte_offset()
     << "]) : " << op.getType();
   p.printOptionalAttrDict(op->getAttrs());
@@ -181,7 +180,7 @@ BTagOp::getMutableSuccessorOperands(unsigned index) {
   return llvm::None;
 }
 
-static void print(mlir::OpAsmPrinter& p, XArrayOp op) {
+static void print(OpAsmPrinter& p, XArrayOp op) {
   p << "pj.xary(" << op.from() << ", " << op.to() << ")";
   p.printOptionalAttrDict(op->getAttrs());
 
@@ -195,12 +194,12 @@ static void print(mlir::OpAsmPrinter& p, XArrayOp op) {
   }
 }
 
-static void print(mlir::OpAsmPrinter& p, SIntOp op) {
+static void print(OpAsmPrinter& p, SIntOp op) {
   p << "pj.sint(" << op.source() << ") : " << op.getType();
   p.printOptionalAttrDict(op->getAttrs());
 }
 
-static void print(mlir::OpAsmPrinter& p, CastOp op) {
+static void print(OpAsmPrinter& p, CastOp op) {
   p << "pj.cast(" << op->getOperand(0) << ") : " << op.getType();
   p.printOptionalAttrDict(op->getAttrs());
 }
@@ -245,17 +244,21 @@ OpFoldResult CastOp::fold(ArrayRef<Attribute> cstOperands) {
 
 }  // namespace ir
 
-mlir::Value CListType::LoadLength(mlir::Location loc, mlir::Value value,
-                                  mlir::OpBuilder& _) const {
+Value CListType::LoadLength(Location loc, Value value, OpBuilder& _) const {
   return _.create<ir::LTagOp>(loc, ir::GetIndexType(_), value,
                               ir::GetIndexConstant(loc, _, len_offset.bytes()),
                               len_size);
 }
 
-mlir::Value CListType::LoadOutlinedArray(mlir::Location loc, mlir::Value value,
-                                         mlir::Type inner,
-                                         mlir::OpBuilder& _) const {
+Value CListType::LoadOutlinedArray(Location loc, Value value, Type inner,
+                                   OpBuilder& _) const {
   return _.create<ir::LRefOp>(loc, inner, value, ref_offset, ref_size);
+}
+
+void ir::printAttrForFunctionName(llvm::raw_ostream& os, mlir::Attribute attr) {
+  if (attr.isa<PathAttr>()) {
+    attr.print(os);
+  }
 }
 
 }  // namespace pj

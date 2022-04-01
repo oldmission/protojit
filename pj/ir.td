@@ -38,7 +38,7 @@ def EncodeOp : ProtoJit_Op<"encode"> {
 //
 // Receives a buffer which it may use to store outline data. Returns a new
 // buffer object referencing the remaining space in the original buffer.
-// Throws an "exception" if the is insufficient space in the buffer.
+// Throws an "exception" if there is insufficient space in the buffer.
 def DecodeOp : ProtoJit_Op<"decode"> {
   let arguments = (
      ins ValueType:$src, ValueType:$dst, BoundedBufferType:$buf,
@@ -104,7 +104,7 @@ def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
 }
 
 // Retrieve a reference to a value at the given index in a Vector.
-def IndexOp : ProtoJit_Op<"index"> {
+def IndexOp : ProtoJit_Op<"index", [NoSideEffect]> {
   let arguments = (ins VectorType:$vec, AnyUnsignedInteger:$index);
   let results = (outs ValueType);
 }
@@ -128,54 +128,38 @@ def ReflectOp : ProtoJit_Op<"reflect"> {
 }
 
 // Register a callback to be invoked when decoding is complete.
-def SetCallbackOp : ProtoJit_Op<"callback"> {
+def SetCallbackOp : ProtoJit_Op<"setcallback"> {
   let arguments = (ins IndexAttr:$target);
 }
 
 // Invoke a callback with the result of decoding.
+// Can only appear in the body of DecodeCatchOp.
+//
+// This is the only op in PJ IR which cannot be re-ordered with other ops.
+// The arguments may be ValueType and UserState type in ProtoJIT IR, or
+// llvm.ptr during LLVM lowering. In either case the arguments are understood
+// to be two word-sized pointers arguments to the callee.
 def InvokeCallbackOp : ProtoJit_Op<"invoke"> {
-  let arguments = (ins ValueType:$arg, UserStateType:$state);
+  let arguments = (ins AnyType:$arg, AnyType:$state);
 }
 
 // Catches buffer exhaustion exceptions thrown during decoding.
 // Also serves as the anchor for setting the decoder callback.
 //
-// If an exception is thrown inside, returns the 'default' input.
-// Otherwise, returns whatever Yield returns.
-//
 // Should only have one block in the body, and that block should end
 // with a YieldOp.
+//
+// If an exception is thrown inside, returns a null buffer.
+// Otherwise, returns whatever YieldOp returns.
 def DecodeCatchOp : ProtoJit_Op<"catch"> {
-  let arguments = (ins AnyType:$exc_result);
-  let results = (outs AnyType);
+  let results = (outs BufferType:$buf);
   let regions = (region AnyRegion:$body);
 }
-
-// Throws an exception. Can exist inside a DecodeCatchOp or in a
-// standalone function. In the latter case, the calling convention of
-// the enclosing function will be adjusted during LLVM lowering to
-// propagate the exception.
-def ThrowOp : ProtoJit_Op<"throw", [Terminator]> {}
 
 // Terminate execution inside a DecodeCatchOp, and make it return the
 // provided value. Must be the last operation in a DecodeCatchOp's body.
 def YieldOp : ProtoJit_Op<"yield", [Terminator]> {
   let arguments = (ins AnyType:$result);
-}
-
-////////////////////////////////////////////////////////////////
-// These operations are created during the first phase of LLVM lowering
-// and removed during the second.
-//
-// They will only be found at the beginning of a DecodeCatchOp's body
-// during lowering.
-
-def ExcCheckAnchor : ProtoJit_Op<"check_anchor"> {
-  let results = (outs LLVM_i8Ptr);
-}
-
-def CallbackAnchor : ProtoJit_Op<"callback_anchor"> {
-  let results = (outs LLVM_AnyPointer);
 }
 
 ////////////////////////////////////////////////////////////////

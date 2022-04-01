@@ -1,5 +1,3 @@
-#include "inline_regions.hpp"
-
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
