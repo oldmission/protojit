@@ -15,16 +15,6 @@ using namespace ir2;
 using namespace types;
 
 namespace {
-// Convert ProtoJit IR types to LLVM.
-struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
-  ProtoJitTypeConverter(mlir::MLIRContext* C) : mlir::LLVMTypeConverter(C) {
-    auto char_star_type =
-        LLVM::LLVMPointerType::get(IntegerType::get(&getContext(), 8));
-    addConversion([=](ValueType type) { return char_star_type; });
-    addConversion([=](RawBufferType type) { return char_star_type; });
-  }
-};
-
 struct LLVMGenPass : public PassWrapper<LLVMGenPass, OperationPass<ModuleOp>> {
   LLVMGenPass(const llvm::TargetMachine* machine) : machine_(machine) {}
 
@@ -33,6 +23,11 @@ struct LLVMGenPass : public PassWrapper<LLVMGenPass, OperationPass<ModuleOp>> {
   }
 
   void runOnOperation() final;
+
+  mlir::IntegerType word_type() {
+    return IntegerType::get(&getContext(), machine_->getPointerSize(0),
+                            IntegerType::Signless);
+  }
 
   mlir::Type int_type(Width width) {
     return IntegerType::get(&getContext(), width.bits(), IntegerType::Signless);
@@ -59,6 +54,26 @@ struct LLVMGenPass : public PassWrapper<LLVMGenPass, OperationPass<ModuleOp>> {
 
   const llvm::TargetMachine* const machine_;
 };
+
+// Convert ProtoJit IR types to LLVM.
+struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
+  ProtoJitTypeConverter(mlir::MLIRContext* C, LLVMGenPass* pass)
+      : mlir::LLVMTypeConverter(C), pass(pass) {
+    auto char_star_type =
+        LLVM::LLVMPointerType::get(IntegerType::get(&getContext(), 8));
+
+    auto bounded_buf_type = LLVM::LLVMStructType::getNewIdentified(
+        &getContext(), "!pj.bbuf", {char_star_type, pass->word_type()});
+
+    addConversion([=](ValueType type) { return char_star_type; });
+    addConversion([=](RawBufferType type) { return char_star_type; });
+    addConversion([=](ir::UserStateType type) { return char_star_type; });
+    addConversion([=](BoundedBufferType type) { return bounded_buf_type; });
+  }
+
+  LLVMGenPass* pass;
+};
+
 }  // namespace
 
 struct ProjectOpLowering : public OpConversionPattern<ProjectOp> {
@@ -235,6 +250,25 @@ LogicalResult MatchOpLowering::matchAndRewrite(
   return success();
 }
 
+struct InvokeCallbackOpLowering : public OpConversionPattern<InvokeCallbackOp> {
+  InvokeCallbackOpLowering(ProtoJitTypeConverter& converter, MLIRContext* C,
+                           LLVMGenPass* pass)
+      : OpConversionPattern<InvokeCallbackOp>(converter, C), pass_(pass) {}
+
+  LogicalResult matchAndRewrite(InvokeCallbackOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass_;
+};
+
+LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
+    InvokeCallbackOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  // TODO: implement when SetCallbackOp is also implemented.
+  _.eraseOp(op);
+  return success();
+}
+
 bool isLegalFuncOp(mlir::LLVM::LLVMFuncOp func) {
   // TODO: this is kind of hacky, we're probably not supposed
   // to mutate the op here.
@@ -243,6 +277,21 @@ bool isLegalFuncOp(mlir::LLVM::LLVMFuncOp func) {
         func.getContext(), mlir::LLVM::Linkage::Internal));
   }
   return true;
+}
+
+void fixupNoaliasBuffers(LLVM::LLVMFuncOp op) {
+  // TODO: restore noalias somehow
+  for (intptr_t i = 0; i < op.getNumArguments(); ++i) {
+    if (!op.getArgAttr(i, mlir::LLVM::LLVMDialect::getNoAliasAttrName())) {
+      continue;
+    }
+    auto arg_type = op.getArgument(i).getType();
+    if (auto stype = arg_type.dyn_cast<LLVM::LLVMStructType>()) {
+      if (stype.isIdentified() && stype.getName() == "!pj.bbuf") {
+        op.removeArgAttr(i, mlir::LLVM::LLVMDialect::getNoAliasAttrName());
+      }
+    }
+  }
 }
 
 void LLVMGenPass::runOnOperation() {
@@ -254,14 +303,23 @@ void LLVMGenPass::runOnOperation() {
   target.addDynamicallyLegalOp<mlir::LLVM::LLVMFuncOp>(isLegalFuncOp);
 
   OwningRewritePatternList patterns(C);
-  ProtoJitTypeConverter typeConverter(C);
+  ProtoJitTypeConverter typeConverter(C, this);
   populateStdToLLVMConversionPatterns(typeConverter, patterns);
   patterns.add<ProjectOpLowering, TranscodeOpLowering, TagOpLowering,
-               MatchOpLowering>(typeConverter, C, this);
+               MatchOpLowering, InvokeCallbackOpLowering>(typeConverter, C,
+                                                          this);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {
     signalPassFailure();
+  }
+
+  ModuleOp module{getOperation()};
+
+  // Fixup noalias applied to bounded buffers on function arguments.
+  auto* body = module.getBody();
+  for (auto& op : *body) {
+    fixupNoaliasBuffers(LLVM::LLVMFuncOp{&op});
   }
 }
 
