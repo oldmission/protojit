@@ -31,8 +31,9 @@ TEST_F(TmpIR2Test, BasicStructTest) {
       .offset = Bytes(0),
   });
 
-  auto struct_m_ty = types::StructType::get(
-      &ctx_.ctx_, types::TypeDomain::kHost, "thing");
+  auto struct_m_ty =
+      types::StructType::get(&ctx_.ctx_, types::TypeDomain::kHost,
+                             llvm::ArrayRef<llvm::StringRef>{"thing"});
   struct_m_ty.setTypeData({
       .fields = m_fields,
       .size = Bytes(8),
@@ -45,8 +46,9 @@ TEST_F(TmpIR2Test, BasicStructTest) {
       .name = "fld",
       .offset = Bytes(0),
   });
-  auto struct_p_ty = types::StructType::get(
-      &ctx_.ctx_, types::TypeDomain::kWire, "thing");
+  auto struct_p_ty =
+      types::StructType::get(&ctx_.ctx_, types::TypeDomain::kWire,
+                             llvm::ArrayRef<llvm::StringRef>{"thing"});
   struct_p_ty.setTypeData({
       .fields = m_fields,
       .size = Bytes(8),

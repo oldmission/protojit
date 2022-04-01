@@ -129,10 +129,10 @@ struct NominalTypeStorageBase : public ValueTypeStorage {
 
 template <typename T>
 struct NominalTypeStorage : public NominalTypeStorageBase {
-  using KeyTy = std::tuple<TypeDomain, Name, T>;
+  using KeyTy = std::pair<TypeDomain, Name>;
 
-  NominalTypeStorage(TypeDomain type_domain, Name name, const T& type_data)
-      : type_domain_(type_domain), name_(name), type_data_(type_data) {}
+  NominalTypeStorage(TypeDomain type_domain, Name name)
+      : type_domain_(type_domain), name_(name) {}
 
   bool operator==(const KeyTy& k) const {
     return type_domain_ == std::get<TypeDomain>(k) &&
@@ -148,9 +148,8 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
 
   static NominalTypeStorage* construct(mlir::TypeStorageAllocator& allocator,
                                        const KeyTy& key) {
-    return new (allocator.allocate<NominalTypeStorage>()) NominalTypeStorage(
-        std::get<TypeDomain>(key), type_intern(allocator, std::get<Name>(key)),
-        type_intern(allocator, std::get<T>(key)));
+    return new (allocator.allocate<NominalTypeStorage>())
+        NominalTypeStorage(key.first, allocator.copyInto(key.second));
   }
 
   void print(llvm::raw_ostream& os) const override {
