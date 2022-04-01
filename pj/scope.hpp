@@ -7,6 +7,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Types.h>
 
+#include "types.hpp"
 #include "util.hpp"
 
 namespace pj {
@@ -32,13 +33,13 @@ class Scope {
   }
 
   mlir::MLIRContext* Context() { return context_; }
-  mlir::Type Unit();
+  types::StructType Unit();
 
  private:
   std::vector<Scoped*> allocations;
 
   mlir::MLIRContext* context_;
-  mlir::Type unit_ = nullptr;
+  types::StructType unit_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(Scope);
 };
