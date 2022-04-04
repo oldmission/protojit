@@ -53,6 +53,10 @@ struct ParseState {
   // specified.
   uint64_t explicit_tag = 0;
 
+  // Populated after parsing TagPathDecl.
+  // Cleared after parsing ProtoDecl.
+  std::optional<std::vector<std::string>> tag_path;
+
   SourceId space;
 
   // Populated after parsing Id and ScopedId.
@@ -88,7 +92,8 @@ struct ParseState {
   }
 
   template <typename I>
-  mlir::Type ResolveType(const I& in, const SourceId& id) {
+  mlir::Type ResolveType(const I& in, const SourceId& id,
+                         bool error_on_failure = true) {
     std::vector<llvm::StringRef> id_;
     id_.reserve(space.size() + id.size());
     for (intptr_t i = space.size(); i >= 0; --i) {
@@ -105,7 +110,11 @@ struct ParseState {
       }
       id_.clear();
     }
-    throw parse_error("Cannot resolve ID.", in.position());
+    if (error_on_failure) {
+      throw parse_error("Cannot resolve ID.", in.position());
+    } else {
+      return mlir::Type{};
+    }
   }
 
   template <typename I>
@@ -489,9 +498,91 @@ BEGIN_ACTION(ImportDecl) {
 }
 END_ACTION()
 
-struct TopDecl
-    : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, /*ProtoDecl,*/
-          TypeDecl, SpaceDecl> {};
+struct TagPath : sor<plus<seq<tok<'.'>, identifier>>, tok<'.'>> {};
+
+BEGIN_ACTION(TagPath) {
+  assert(!__ tag_path.has_value());
+
+  std::vector<std::string> path;
+  if (std::distance(in.begin(), in.end()) > 1) {
+    const char* cur = in.begin() + 1;
+    const char* it;
+    while ((it = std::find(cur, in.end(), '.')) != in.end()) {
+      path.push_back(std::string{cur, it});
+      cur = it + 1;
+    }
+    path.push_back(std::string{cur, in.end()});
+  }
+
+  __ tag_path = std::move(path);
+}
+END_ACTION()
+
+struct TagPathDecl : opt<if_must<tok<'@'>, TagPath>> {};
+
+struct ProtoDecl
+    : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, TagPathDecl, tok<';'>> {};
+
+BEGIN_ACTION(ProtoDecl) {
+  auto head_name = __ PopScopedId();
+  auto protocol_name = __ PopScopedId();
+
+  if (__ ResolveType(in, protocol_name, false)) {
+    throw parse_error("Protocol name " + protocol_name.back() +
+                          " re-defines existing type name",
+                      in.position());
+  }
+
+  auto head = __ ResolveType(in, head_name);
+
+  // Validate that the tag path points to a variant via struct fields
+  if (__ tag_path.has_value()) {
+    mlir::Type cur = head;
+    for (uintptr_t i = 0; i < __ tag_path->size(); ++i) {
+      const std::string& term = __ tag_path.value()[i];
+
+      if (!types::StructType::classof(cur)) {
+        throw parse_error("Protocol tag path requests field '" + term +
+                              "' in non-struct type",
+                          in.position());
+        break;
+      }
+
+      auto struct_type = cur.dyn_cast<types::StructType>();
+      assert(struct_type);
+      auto it =
+          std::find_if(struct_type->fields.begin(), struct_type->fields.end(),
+                       [&term](const types::StructField& field) {
+                         return field.name == term;
+                       });
+      if (it == struct_type->fields.end()) {
+        throw parse_error(
+            "Unrecognized term '" + term + "' in protocol tag path",
+            in.position());
+      }
+
+      cur = it->type;
+    }
+
+    if (!types::VariantType::classof(cur)) {
+      throw parse_error("Protocol tag path does not point to a variant type",
+                        in.position());
+    }
+  }
+
+  __ decls.emplace_back(ParsedProtoFile::Decl{
+      .kind = ParsedProtoFile::DeclKind::kProtocol,
+      .name = protocol_name,
+      .type = head,
+      .tag_path = __ tag_path,
+  });
+
+  __ tag_path = std::nullopt;
+}
+END_ACTION()
+
+struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
+                     TypeDecl, SpaceDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 

@@ -78,7 +78,8 @@ std::string GenerateTypeRef(mlir::Type type) {
   return o.str();
 }
 
-void PrintNamespacedName(types::Name name, std::ostream& output) {
+template <typename T>
+void PrintNamespacedName(const T& name, std::ostream& output) {
   for (auto& p : name) output << "::" << std::string_view(p);
 }
 
@@ -454,11 +455,11 @@ void GenerateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
   GenerateNamespaceEnd(decl.name, output);
 }
 
-#if 0
-void GenerateProtocol(types::Name name, const AType* type,
+void GenerateProtocol(const SourceId& name, mlir::Type head,
+                      const std::optional<std::vector<std::string>>& tag_path,
                       std::ostream& output, std::ostream& back) {
   GenerateNamespaceBegin(name, output);
-  output << "struct " << std::string_view(name.back()) << "{};\n";
+  output << "struct " << std::string_view(name.back()) << ";\n";
   GenerateNamespaceEnd(name, output);
 
   back << "namespace pj {\n";
@@ -468,17 +469,27 @@ void GenerateProtocol(types::Name name, const AType* type,
   PrintNamespacedName(name, back);
   back << "> {\n"
        << "using Head = ";
-  GenerateTypeRef(type, back);
+  GenerateTypeRef(head, back);
   back << ";\n";
+  back << "constexpr std::optional<std::array<std::string_view, "
+       << tag_path->size() << ">> tag = ";
+  if (tag_path.has_value()) {
+    back << "std::array<std::string_view, " << tag_path->size() << ">{";
+    for (const std::string& term : *tag_path) {
+      back << "\"" << term << "\", ";
+    }
+    back << "};\n";
+  } else {
+    back << "std::nullopt;\n";
+  }
   back << "};\n}  // namespace gen\n\n";
   back << "\n}  // namespace pj\n\n";
 }
-#endif
 
 void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
                     std::ostream& output) {
   output << "#pragma once\n"
-         << "#include<cstddef>\n "
+         << "#include <cstddef>\n "
          << "#include \"pj/protojit.hpp\"\n"
          << "#include \"pj/runtime.h\"\n"
          << "\n";
@@ -497,11 +508,9 @@ void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
       case ParsedProtoFile::DeclKind::kComposite:
         GenerateComposite(decl, output, back);
         break;
-#if 0
       case ParsedProtoFile::DeclKind::kProtocol:
-        GenerateProtocol(decl.name, decl.type, output, back);
+        GenerateProtocol(decl.name, decl.type, decl.tag_path, output, back);
         break;
-#endif
     }
   }
   output << back.str();
