@@ -208,31 +208,3 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
                      .alignment = pj::Bits(alignment)});
   return reinterpret_cast<const PJAnyType*>(any_type.getAsOpaquePointer());
 }
-
-const PJProtocolType* PJCreateProtocolType(PJContext* c,
-                                           const void* head_type) {
-  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
-  pj::types::ValueType head = mlir::Type::getFromOpaquePointer(head_type)
-                                  .dyn_cast<pj::types::ValueType>();
-  if (!head) {
-    return nullptr;
-  }
-  auto protocol_type = pj::types::ProtocolType::get(
-      &ctx->ctx_, pj::types::Protocol{.head = head});
-  return reinterpret_cast<const PJProtocolType*>(
-      protocol_type.getAsOpaquePointer());
-}
-
-const PJRawBufferType* PJCreateRawBufferType(PJContext* c) {
-  auto buffer_type = pj::types::RawBufferType::get(
-      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);
-  return reinterpret_cast<const PJRawBufferType*>(
-      buffer_type.getAsOpaquePointer());
-}
-
-const PJBoundedBufferType* PJCreateBoundedBufferType(PJContext* c) {
-  auto buffer_type = pj::types::BoundedBufferType::get(
-      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);
-  return reinterpret_cast<const PJBoundedBufferType*>(
-      buffer_type.getAsOpaquePointer());
-}

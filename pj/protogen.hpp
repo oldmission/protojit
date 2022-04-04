@@ -14,12 +14,18 @@ namespace pj {
 using SourceId = std::vector<std::string>;
 
 struct ParsedProtoFile {
-  enum class DeclKind { kType, kComposite /*, kProtocol*/ };
+  enum class DeclKind { kType, kComposite, kProtocol };
 
   struct Decl {
     const DeclKind kind;
     const SourceId name;
     mlir::Type type;
+
+    // For protocol types, the tag path corresponding to the variant that will
+    // get outlined. An empty tag path means no variant will get outlined. The
+    // tag path has the format <field name>, <field name>, ..., where the last
+    // field name is the field name of the variant.
+    std::optional<std::vector<std::string>> tag_path;
 
     // For variants, whether the variant was declared as an enum.
     // We will generate a enum directly without the wrapper class

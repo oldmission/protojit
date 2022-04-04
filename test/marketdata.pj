@@ -746,5 +746,7 @@ variant Marketdata {
   // bond_price: BondPrice = 29;
 }
 
+protocol MarketdataProto : Marketdata @.;
+
 }  // space marketdata
 }  // space pj
