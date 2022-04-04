@@ -1,20 +1,14 @@
 #pragma once
 
-#include <cassert>
-#include <map>
+#include <array>
 #include <memory>
-#include <set>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <optional>
 
 #include "arch.hpp"
 #include "context.hpp"
 #include "exceptions.hpp"
 #include "portal.hpp"
 #include "protocol.hpp"
-#include "tag.hpp"
-#include "target.hpp"
 
 namespace pj {
 
@@ -49,6 +43,9 @@ namespace gen {
 
 template <typename T>
 struct BuildPJType {};
+
+template <typename T>
+struct ProtocolHead {};
 
 }  // namespace gen
 

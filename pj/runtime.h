@@ -79,14 +79,6 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
                                  Bits version_offset, Bits size,
                                  Bits alignment);
 
-const PJProtocolType* PJCreateProtocolType(PJContext* c, const void* type,
-                                           intptr_t tag_len, const char* tag[],
-                                           Bits tag_size);
-
-const PJRawBufferType* PJCreateRawBufferType(PJContext* c);
-
-const PJBoundedBufferType* PJCreateBoundedBufferType(PJContext* c);
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif
