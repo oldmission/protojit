@@ -116,6 +116,8 @@ cc_library(
         "@llvm-project//mlir:LLVMDialect",
         "@llvm-project//mlir:StandardOps",
         "@llvm-project//mlir:StandardToLLVM",
+        "@llvm-project//mlir:SCFDialect",
+        "@llvm-project//mlir:SCFToStandard",
         "@llvm-project//mlir:Transforms",
     ],
 )
