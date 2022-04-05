@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
@@ -67,6 +68,11 @@ struct GeneratePass
                                           OpBuilder::Listener* listener,
                                           VariantType from, VariantType to,
                                           ArrayAttr handlers);
+
+  mlir::FuncOp getOrCreateArrayTranscodeFn(mlir::Location loc,
+                                           OpBuilder::Listener* listener,
+                                           ArrayType from, ArrayType to,
+                                           TypeAttr buf_type);
 
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
@@ -163,7 +169,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructEncodeFn(
     return func;
   }
 
-  auto entry_block = func.addEntryBlock();
+  auto* entry_block = func.addEntryBlock();
   auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
   _.setListener(listener);
 
@@ -219,7 +225,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructDecodeFn(
     return func;
   }
 
-  auto entry_block = func.addEntryBlock();
+  auto* entry_block = func.addEntryBlock();
   auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
   _.setListener(listener);
 
@@ -286,7 +292,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantEncodeFn(
     return func;
   }
 
-  auto entry_block = func.addEntryBlock();
+  auto* entry_block = func.addEntryBlock();
   auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
   _.setListener(listener);
 
@@ -326,7 +332,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantEncodeFn(
 
     // Check for undef in the source.
     {
-      auto block = _.createBlock(&func.body());
+      auto* block = _.createBlock(&func.body());
       _.setInsertionPointToStart(block);
       Value result_buf = func.getArgument(2);
 
@@ -338,7 +344,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantEncodeFn(
     }
 
     for (auto& src_term : src_type.terms()) {
-      auto block = _.createBlock(&func.body());
+      auto* block = _.createBlock(&func.body());
       _.setInsertionPointToStart(block);
       Value result_buf = func.getArgument(2);
 
@@ -375,7 +381,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantEncodeFn(
 mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
     mlir::Location loc, OpBuilder::Listener* listener, VariantType src_type,
     VariantType dst_type, mlir::ArrayAttr handlers) {
-  auto ctx = &getContext();
+  auto* ctx = &getContext();
 
   auto fntype = mlir::FunctionType::get(
       ctx, {src_type, dst_type, types::BoundedBufferType::get(ctx)},
@@ -387,7 +393,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
     return func;
   }
 
-  auto entry_block = func.addEntryBlock();
+  auto* entry_block = func.addEntryBlock();
   auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
   _.setListener(listener);
 
@@ -409,7 +415,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
 
   // Check for undef in the source.
   {
-    auto block = _.createBlock(&func.body());
+    auto* block = _.createBlock(&func.body());
     _.setInsertionPointToStart(block);
     Value result_buf = func.getArgument(2);
 
@@ -427,7 +433,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
   }
 
   for (auto& src_term : src_type.terms()) {
-    auto block = _.createBlock(&func.body());
+    auto* block = _.createBlock(&func.body());
     _.setInsertionPointToStart(block);
     Value result_buf = func.getArgument(2);
 
@@ -470,7 +476,77 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
   return mlir::FuncOp{func};
 }
 
-}  // namespace
+mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
+    mlir::Location loc, OpBuilder::Listener* listener, ArrayType from,
+    ArrayType to, TypeAttr buf_type) {
+  auto* ctx = &getContext();
+  auto fntype = mlir::FunctionType::get(ctx, {from, to, buf_type.getValue()},
+                                        buf_type.getValue());
+  auto key = FnKey{from, to, buf_type};
+  auto func = getOrCreateFn(loc, listener, "enc", key, fntype);
+
+  if (!func.isDeclaration()) {
+    return func;
+  }
+
+  auto* entry_block = func.addEntryBlock();
+  auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
+  _.setListener(listener);
+
+  Value src = func.getArgument(0), dst = func.getArgument(1),
+        result_buf = func.getArgument(2);
+
+  auto transcode_len = std::min(from->length, to->length);
+
+  auto loop_start =
+      _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), 0));
+  auto loop_end = _.create<ConstantOp>(
+      loc, _.getIntegerAttr(_.getIndexType(), transcode_len));
+  auto step = _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), 1));
+
+  auto transcode_loop = _.create<scf::ForOp>(loc, loop_start, loop_end, step,
+                                             ValueRange{result_buf});
+
+  loop_start = loop_end;
+  loop_end =
+      _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), to->length));
+  auto default_loop =
+      _.create<scf::ForOp>(loc, loop_start, loop_end, step, ValueRange{});
+
+  _.create<ReturnOp>(loc, transcode_loop.getResult(0));
+
+  // Transcode available elements.
+  {
+    auto* body = transcode_loop.getBody();
+    _.setInsertionPointToEnd(body);
+
+    Value idx = body->getArgument(0);
+    result_buf = body->getArgument(1);
+
+    auto src_elem = _.create<IndexOp>(loc, from->elem, src, idx);
+    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+
+    result_buf = _.create<TranscodeOp>(loc, result_buf.getType(), src_elem,
+                                       dst_elem, result_buf)
+                     .getResult(0);
+
+    _.create<scf::YieldOp>(loc, result_buf);
+  }
+
+  // Fill the rest with defaults.
+  {
+    auto* body = default_loop.getBody();
+    _.setInsertionPointToStart(body);
+    Value idx = body->getArgument(0);
+    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+    _.create<DefaultOp>(loc, dst_elem);
+    // ForOp::build automatically creates a terminating yield since
+    // we have no loop carried variables.
+  }
+
+  cached_fns.emplace(key, func);
+  return mlir::FuncOp{func};
+}
 
 struct EncodeFunctionLowering : public OpConversionPattern<EncodeFunctionOp> {
   using OpConversionPattern<EncodeFunctionOp>::OpConversionPattern;
@@ -485,7 +561,7 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
   _.eraseOp(op);
 
   auto loc = op.getLoc();
-  auto ctx = _.getContext();
+  auto* ctx = _.getContext();
 
   const auto& proto = op.dst().cast<ProtocolType>();
 
@@ -528,7 +604,7 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
   _.eraseOp(op);
 
   auto loc = op.getLoc();
-  auto ctx = _.getContext();
+  auto* ctx = _.getContext();
 
   const auto& proto = op.src().cast<ProtocolType>();
 
@@ -584,6 +660,7 @@ struct EncodeOpLowering : public OpConversionPattern<EncodeOp> {
 
 LogicalResult EncodeOpLowering::matchAndRewrite(
     EncodeOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
   auto loc = op.getLoc();
   auto src_type = op.src().getType();
   auto dst_type = op.dst().getType();
@@ -596,27 +673,31 @@ LogicalResult EncodeOpLowering::matchAndRewrite(
     return mlir::success();
   }
 
-  // Call an outlined encoding routine for structs.
+  FuncOp fn;
+
   if (src_type.isa<StructType>() && dst_type.isa<StructType>()) {
-    auto fn = pass->getOrCreateStructEncodeFn(
+    // Call an outlined encoding routine for structs.
+    fn = pass->getOrCreateStructEncodeFn(
         loc, _.getListener(), src_type.cast<StructType>(),
         dst_type.cast<StructType>(), op.path());
-    auto call = _.create<mlir::CallOp>(loc, fn, operands);
-    _.replaceOp(op, call.getResult(0));
-    return success();
-  }
-
-  // Call an outlined encoding routine for variants.
-  if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
-    auto fn = pass->getOrCreateVariantEncodeFn(
+  } else if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
+    // Call an outlined encoding routine for variants.
+    fn = pass->getOrCreateVariantEncodeFn(
         loc, _.getListener(), src_type.cast<VariantType>(),
         dst_type.cast<VariantType>(), op.path());
-    auto call = _.create<mlir::CallOp>(loc, fn, operands);
-    _.replaceOp(op, call.getResult(0));
-    return success();
+  } else if (src_type.isa<ArrayType>() && dst_type.isa<ArrayType>()) {
+    // Call an outlined encoding routine for arrays.
+    fn = pass->getOrCreateArrayTranscodeFn(
+        loc, _.getListener(), src_type.cast<ArrayType>(),
+        dst_type.cast<ArrayType>(), TypeAttr::get(RawBufferType::get(ctx)));
+  } else {
+    return failure();
   }
 
-  return failure();
+  auto call = _.create<mlir::CallOp>(loc, fn, operands);
+  _.replaceOp(op, call.getResult(0));
+
+  return success();
 }
 
 struct DecodeOpLowering : public OpConversionPattern<DecodeOp> {
@@ -633,6 +714,7 @@ struct DecodeOpLowering : public OpConversionPattern<DecodeOp> {
 
 LogicalResult DecodeOpLowering::matchAndRewrite(
     DecodeOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
   auto loc = op.getLoc();
   auto src_type = op.src().getType();
   auto dst_type = op.dst().getType();
@@ -645,32 +727,37 @@ LogicalResult DecodeOpLowering::matchAndRewrite(
     return success();
   }
 
+  FuncOp fn;
+
   if (src_type.isa<StructType>() && dst_type.isa<StructType>()) {
-    auto fn = pass->getOrCreateStructDecodeFn(
+    fn = pass->getOrCreateStructDecodeFn(
         loc, _.getListener(), src_type.cast<StructType>(),
         dst_type.cast<StructType>(), op.handlers());
-    auto call = _.create<mlir::CallOp>(loc, fn, operands);
-    _.replaceOp(op, call.getResult(0));
-    return success();
-  }
-
-  if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
-    auto fn = pass->getOrCreateVariantDecodeFn(
+  } else if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
+    fn = pass->getOrCreateVariantDecodeFn(
         loc, _.getListener(), src_type.cast<VariantType>(),
         dst_type.cast<VariantType>(), op.handlers());
-    auto call = _.create<mlir::CallOp>(loc, fn, operands);
-    _.replaceOp(op, call.getResult(0));
-    return success();
+  } else if (src_type.isa<ArrayType>() && dst_type.isa<ArrayType>()) {
+    fn = pass->getOrCreateArrayTranscodeFn(
+        loc, _.getListener(), src_type.cast<ArrayType>(),
+        dst_type.cast<ArrayType>(), TypeAttr::get(BoundedBufferType::get(ctx)));
+  } else {
+    return failure();
   }
 
-  return failure();
+  auto call = _.create<mlir::CallOp>(loc, fn, operands);
+  _.replaceOp(op, call.getResult(0));
+  return success();
 }
+
+}  // namespace
 
 void GeneratePass::runOnOperation() {
   auto* ctx = &getContext();
 
   ConversionTarget target(*ctx);
-  target.addLegalDialect<StandardOpsDialect, ProtoJitDialect>();
+  target
+      .addLegalDialect<StandardOpsDialect, scf::SCFDialect, ProtoJitDialect>();
   target.addLegalOp<FuncOp>();
   target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp,
                       EncodeOp, DecodeOp>();

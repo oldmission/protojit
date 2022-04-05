@@ -9,7 +9,9 @@
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 #include <llvm/Support/TargetRegistry.h>
 
+#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/ExecutionEngine/ExecutionEngine.h>
 #include <mlir/ExecutionEngine/OptUtils.h>
@@ -35,8 +37,9 @@ using namespace ir2;
 ProtoJitContext::ProtoJitContext()
     : builder_(&ctx_),
       module_(mlir::ModuleOp::create(builder_.getUnknownLoc())) {
-  ctx_.getOrLoadDialect<ir::ProtoJitDialect>();
+  ctx_.getOrLoadDialect<pj::ir::ProtoJitDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
+  ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
 }
 
 ProtoJitContext::~ProtoJitContext() {}
@@ -130,6 +133,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
       module_->dump());
 
   mlir::PassManager pjpm(&ctx_);
+  pjpm.addPass(mlir::createLowerToCFGPass());
   pjpm.addPass(pj::createInlineRegionsPass());
   pjpm.addPass(mlir::createCanonicalizerPass());
 

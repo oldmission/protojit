@@ -6,7 +6,7 @@
 namespace pj {
 
 struct TmpIR2Test : public ::testing::Test {
-  ProtoJitContext ctx_;
+  ProtoJitContext ctx;
 };
 
 #if 0
@@ -67,68 +67,45 @@ TEST_F(TmpIR2Test, BasicStructTest) {
 }
 #else
 
-TEST_F(TmpIR2Test, BasicVariantTest) {
+TEST_F(TmpIR2Test, BasicArrayTest) {
   auto int_m_ty =
-      types::IntType::get(&ctx_.ctx_, types::Int{
-                                          .width = Bytes(8),
-                                          .alignment = Bytes(8),
-                                          .sign = types::Int::Sign::kSigned,
-                                      });
+      types::IntType::get(&ctx.ctx_, types::Int{
+                                         .width = Bytes(8),
+                                         .alignment = Bytes(8),
+                                         .sign = types::Int::Sign::kSigned,
+                                     });
   auto int_p_ty =
-      types::IntType::get(&ctx_.ctx_, types::Int{
-                                          .width = Bytes(8),
-                                          .alignment = Bytes(1),
-                                          .sign = types::Int::Sign::kSigned,
-                                      });
+      types::IntType::get(&ctx.ctx_, types::Int{
+                                         .width = Bytes(8),
+                                         .alignment = Bytes(1),
+                                         .sign = types::Int::Sign::kSigned,
+                                     });
 
-  llvm::SmallVector<types::Term, 1> terms;
-  terms.push_back(types::Term{
-      .name = "term",
-      .type = int_m_ty,
-      .tag = 1,
-  });
+  auto ary_m_ty = types::ArrayType::get(  //
+      &ctx.ctx_,                          //
+      types::Array{
+          .elem = int_m_ty,
+          .length = 4,
+          .elem_size = Bytes(8),
+          .alignment = Bytes(8),
+      });
 
-  auto var_m_ty = types::InlineVariantType::get(
-      &ctx_.ctx_, types::TypeDomain::kHost, types::Name{"thing"});
-  var_m_ty.setTypeData(types::InlineVariant{
-      .terms = terms,
-      .term_offset = Bytes(0),
-      .term_size = Bytes(8),
-      .tag_offset = Bytes(8),
-      .tag_width = Bytes(1),
-      .size = Bytes(16),
-      .alignment = Bytes(8),
-  });
+  auto ary_p_ty = types::ArrayType::get(  //
+      &ctx.ctx_,                          //
+      types::Array{
+          .elem = int_p_ty,
+          .length = 2,
+          .elem_size = Bytes(8),
+          .alignment = Bytes(1),
+      });
 
-  terms.clear();
-  terms.push_back(types::Term{
-      .name = "term",
-      .type = int_p_ty,
-      .tag = 1,
-  });
+  auto proto = types::ProtocolType::get(&ctx.ctx_, types::Protocol{
+                                                       .head = ary_p_ty,
+                                                   });
 
-  auto var_p_ty = types::OutlineVariantType::get(
-      &ctx_.ctx_, types::TypeDomain::kWire, types::Name{"thing"});
+  ctx.addDecodeFunction("decode", proto, ary_m_ty, {});
 
-  var_p_ty.setTypeData(types::OutlineVariant{
-      .terms = terms,
-      .tag_width = Bytes(1),
-      .tag_alignment = Bytes(1),
-      .term_offset = Bytes(1),
-      .term_alignment = Bytes(1),
-  });
-
-  auto proto = types::ProtocolType::get(&ctx_.ctx_, types::Protocol{
-                                                        .head = var_p_ty,
-                                                    });
-
-  ctx_.addDecodeFunction("decode", proto, var_m_ty,
-                         {
-                             {"undef", reinterpret_cast<void*>(0x2345)},
-                             {"term", reinterpret_cast<void*>(0x1234)},
-                         });
-
-  ctx_.compile(/*new_pipeline=*/true);
+  ctx.compile(/*new_pipeline=*/true);
 
   EXPECT_EQ(0, 0);
 }

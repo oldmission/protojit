@@ -65,7 +65,7 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
 // No buffer is accepted because the default value for types with external
 // data is empty anyway.
 def DefaultOp : ProtoJit_Op<"default"> {
-  let arguments = (ins AnyType:$src);
+  let arguments = (ins AnyType:$dst);
 }
 
 // Calculate the size that the given value of the provided memory type will
@@ -103,9 +103,9 @@ def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
   let successors = (successor VariadicSuccessor<AnySuccessor>:$successors);
 }
 
-// Retrieve a reference to a value at the given index in a Vector.
+// Retrieve a reference to a value at the given index in an Array or Vector.
 def IndexOp : ProtoJit_Op<"index", [NoSideEffect]> {
-  let arguments = (ins VectorType:$vec, AnyUnsignedInteger:$index);
+  let arguments = (ins SeqType:$seq, Index:$index);
   let results = (outs ValueType);
 }
 
@@ -151,9 +151,9 @@ def InvokeCallbackOp : ProtoJit_Op<"invoke"> {
 //
 // If an exception is thrown inside, returns a null buffer.
 // Otherwise, returns whatever YieldOp returns.
-def DecodeCatchOp : ProtoJit_Op<"catch"> {
+def DecodeCatchOp : ProtoJit_Op<"catch", [SingleBlockImplicitTerminator<"::pj::ir2::YieldOp">]> {
   let results = (outs BufferType:$buf);
-  let regions = (region AnyRegion:$body);
+  let regions = (region SizedRegion<1>:$body);
 }
 
 // Terminate execution inside a DecodeCatchOp, and make it return the

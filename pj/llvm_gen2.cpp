@@ -218,7 +218,11 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
 
     _.create<StoreOp>(op.getLoc(), val, dst_ptr, dst->alignment.bytes());
 
-    _.eraseOp(op);
+    if (op.getNumResults() > 0) {
+      _.replaceOp(op, operands[2]);
+    } else {
+      _.eraseOp(op);
+    }
     return success();
   }
 
@@ -397,6 +401,35 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
+struct IndexOpLowering : public OpConversionPattern<IndexOp> {
+  IndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                  LLVMGenPass* pass)
+      : OpConversionPattern<IndexOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(IndexOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult IndexOpLowering::matchAndRewrite(
+    IndexOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+
+  auto src_type = op.seq().getType();
+
+  if (auto ary = src_type.dyn_cast<ArrayType>()) {
+    Value offset = _.create<MulOp>(
+        loc, operands[1],
+        pass->buildWordConstant(loc, _, ary->elem_size.bytes()));
+    Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
+    _.replaceOp(op, val);
+    return success();
+  }
+
+  return failure();
+}
+
 LogicalResult DecodeCatchOpLowering::matchAndRewrite(
     DecodeCatchOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -476,6 +509,32 @@ LogicalResult CallOpLowering::matchAndRewrite(
   return success();
 }
 
+struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
+  DefaultOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                    LLVMGenPass* pass)
+      : OpConversionPattern<DefaultOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final {
+    auto type = op.dst().getType();
+    auto loc = op.getLoc();
+
+    if (auto int_type = type.dyn_cast<IntType>()) {
+      Value dst_ptr = _.create<BitcastOp>(
+          loc, LLVMPointerType::get(int_type.toMLIR()), operands[0]);
+      Value zero = pass->buildIntConstant(loc, _, int_type->width, 0);
+      _.create<StoreOp>(op.getLoc(), zero, dst_ptr,
+                        int_type->alignment.bytes());
+      _.eraseOp(op);
+      return success();
+    }
+
+    return failure();
+  }
+
+  LLVMGenPass* const pass;
+};
+
 void LLVMGenPass::runOnOperation() {
   auto* ctx = &getContext();
 
@@ -490,8 +549,8 @@ void LLVMGenPass::runOnOperation() {
   populateStdToLLVMConversionPatterns(type_converter, patterns);
   patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
                DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
-               TagOpLowering, MatchOpLowering, SetCallbackOpLowering>(
-      type_converter, ctx, this);
+               TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
+               DefaultOpLowering, IndexOpLowering>(type_converter, ctx, this);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {

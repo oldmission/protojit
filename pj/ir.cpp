@@ -256,19 +256,10 @@ Value CListType::LoadOutlinedArray(Location loc, Value value, Type inner,
 }
 
 void ir::printAttrForFunctionName(llvm::raw_ostream& os, mlir::Attribute attr) {
-  if (attr.isa<PathAttr>()) {
+  if (attr.isa<PathAttr>() || attr.isa<TypeAttr>()) {
     attr.print(os);
-  } else if (auto arr = attr.dyn_cast<ArrayAttr>(); arr) {
-    bool first = true;
-    for (mlir::Attribute el : arr) {
-      auto handler = el.cast<DispatchHandlerAttr>();
-      if (!first) {
-        os << "|";
-      }
-      handler.print(os);
-    }
   } else {
-    UNREACHABLE();
+    os << attr.getAsOpaquePointer();
   }
 }
 
