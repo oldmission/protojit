@@ -299,21 +299,25 @@ inline Width VariantType::tag_width() const {
 inline Width VariantType::term_offset() const {
   if (auto v = dyn_cast<OutlineVariantType>()) {
     return v->term_offset;
-  } else if (auto v = dyn_cast<InlineVariantType>()) {
-    return v->term_offset;
-  } else {
-    UNREACHABLE();
   }
+
+  if (auto v = dyn_cast<InlineVariantType>()) {
+    return v->term_offset;
+  }
+
+  UNREACHABLE();
 }
 
 inline Width VariantType::tag_offset() const {
   if (auto v = dyn_cast<OutlineVariantType>()) {
     return Bits(0);
-  } else if (auto v = dyn_cast<InlineVariantType>()) {
-    return v->tag_offset;
-  } else {
-    UNREACHABLE();
   }
+
+  if (auto v = dyn_cast<InlineVariantType>()) {
+    return v->tag_offset;
+  }
+
+  UNREACHABLE();
 }
 
 inline bool VariantType::classof(mlir::Type val) {
@@ -323,7 +327,7 @@ inline bool VariantType::classof(mlir::Type val) {
 // Arrays are fixed-length sequences of values.
 struct Array {
   /*** Parsed ***/
-  mlir::Type elem;
+  ValueType elem;
   intptr_t length;
 
   /*** Generated ***/
@@ -345,8 +349,8 @@ struct Array {
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
-  return os << A.elem << "[" << A.length << "|" << A.elem_size << "]/"
-            << A.alignment << ";";
+  A.elem.print(os);
+  return os << "[" << A.length << "|" << A.elem_size << "]/" << A.alignment;
 }
 
 inline ::llvm::hash_code hash_value(const Array& ary) {
