@@ -331,6 +331,8 @@ cc_binary(
         "pjc.cpp",
         "protogen.hpp",
         "sourcegen.cpp",
+        "validate.hpp",
+        "validate2.cpp",
     ],
     linkopts = [
         "-lstdc++fs",

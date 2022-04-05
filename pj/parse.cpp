@@ -1,11 +1,12 @@
-#include <mlir/IR/MLIRContext.h>
 #include <charconv>
+#include <mlir/IR/MLIRContext.h>
 #include <pegtl.hpp>
 #include <pegtl/contrib/analyze.hpp>
 
 #include "protogen.hpp"
 #include "protojit.hpp"
 #include "types.hpp"
+#include "validate.hpp"
 
 #include <unordered_set>
 
@@ -60,10 +61,10 @@ struct ParseState {
   SourceId space;
 
   // Populated after parsing Id and ScopedId.
-  // Cleared by PopId() and PopScopedId().
+  // Cleared by popId() and popScopedId().
   std::vector<std::vector<std::string>> ids = {{}};
 
-  std::string PopId() {
+  std::string popId() {
     assert(ids.size() > 1);
     assert(ids[ids.size() - 2].size() == 1);
     auto s = ids[ids.size() - 2][0];
@@ -74,7 +75,7 @@ struct ParseState {
     return s;
   }
 
-  SourceId PopScopedId(bool include_space = true) {
+  SourceId popScopedId(bool include_space = true) {
     SourceId result = std::move(ids[ids.size() - 2]);
 
     std::swap(ids[ids.size() - 2], ids.back());
@@ -92,33 +93,32 @@ struct ParseState {
   }
 
   template <typename I>
-  mlir::Type ResolveType(const I& in, const SourceId& id,
+  mlir::Type resolveType(const I& in, const SourceId& id,
                          bool error_on_failure = true) {
-    std::vector<llvm::StringRef> id_;
-    id_.reserve(space.size() + id.size());
+    std::vector<llvm::StringRef> id_vec;
+    id_vec.reserve(space.size() + id_vec.size());
     for (intptr_t i = space.size(); i >= 0; --i) {
       for (intptr_t j = 0; j < i; ++j) {
-        id_.push_back(space[j]);
+        id_vec.push_back(space[j]);
       }
       for (auto& p : id) {
-        id_.push_back(p);
+        id_vec.push_back(p);
       }
 
-      if (auto it = parse_scope.type_defs.find(id_);
+      if (auto it = parse_scope.type_defs.find(id_vec);
           it != parse_scope.type_defs.end()) {
         return it->second;
       }
-      id_.clear();
+      id_vec.clear();
     }
     if (error_on_failure) {
       throw parse_error("Cannot resolve ID.", in.position());
-    } else {
-      return mlir::Type{};
     }
+    return mlir::Type{};
   }
 
   template <typename I>
-  void DefineType(const I& in, const SourceId& name, mlir::Type type) {
+  void defineType(const I& in, const SourceId& name, mlir::Type type) {
     if (parse_scope.type_defs.count(name)) {
       throw parse_error("Cannot re-define type", in.position());
     }
@@ -163,30 +163,32 @@ struct struct_key : pad<TAO_PEGTL_KEYWORD("struct"), space> {};
 struct variant_key : pad<TAO_PEGTL_KEYWORD("variant"), space> {};
 
 template <intptr_t kPrefix, types::Int::Sign sign, typename ActionInput>
-static void parse_int(const ActionInput& in, ParseState* state) {
+static void parseInt(const ActionInput& in, ParseState* state) {
   assert(in.size() > kPrefix);
   const char* num_start = in.begin() + kPrefix;
   intptr_t bits;
   DEBUG_ONLY(auto result =) std::from_chars(num_start, in.end(), bits);
   assert(result.ptr == in.end());
-  // SAMIR_TODO: validate bits
-  __ type = types::IntType::get(&__ ctx.ctx_,
-                                types::Int{.width = Bits(bits), .sign = sign});
+
+  types::Int data{.width = Bits(bits), .sign = sign};
+  validate(data, in.position());
+
+  __ type = types::IntType::get(&__ ctx.ctx_, data);
 }
 
 struct UIntType : seq<string<'u', 'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(UIntType) { parse_int<4, types::Int::Sign::kUnsigned>(in, state); }
+BEGIN_ACTION(UIntType) { parseInt<4, types::Int::Sign::kUnsigned>(in, state); }
 END_ACTION()
 
 struct IntType : seq<string<'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(IntType) { parse_int<3, types::Int::Sign::kSigned>(in, state); }
+BEGIN_ACTION(IntType) { parseInt<3, types::Int::Sign::kSigned>(in, state); }
 END_ACTION()
 
 struct CharType : seq<string<'c', 'h', 'a', 'r'>, num> {};
 
-BEGIN_ACTION(CharType) { parse_int<4, types::Int::Sign::kSignless>(in, state); }
+BEGIN_ACTION(CharType) { parseInt<4, types::Int::Sign::kSignless>(in, state); }
 END_ACTION()
 
 struct Identifier : identifier {};
@@ -209,8 +211,8 @@ struct TypeRef : ScopedId {};
 
 BEGIN_ACTION(TypeRef) {
   assert(!__ type);
-  auto id = __ PopScopedId(false);
-  __ type = __ ResolveType(in, id);
+  auto id = __ popScopedId(false);
+  __ type = __ resolveType(in, id);
 }
 END_ACTION()
 
@@ -230,8 +232,11 @@ END_ACTION()
 BEGIN_ACTION(FixedArrayModifier) {
   assert(__ array_len != kNone);
   assert(__ type);
-  __ type = types::ArrayType::get(
-      &__ ctx.ctx_, types::Array{.elem = __ type, .length = __ array_len});
+
+  types::Array data{.elem = __ type, .length = __ array_len};
+  validate(data, in.position());
+
+  __ type = types::ArrayType::get(&__ ctx.ctx_, data);
   __ array_len = kNone;
 }
 END_ACTION()
@@ -261,10 +266,15 @@ struct VarArrayModifier
 
 BEGIN_ACTION(VarArrayModifier) {
   assert(__ type);
-  __ type = types::VectorType::get(
-      &__ ctx.ctx_, types::Vector{.elem = __ type,
-                                  .min_length = __ array_min_len,
-                                  .max_length = __ array_max_len});
+
+  types::Vector data{
+      .elem = __ type,
+      .min_length = (__ array_min_len == kNone) ? 0 : __ array_min_len,
+      .max_length = __ array_max_len};
+  validate(data, in.position());
+
+  __ type = types::VectorType::get(&__ ctx.ctx_, data);
+
   __ array_max_len = kNone;
   __ array_min_len = kNone;
 }
@@ -277,7 +287,7 @@ struct Type : seq<NonArrayType, star<ArrayModifier>> {};
 struct FieldDecl : if_must<Id, tok<':'>, Type, tok<';'>> {};
 
 BEGIN_ACTION(FieldDecl) {
-  auto field_name = __ PopId();
+  auto field_name = __ popId();
   assert(__ type);
   __ fields[field_name] = __ type;
   __ type = nullptr;
@@ -291,8 +301,8 @@ struct TypeDecl : if_must<KEYWORD("type"), Id, tok<'='>, Type, tok<';'>> {};
 
 BEGIN_ACTION(TypeDecl) {
   assert(__ type);
-  auto name = __ PopScopedId();
-  __ DefineType(in, name, __ type);
+  auto name = __ popScopedId();
+  __ defineType(in, name, __ type);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kType,
@@ -324,13 +334,17 @@ BEGIN_ACTION(StructDecl) {
         .type = type, .name = llvm::StringRef{name.c_str(), name.length()}});
   }
 
-  auto name = __ PopScopedId();
+  auto name = __ popScopedId();
   types::ArrayRefConverter<llvm::StringRef> name_converter{name};
   auto type = types::StructType::get(&__ ctx.ctx_, types::TypeDomain::kHost,
                                      name_converter.get());
-  type.setTypeData({.fields = llvm::ArrayRef<types::StructField>{
-                        &fields[0], fields.size()}});
-  __ DefineType(in, name, type);
+
+  types::Struct data{
+      .fields = llvm::ArrayRef<types::StructField>{&fields[0], fields.size()}};
+  validate(data, in.position());
+  type.setTypeData(data);
+
+  __ defineType(in, name, type);
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
@@ -371,7 +385,7 @@ struct VariantFieldDecl
     : if_must<Id, opt<tok<':'>, Type>, ExplicitTagDecl, tok<';'>> {};
 
 BEGIN_ACTION(VariantFieldDecl) {
-  auto field_name = __ PopId();
+  auto field_name = __ popId();
   // The type may be null, indicating no payload is attached.
   __ fields[field_name] = __ type;
   __ type = nullptr;
@@ -384,12 +398,16 @@ BEGIN_ACTION(VariantFieldDecl) {
 END_ACTION()
 
 template <typename ActionInput>
-static void HandleVariant(const ActionInput& in, ParseState* state,
+static void handleVariant(const ActionInput& in, ParseState* state,
                           bool is_enum) {
   std::vector<types::Term> terms;
 
   // Set the tags for all the terms.
   std::unordered_set<uint64_t> reserved_tags;
+  for (const auto& [_, tag] : __ explicit_tags) {
+    reserved_tags.insert(tag);
+  }
+
   uint64_t cur_tag = 1;
   for (const auto& name : __ field_order) {
     auto it = __ fields.find(name);
@@ -405,21 +423,25 @@ static void HandleVariant(const ActionInput& in, ParseState* state,
         cur_tag++;
       }
       tag = cur_tag;
+      reserved_tags.insert(tag);
     }
-    reserved_tags.insert(tag);
     terms.push_back(
         types::Term{.name = llvm::StringRef{name.c_str(), name.length()},
                     .type = it->second,
                     .tag = tag});
   }
 
-  auto name = __ PopScopedId();
+  auto name = __ popScopedId();
   types::ArrayRefConverter<llvm::StringRef> name_converter{name};
   auto type = types::InlineVariantType::get(
       &__ ctx.ctx_, types::TypeDomain::kHost, name_converter.get());
-  type.setTypeData(
-      {.terms = llvm::ArrayRef<types::Term>{&terms[0], terms.size()}});
-  __ DefineType(in, name, type);
+
+  types::InlineVariant data{
+      .terms = llvm::ArrayRef<types::Term>{&terms[0], terms.size()}};
+  validate(data, in.position());
+  type.setTypeData(data);
+
+  __ defineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
       .name = {},
@@ -435,13 +457,13 @@ static void HandleVariant(const ActionInput& in, ParseState* state,
 struct VariantDecl
     : if_must<KEYWORD("variant"), Id, LB, star<VariantFieldDecl>, RB> {};
 
-BEGIN_ACTION(VariantDecl) { HandleVariant(in, state, /*is_enum=*/false); }
+BEGIN_ACTION(VariantDecl) { handleVariant(in, state, /*is_enum=*/false); }
 END_ACTION()
 
 struct EnumFieldDecl : if_must<Id, ExplicitTagDecl, tok<';'>> {};
 
 BEGIN_ACTION(EnumFieldDecl) {
-  auto field_name = __ PopId();
+  auto field_name = __ popId();
   __ fields[field_name] = nullptr;
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
@@ -453,12 +475,12 @@ END_ACTION()
 
 struct EnumDecl : if_must<KEYWORD("enum"), Id, LB, star<EnumFieldDecl>, RB> {};
 
-BEGIN_ACTION(EnumDecl) { HandleVariant(in, state, /*is_enum=*/true); }
+BEGIN_ACTION(EnumDecl) { handleVariant(in, state, /*is_enum=*/true); }
 END_ACTION()
 
 struct ScopeBegin : LB {};
 BEGIN_ACTION(ScopeBegin) {
-  auto name = __ PopId();
+  auto name = __ popId();
   __ space.push_back(name);
 }
 END_ACTION()
@@ -473,7 +495,7 @@ struct SpaceDecl
 struct ImportDecl : if_must<KEYWORD("import"), ScopedId, tok<';'>> {};
 
 BEGIN_ACTION(ImportDecl) {
-  auto id = __ PopScopedId();
+  auto id = __ popScopedId();
 
   std::filesystem::path found_path;
   bool found = false;
@@ -524,16 +546,16 @@ struct ProtoDecl
     : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, TagPathDecl, tok<';'>> {};
 
 BEGIN_ACTION(ProtoDecl) {
-  auto head_name = __ PopScopedId();
-  auto protocol_name = __ PopScopedId();
+  auto head_name = __ popScopedId();
+  auto protocol_name = __ popScopedId();
 
-  if (__ ResolveType(in, protocol_name, false)) {
+  if (__ resolveType(in, protocol_name, false)) {
     throw parse_error("Protocol name " + protocol_name.back() +
                           " re-defines existing type name",
                       in.position());
   }
 
-  auto head = __ ResolveType(in, head_name);
+  auto head = __ resolveType(in, head_name);
 
   // Validate that the tag path points to a variant via struct fields
   if (__ tag_path.has_value()) {
