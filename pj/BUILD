@@ -71,13 +71,13 @@ cc_library(
         "inline_regions.cpp",
         "ir.cpp",
         "ir.cpp.inc",
+        "lib.cpp",
         "llvm_gen.cpp",
         "llvm_gen2.cpp",
         "ops.cpp.inc",
         "plan.cpp",
         "portal.cpp",
         "protocol.cpp",
-        "protojit.cpp",
         "scope.cpp",
         "side_effect_analysis.cpp",
         "size_gen.cpp",
@@ -101,7 +101,6 @@ cc_library(
         "portal.hpp",
         "portal_impl.hpp",
         "protocol.hpp",
-        "protojit.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
         "tag.hpp",
@@ -123,8 +122,8 @@ cc_library(
 
 cc_library(
     name = "runtime",
-    srcs = ["runtime.cpp"],
-    hdrs = ["runtime.h"],
+    srcs = ["runtime.cpp", "protojit.cpp", "plan2.cpp"],
+    hdrs = ["runtime.h", "protojit.hpp", "plan.hpp"],
     linkopts = ["-lstdc++"],
     deps = [
         ":compiler",

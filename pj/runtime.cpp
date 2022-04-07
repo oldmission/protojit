@@ -2,6 +2,7 @@
 #include "arch.hpp"
 #include "context.hpp"
 #include "defer.hpp"
+#include "plan.hpp"
 #include "types.hpp"
 
 #include <cstring>
@@ -30,6 +31,11 @@ pj::types::Int::Sign ConvertSign(PJSign sign) {
     default:
       return pj::types::Int::kSignless;
   }
+}
+
+pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
+  return mlir::Type::getFromOpaquePointer(reinterpret_cast<const void*>(p))
+      .cast<pj::types::ProtocolType>();
 }
 
 const PJUnitType* PJCreateUnitType(PJContext* c) {
@@ -122,30 +128,6 @@ const PJInlineVariantType* PJCreateInlineVariantType(
       inline_variant_type.getAsOpaquePointer());
 }
 
-const PJOutlineVariantType* PJCreateOutlineVariantType(
-    PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits tag_width, Bits tag_alignment, Bits term_offset) {
-  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
-
-  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::types::ArrayRefConverter<pj::types::Term> terms_converter{
-      terms, num_terms, [](const PJTerm* t) {
-        auto casted = reinterpret_cast<const pj::types::Term*>(t);
-        DEFER(delete casted);
-        return *casted;
-      }};
-  auto outline_variant_type = pj::types::OutlineVariantType::get(
-      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
-  outline_variant_type.setTypeData({.terms = terms_converter.get(),
-                                    .tag_width = pj::Bits(tag_width),
-                                    .tag_alignment = pj::Bits(tag_alignment),
-                                    .term_offset = pj::Bits(term_offset)});
-
-  return reinterpret_cast<const PJOutlineVariantType*>(
-      outline_variant_type.getAsOpaquePointer());
-}
-
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      intptr_t length, Bits elem_size,
                                      Bits alignment) {
@@ -160,8 +142,9 @@ const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
 
 const PJVectorType* PJCreateVectorType(
     PJContext* c, const void* type, intptr_t min_length, intptr_t max_length,
-    intptr_t ppl_count, Bits length_offset, Bits length_size, Bits ref_offset,
-    Bits ref_size, PJReferenceMode reference_mode, Bits inline_payload_offset,
+    intptr_t wire_min_length, intptr_t ppl_count, Bits length_offset,
+    Bits length_size, Bits ref_offset, Bits ref_size,
+    PJReferenceMode reference_mode, Bits inline_payload_offset,
     Bits inline_payload_size, Bits partial_payload_offset,
     Bits partial_payload_size, Bits size, Bits alignment,
     Bits outlined_payload_alignment) {
@@ -171,6 +154,7 @@ const PJVectorType* PJCreateVectorType(
           .elem = mlir::Type::getFromOpaquePointer(type),
           .min_length = min_length,
           .max_length = max_length,
+          .wire_min_length = wire_min_length,
           .ppl_count = ppl_count,
           .length_offset = pj::Bits(length_offset),
           .length_size = pj::Bits(length_size),
@@ -188,23 +172,43 @@ const PJVectorType* PJCreateVectorType(
       vector_type.getAsOpaquePointer());
 }
 
-const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
-                                 Bits data_ref_offset, Bits type_ref_width,
-                                 Bits type_ref_offset, Bits tag_width,
-                                 Bits tag_offset, Bits version_width,
-                                 Bits version_offset, Bits size,
-                                 Bits alignment) {
-  auto any_type = pj::types::AnyType::get(
-      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
-      pj::types::Any{.data_ref_width = pj::Bits(data_ref_width),
-                     .data_ref_offset = pj::Bits(data_ref_offset),
-                     .type_ref_width = pj::Bits(type_ref_width),
-                     .type_ref_offset = pj::Bits(type_ref_offset),
-                     .tag_width = pj::Bits(tag_width),
-                     .tag_offset = pj::Bits(tag_offset),
-                     .version_width = pj::Bits(version_width),
-                     .version_offset = pj::Bits(version_offset),
-                     .size = pj::Bits(size),
-                     .alignment = pj::Bits(alignment)});
-  return reinterpret_cast<const PJAnyType*>(any_type.getAsOpaquePointer());
+const PJProtocol* PJPlanProtocol(PJContext* ctx_, const void* head_,
+                                 const char* tag_path_) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  auto head = mlir::Type::getFromOpaquePointer(head_);
+
+  std::optional<pj::types::PathAttr> tag_path = std::nullopt;
+  if (std::strlen(tag_path_) > 0) {
+    tag_path = pj::types::PathAttr::fromString(&ctx->ctx_, tag_path_);
+  }
+
+  auto protocol_type = pj::types::ProtocolType::get(
+      &ctx->ctx_,
+      pj::types::Protocol{.head = pj::plan(ctx->ctx_, head, tag_path)});
+  return reinterpret_cast<const PJProtocol*>(
+      protocol_type.getAsOpaquePointer());
+}
+
+void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,
+                         const PJProtocol* protocol_, const char* src_path) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  auto src = mlir::Type::getFromOpaquePointer(src_);
+  auto protocol = ConvertProtocol(protocol_);
+  ctx->addEncodeFunction(name, src, src_path, protocol);
+}
+
+void PJAddDecodeFunction(PJContext* ctx_, const char* name,
+                         const PJProtocol* protocol_, const void* dest_,
+                         uintptr_t num_handlers, const PJHandler* handlers_[]) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  auto protocol = ConvertProtocol(protocol_);
+  auto dest = mlir::Type::getFromOpaquePointer(dest_);
+
+  std::vector<std::pair<std::string, const void*>> handlers;
+  for (uintptr_t i = 0; i < num_handlers; ++i) {
+    handlers.push_back(std::make_pair(std::string{handlers_[i]->name},
+                                      handlers_[i]->function));
+  }
+
+  ctx->addDecodeFunction(name, protocol, dest, handlers);
 }
