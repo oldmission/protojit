@@ -23,7 +23,7 @@ struct ProtoJitContext {
 
   void addDecodeFunction(
       std::string_view name, types::ProtocolType protocol, mlir::Type dst,
-      const std::vector<std::pair<std::string, void*>>& handlers);
+      const std::vector<std::pair<std::string, const void*>>& handlers);
 
   // Exactly one of 'src' or 'dst' must be a protocol.
   void addSizeFunction(std::string_view name, mlir::Type src,

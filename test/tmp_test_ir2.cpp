@@ -115,6 +115,7 @@ TEST_F(TmpIR2Test, BasicVariantTest) {
       .tag_width = Bytes(1),
       .tag_alignment = Bytes(1),
       .term_offset = Bytes(1),
+      .term_alignment = Bytes(1),
   });
 
   auto proto = types::ProtocolType::get(&ctx_.ctx_, types::Protocol{

@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
   }
 
   try {
-    pj::ParseProtoFile(parse_scope, path);
+    pj::parseProtoFile(parse_scope, path);
   } catch (tao::pegtl::parse_error& e) {
     std::cerr << "Parse error: " << e.what() << "\n";
     return 1;
@@ -42,6 +42,6 @@ int main(int argc, char** argv) {
   auto& parsed_file = parse_scope.parsed_files.at(path);
 
   // TODO: support cross-compilation
-  pj::GenerateHeader(pj::ArchDetails::Host(), parsed_file, std::cout);
+  pj::generateHeader(pj::ArchDetails::Host(), parsed_file, std::cout);
   return 0;
 }

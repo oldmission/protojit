@@ -11,7 +11,7 @@
 
 namespace pj {
 
-void GenerateNameRef(types::Name name, std::ostream& output) {
+void generateNameRef(types::Name name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size(); ++i) {
     output << std::string_view(name[i]);
     if (i < name.size() - 1) {
@@ -21,14 +21,14 @@ void GenerateNameRef(types::Name name, std::ostream& output) {
 }
 
 template <typename T>
-void GenerateNamespaceBegin(const T& name, std::ostream& output) {
+void generateNamespaceBegin(const T& name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size() - 1; ++i) {
     output << "namespace " << std::string_view(name[i]) << "{";
   }
 }
 
 template <typename T>
-void GenerateNamespaceEnd(const T& name, std::ostream& output) {
+void generateNamespaceEnd(const T& name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size() - 1; ++i) {
     output << "}\n";
   }
@@ -38,7 +38,7 @@ void GenerateNamespaceEnd(const T& name, std::ostream& output) {
 // TODO: platform-specific
 std::array<std::string_view, 4> kIntTypes{"char", "short", "int", "long"};
 
-pj::Width GenerateIntTypeRef(pj::Width width, types::Int::Sign sign,
+pj::Width generateIntTypeRef(pj::Width width, types::Int::Sign sign,
                              std::ostream& output) {
   assert(width.bytes() > 0);
   if (sign == types::Int::kSignless) {
@@ -54,36 +54,36 @@ pj::Width GenerateIntTypeRef(pj::Width width, types::Int::Sign sign,
   return pj::Bytes(1 << log);
 }
 
-void GenerateTypeRef(mlir::Type type, std::ostream& output) {
+void generateTypeRef(mlir::Type type, std::ostream& output) {
   if (auto named = type.dyn_cast<types::NominalType>()) {
-    GenerateNameRef(named.name(), output);
+    generateNameRef(named.name(), output);
   } else if (auto I = type.dyn_cast<types::IntType>()) {
-    GenerateIntTypeRef(I->width, I->sign, output);
+    generateIntTypeRef(I->width, I->sign, output);
   } else if (auto A = type.dyn_cast<types::ArrayType>()) {
     output << "std::array<";
-    GenerateTypeRef(A->elem, output);
+    generateTypeRef(A->elem, output);
     output << ", " << A->length << ">";
   } else if (auto V = type.dyn_cast<types::VectorType>()) {
     output << "pj::ArrayView<";
-    GenerateTypeRef(V->elem, output);
-    output << "," << V->min_length << "," << V->max_length << ">";
+    generateTypeRef(V->elem, output);
+    output << ">";
   } else {
     UNREACHABLE();
   }
 }
 
-std::string GenerateTypeRef(mlir::Type type) {
+std::string generateTypeRef(mlir::Type type) {
   std::ostringstream o;
-  GenerateTypeRef(type, o);
+  generateTypeRef(type, o);
   return o.str();
 }
 
 template <typename T>
-void PrintNamespacedName(const T& name, std::ostream& output) {
+void printNamespacedName(const T& name, std::ostream& output) {
   for (auto& p : name) output << "::" << std::string_view(p);
 }
 
-std::pair<std::string, std::string> BuildPJVariableDecl(mlir::Type type,
+std::pair<std::string, std::string> buildPJVariableDecl(mlir::Type type,
                                                         std::ostream& output) {
   static uintptr_t counter = 0;
   std::string rt_type;
@@ -115,33 +115,33 @@ std::pair<std::string, std::string> BuildPJVariableDecl(mlir::Type type,
   return std::make_pair(rt_type, var);
 }
 
-std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
+std::string buildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   if (!type) {
     // Normalize null types to the unit type for the rest of ProtoJIT.
     // These are represented differently from an empty struct in the
     // source generator because in C++ an empty struct has size 8 bits,
     // not 0 bits.
-    auto [_, var] = BuildPJVariableDecl(type, output);
+    auto [_, var] = buildPJVariableDecl(type, output);
     output << " = PJCreateUnitType(ctx);";
     return var;
   }
 
-  std::string type_ref = GenerateTypeRef(type);
+  std::string type_ref = generateTypeRef(type);
   if (auto named = type.dyn_cast<types::NominalType>()) {
-    auto [rt_type, var] = BuildPJVariableDecl(type, output);
+    auto [rt_type, var] = buildPJVariableDecl(type, output);
     output << " = static_cast<" << rt_type << ">(BuildPJType<";
-    PrintNamespacedName(named.name(), output);
-    output << ">::Build(ctx));\n";
+    printNamespacedName(named.name(), output);
+    output << ">::build(ctx));\n";
     return var;
   }
 
   if (auto I = type.dyn_cast<types::IntType>()) {
-    auto [_, var] = BuildPJVariableDecl(type, output);
+    auto [_, var] = buildPJVariableDecl(type, output);
     output << " = PJCreateIntType(ctx";
     output << ", /*width=*/" << I->width.bits();
     {
       output << ", /*alignment=*/alignof(";
-      pj::Width actual_width = GenerateIntTypeRef(I->width, I->sign, output);
+      pj::Width actual_width = generateIntTypeRef(I->width, I->sign, output);
       output << ") << 3";
       // TODO: come back to this when implementing bitfields
       assert(I->width == actual_width);
@@ -164,9 +164,9 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   }
 
   if (auto A = type.dyn_cast<types::ArrayType>()) {
-    std::string elem_type_ref = GenerateTypeRef(A->elem);
-    std::string elem_var = BuildTypeGeneratorStmt(A->elem, output);
-    auto [_, var] = BuildPJVariableDecl(type, output);
+    std::string elem_type_ref = generateTypeRef(A->elem);
+    std::string elem_var = buildTypeGeneratorStmt(A->elem, output);
+    auto [_, var] = buildPJVariableDecl(type, output);
     output << " = PJCreateArrayType(ctx";
     output << ", /*elem=*/" << elem_var;
     output << ", /*length=*/" << A->length;
@@ -176,12 +176,13 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   }
 
   if (auto V = type.dyn_cast<types::VectorType>()) {
-    std::string elem_var = BuildTypeGeneratorStmt(V->elem, output);
-    auto [_, var] = BuildPJVariableDecl(type, output);
+    std::string elem_var = buildTypeGeneratorStmt(V->elem, output);
+    auto [_, var] = buildPJVariableDecl(type, output);
     output << " = PJCreateVectorType(ctx";
     output << ", /*elem=*/" << elem_var;
-    output << ", /*min_length=*/" << V->min_length;
+    output << ", /*min_length=*/0";
     output << ", /*max_length=*/" << V->max_length;
+    output << ", /*wire_min_length=*/" << V->min_length;
     output << ", /*ppl_count=*/0";
     output << ", /*length_offset=*/offsetof(" << type_ref << ", length) << 3";
     output << ", /*length_size=*/sizeof(" << type_ref << "::length) << 3";
@@ -201,7 +202,7 @@ std::string BuildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   UNREACHABLE();
 }
 
-void BuildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
+void buildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
                        std::string_view var, std::ostream& output) {
   output << "const char* " << var << "[" << arr.size() << "] = {";
   for (uintptr_t i = 0; i < arr.size(); ++i) {
@@ -213,12 +214,11 @@ void BuildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
   output << "};\n";
 }
 
-void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
+void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
                      std::ostream& back) {
-  auto type = decl.type.dyn_cast<types::InlineVariantType>();
-  assert(type);
+  auto type = decl.type.cast<types::InlineVariantType>();
 
-  auto nominal = type.template dyn_cast<types::NominalType>();
+  auto nominal = type.template cast<types::NominalType>();
   assert(nominal);
 
   auto name = nominal.name();
@@ -227,7 +227,7 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
       std::any_of(type->terms.begin(), type->terms.end(),
                   [](auto& term) { return bool(term.type); });
 
-  GenerateNamespaceBegin(name, output);
+  generateNamespaceBegin(name, output);
 
   if (!decl.is_enum) {
     output << "struct " << std::string_view(name.back()) << " {\n";
@@ -235,24 +235,12 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
       output << "union {\n";
       for (auto& term : type->terms) {
         if (term.type) {
-          GenerateTypeRef(term.type, output);
+          generateTypeRef(term.type, output);
           output << " " << std::string_view(term.name) << ";\n";
         }
       }
       output << "} value;\n";
     }
-  }
-
-  pj::Width min_tag_width = pj::Bytes(1);
-  if (type->terms.size() > 0) {
-    auto max_tag =
-        std::max_element(type->terms.begin(), type->terms.end(),
-                         [](const types::Term& a, const types::Term& b) {
-                           return a.tag < b.tag;
-                         });
-    // The maximum tag value is always greater than or equal to the total
-    // number of terms because of undef taking up the 0 slot.
-    min_tag_width = pj::Bytes(std::ceil(std::log2(max_tag->tag) / 8));
   }
 
   // Define an enum class with all options.
@@ -262,7 +250,8 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
     output << "enum class Kind : ";
   }
   pj::Width tag_width =
-      GenerateIntTypeRef(min_tag_width, types::Int::Sign::kUnsigned, output);
+      generateIntTypeRef(compute_tag_width(types::InlineVariant(type)),
+                         types::Int::Sign::kUnsigned, output);
   output << " {\n";
   output << "undef = " << 0 << ",\n";
   for (auto& term : type->terms) {
@@ -275,22 +264,22 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
   } else {
     output << "} tag;\n};\n";
   }
-  GenerateNamespaceEnd(name, output);
+  generateNamespaceEnd(name, output);
 
   // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";
   back << "namespace gen {\n";
   back << "template <>\n"
        << "struct BuildPJType<";
-  PrintNamespacedName(name, back);
+  printNamespacedName(name, back);
   back << "> {\n";
 
-  back << "static const void* Build(PJContext* ctx) {\n";
+  back << "static const void* build(PJContext* ctx) {\n";
 
   back << "const PJTerm* terms[" << type->terms.size() << "];\n";
   uintptr_t term_num = 0;
   for (auto& term : type->terms) {
-    std::string var = BuildTypeGeneratorStmt(term.type, back);
+    std::string var = buildTypeGeneratorStmt(term.type, back);
 
     back << "terms[" << term_num++ << "] = PJCreateTerm(";
     back << "/*name=*/\"" << std::string_view(term.name) << "\"";
@@ -298,9 +287,9 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
     back << ", /*tag=*/" << term.tag << ");\n";
   }
 
-  BuildCStringArray(name, "name", back);
+  buildCStringArray(name, "name", back);
 
-  auto [_, variant_var] = BuildPJVariableDecl(type, back);
+  auto [_, variant_var] = buildPJVariableDecl(type, back);
   back << " = PJCreateInlineVariantType(ctx";
   back << ", /*name_size=*/" << name.size();
   back << ", /*name=*/name";
@@ -314,28 +303,28 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
     back << ", /*term_offset=*/-1, /*term_size=*/0";
   } else {
     back << ", /*term_offset=*/offsetof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ", value) << 3";
     back << ", /*term_size=*/sizeof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << "::value) << 3";
   }
   if (decl.is_enum) {
     back << ", /*tag_offset=*/0";
   } else {
     back << ", /*tag_offset=*/offsetof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ", tag) << 3";
   }
   back << ", /*tag_width=*/" << tag_width.bits();
   {
     back << ", /*size=*/sizeof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ") << 3";
   }
   {
     back << ", /*alignment=*/alignof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ") << 3";
   }
   back << ");\n";
@@ -348,34 +337,34 @@ void GenerateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
        << "\n";
 }
 
-void GenerateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
+void generateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
                     std::ostream& back) {
-  auto type = decl.type.dyn_cast<types::StructType>();
+  auto type = decl.type.cast<types::StructType>();
   assert(type);
 
-  auto nominal = type.dyn_cast<types::NominalType>();
+  auto nominal = type.cast<types::NominalType>();
   assert(nominal);
 
   auto name = nominal.name();
 
-  GenerateNamespaceBegin(name, output);
+  generateNamespaceBegin(name, output);
 
   output << "struct " << std::string_view(name.back()) << " {\n";
 
   for (auto& field : type->fields) {
-    GenerateTypeRef(field.type, output);
+    generateTypeRef(field.type, output);
     output << " " << std::string_view(field.name) << ";\n";
   }
   output << "};\n\n";
 
-  GenerateNamespaceEnd(name, output);
+  generateNamespaceEnd(name, output);
 
   // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";
   back << "namespace gen {\n";
   back << "template <>\n"
        << "struct BuildPJType<";
-  PrintNamespacedName(name, back);
+  printNamespacedName(name, back);
   back << "> {\n";
 
   // For each field:
@@ -383,27 +372,27 @@ void GenerateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
   //     - either inline for primitive types
   //     - or a call to a specialization of BuildPJType for a composite type
 
-  back << "static const void* Build(PJContext* ctx) {\n";
+  back << "static const void* build(PJContext* ctx) {\n";
 
   back << "const PJStructField* fields[" << type->fields.size() << "];\n";
   uintptr_t field_num = 0;
   for (auto& field : type->fields) {
-    std::string var = BuildTypeGeneratorStmt(field.type, back);
+    std::string var = buildTypeGeneratorStmt(field.type, back);
 
     back << "fields[" << field_num++ << "] = PJCreateStructField(";
     back << "/*name=*/\"" << std::string_view(field.name) << "\"";
     back << ", /*type=*/" << var;
     {
       back << ", /*offset=*/offsetof(";
-      PrintNamespacedName(name, back);
+      printNamespacedName(name, back);
       back << ", " << std::string_view(field.name) << ") << 3";
     }
     back << ");\n";
   }
 
-  BuildCStringArray(name, "name", back);
+  buildCStringArray(name, "name", back);
 
-  auto [_, struct_var] = BuildPJVariableDecl(type, back);
+  auto [_, struct_var] = buildPJVariableDecl(type, back);
   back << " = PJCreateStructType(ctx";
   back << ", /*name_size=*/" << name.size();
   back << ", /*name=*/name";
@@ -415,12 +404,12 @@ void GenerateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
   back << ", /*fields=*/fields";
   {
     back << ", /*size=*/sizeof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ") << 3";
   }
   {
     back << ", /*alignment=*/alignof(";
-    PrintNamespacedName(name, back);
+    printNamespacedName(name, back);
     back << ") << 3";
   }
   back << ");\n";
@@ -433,48 +422,47 @@ void GenerateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
        << "\n";
 }
 
-void GenerateComposite(ParsedProtoFile::Decl decl, std::ostream& output,
+void generateComposite(ParsedProtoFile::Decl decl, std::ostream& output,
                        std::ostream& back) {
   auto type = decl.type;
 
   if (type.isa<types::StructType>()) {
-    GenerateStruct(decl, output, back);
+    generateStruct(decl, output, back);
   } else if (type.isa<types::InlineVariantType>()) {
-    GenerateVariant(decl, output, back);
+    generateVariant(decl, output, back);
   } else {
     UNREACHABLE();
   }
 };
 
-void GenerateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
-  GenerateNamespaceBegin(decl.name, output);
+void generateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
+  generateNamespaceBegin(decl.name, output);
   output << "using " << std::string_view(decl.name.back());
   output << " = ";
-  GenerateTypeRef(decl.type, output);
+  generateTypeRef(decl.type, output);
   output << ";\n";
-  GenerateNamespaceEnd(decl.name, output);
+  generateNamespaceEnd(decl.name, output);
 }
 
-void GenerateProtocol(const SourceId& name, mlir::Type head,
+void generateProtocol(const SourceId& name, mlir::Type head,
                       const std::optional<std::vector<std::string>>& tag_path,
                       std::ostream& output, std::ostream& back) {
-  GenerateNamespaceBegin(name, output);
+  generateNamespaceBegin(name, output);
   output << "struct " << std::string_view(name.back()) << ";\n";
-  GenerateNamespaceEnd(name, output);
+  generateNamespaceEnd(name, output);
 
   back << "namespace pj {\n";
   back << "namespace gen {\n";
   back << "template <>\n"
        << "struct ProtocolHead<";
-  PrintNamespacedName(name, back);
+  printNamespacedName(name, back);
   back << "> {\n"
        << "using Head = ";
-  GenerateTypeRef(head, back);
+  generateTypeRef(head, back);
   back << ";\n";
-  back << "constexpr std::optional<std::array<std::string_view, "
-       << tag_path->size() << ">> tag = ";
+  back << "constexpr std::optional<std::vector<std::string_view>> tag = ";
   if (tag_path.has_value()) {
-    back << "std::array<std::string_view, " << tag_path->size() << ">{";
+    back << "std::vector<std::string_view>{";
     for (const std::string& term : *tag_path) {
       back << "\"" << term << "\", ";
     }
@@ -486,7 +474,7 @@ void GenerateProtocol(const SourceId& name, mlir::Type head,
   back << "\n}  // namespace pj\n\n";
 }
 
-void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
+void generateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
                     std::ostream& output) {
   output << "#pragma once\n"
          << "#include <cstddef>\n "
@@ -503,13 +491,13 @@ void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
   for (auto& decl : file.decls) {
     switch (decl.kind) {
       case ParsedProtoFile::DeclKind::kType:
-        GenerateTypedef(decl, output);
+        generateTypedef(decl, output);
         break;
       case ParsedProtoFile::DeclKind::kComposite:
-        GenerateComposite(decl, output, back);
+        generateComposite(decl, output, back);
         break;
       case ParsedProtoFile::DeclKind::kProtocol:
-        GenerateProtocol(decl.name, decl.type, decl.tag_path, output, back);
+        generateProtocol(decl.name, decl.type, decl.tag_path, output, back);
         break;
     }
   }

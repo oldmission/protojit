@@ -6,7 +6,6 @@
 #include <mlir/IR/Types.h>
 
 #include "context.hpp"
-#include "protojit.hpp"
 #include "types.hpp"
 
 namespace pj {
@@ -48,7 +47,8 @@ struct SourceIdLess : std::less<SourceId> {
     for (uintptr_t i = 0; i < limit; ++i) {
       if (a[i] < b[i]) {
         return true;
-      } else if (b[i] < a[i]) {
+      }
+      if (b[i] < a[i]) {
         return false;
       }
     }
@@ -68,9 +68,9 @@ struct ParsingScope {
   std::set<std::filesystem::path> import_dirs;
 };
 
-void ParseProtoFile(ParsingScope& scope, const std::filesystem::path&);
+void parseProtoFile(ParsingScope& scope, const std::filesystem::path&);
 
-void GenerateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
+void generateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
                     std::ostream& output);
 
 }  // namespace pj
