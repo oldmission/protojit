@@ -398,7 +398,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
     dst_terms.emplace(term.name.str(), &term);
   }
 
-  std::map<std::string, void*> handler_map;
+  std::map<std::string, const void*> handler_map;
   for (auto& attr : handlers) {
     auto handler = attr.cast<DispatchHandlerAttr>();
     handler_map.emplace(handler.path().getValue()[0], handler.address());

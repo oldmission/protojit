@@ -52,7 +52,7 @@ void ProtoJitContext::addEncodeFunction(std::string_view name, mlir::Type src,
 
 void ProtoJitContext::addDecodeFunction(
     std::string_view name, types::ProtocolType src, mlir::Type dst,
-    const std::vector<std::pair<std::string, void*>>& handlers) {
+    const std::vector<std::pair<std::string, const void*>>& handlers) {
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
 

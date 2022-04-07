@@ -30,6 +30,7 @@ struct Int {
   }
 
   Width head_size() const { return width; }
+  Width head_alignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Int& I) {
@@ -98,6 +99,7 @@ struct Struct {
   Width alignment = Width::None();
 
   Width head_size() const { return size; }
+  Width head_alignment() const { return alignment; }
 };
 
 inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
@@ -161,6 +163,7 @@ struct InlineVariant {
   Width alignment = Width::None();
 
   Width head_size() const { return size; }
+  Width head_alignment() const { return alignment; }
 };
 
 // Variants can have two representations.
@@ -178,8 +181,10 @@ struct OutlineVariant {
   Width tag_width = Width::None();
   Width tag_alignment = Width::None();
   Width term_offset = Width::None();
+  Width term_alignment = Width::None();
 
   Width head_size() const { return tag_width; }
+  Width head_alignment() const { return tag_alignment; }
 };
 
 template <typename V>
@@ -211,6 +216,18 @@ inline InlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
 inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
                                   const OutlineVariant& type_data) {
   return intern_variant(allocator, type_data);
+}
+
+template <typename Variant>
+Width compute_tag_width(const Variant& v) {
+  Width w = pj::Bytes(1);
+  if (v.terms.size() > 0) {
+    auto max_tag = std::max_element(
+        v.terms.begin(), v.terms.end(),
+        [](const Term& a, const Term& b) { return a.tag < b.tag; });
+    w = Bytes(RoundUpToPowerOfTwo(std::ceil(std::log2(max_tag->tag + 1) / 8)));
+  }
+  return w;
 }
 
 struct VariantType : public NominalType {
@@ -324,6 +341,7 @@ struct Array {
   }
 
   Width head_size() const { return elem_size * length; }
+  Width head_alignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
@@ -403,6 +421,9 @@ struct Vector {
   intptr_t max_length;
 
   /*** Generated ***/
+  // The min_length specified by the user for the wire type.
+  intptr_t wire_min_length;
+
   // Partial payload length -- number of elements stored inline, when the total
   // number of elements exceeds min_length. Never None, also never guaranteed to
   // be greater than 0.
@@ -438,6 +459,7 @@ struct Vector {
   // Alignment must be at least as large as the element type's alignment
   // if min_length > 0.
   Width alignment;
+  Width head_alignment() const { return alignment; }
 
   // At least as large as element type's alignment.
   // May be None if min_length == max_length.
@@ -445,10 +467,10 @@ struct Vector {
 
   bool operator==(const Vector& V) const {
     return elem == V.elem && min_length == V.min_length &&
-           max_length == V.max_length && ppl_count == V.ppl_count &&
-           length_offset == V.length_offset && length_size == V.length_size &&
-           ref_offset == V.ref_offset && ref_size == V.ref_size &&
-           reference_mode == V.reference_mode &&
+           wire_min_length == V.wire_min_length && max_length == V.max_length &&
+           ppl_count == V.ppl_count && length_offset == V.length_offset &&
+           length_size == V.length_size && ref_offset == V.ref_offset &&
+           ref_size == V.ref_size && reference_mode == V.reference_mode &&
            inline_payload_offset == V.inline_payload_offset &&
            inline_payload_size == V.inline_payload_size &&
            partial_payload_offset == V.partial_payload_offset &&
@@ -459,13 +481,15 @@ struct Vector {
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Vector& V) {
-  return os << V.elem << "[" << V.min_length << ":" << V.max_length << "|...]";
+  return os << V.elem << "[" << V.min_length << "/" << V.wire_min_length << ":"
+            << V.max_length << "|...]";
 }
 
 inline ::llvm::hash_code hash_value(const Vector& V) {
   using ::llvm::hash_value;
   return llvm::hash_combine(
-      hash_value(V.elem), hash_value(V.min_length), hash_value(V.max_length),
+      hash_value(V.elem), hash_value(V.min_length),
+      hash_value(V.wire_min_length), hash_value(V.max_length),
       hash_value(V.ppl_count), hash_value(V.length_offset),
       hash_value(V.length_size), hash_value(V.ref_offset),
       hash_value(V.ref_size), hash_value(V.reference_mode),
@@ -526,6 +550,7 @@ struct Any {
   }
 
   Width head_size() const { return size; }
+  Width head_alignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Any& A) {
@@ -560,6 +585,7 @@ struct Protocol {
 
   bool operator==(const Protocol& P) const { return head == P.head; }
   Width head_size() const { return head.head_size(); }
+  Width head_alignment() const { return head.head_alignment(); }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
@@ -613,7 +639,7 @@ struct BoundedBufferType
 };
 
 struct DispatchHandlerStorage : public mlir::AttributeStorage {
-  using KeyTy = std::pair<PathAttr, void*>;
+  using KeyTy = std::pair<PathAttr, const void*>;
 
   DispatchHandlerStorage(KeyTy key) : key(key) {}
 
@@ -642,7 +668,7 @@ struct DispatchHandlerAttr
   DispatchHandlerAttr getValue() const { return *this; }
 
   PathAttr path() const { return getImpl()->key.first; }
-  void* address() const { return getImpl()->key.second; }
+  const void* address() const { return getImpl()->key.second; }
 };
 
 void printType(llvm::raw_ostream& os, mlir::Type type);

@@ -70,6 +70,7 @@ struct ValueTypeStorage : public mlir::TypeStorage {
   virtual ~ValueTypeStorage(){};
   virtual void print(llvm::raw_ostream& os) const = 0;
   virtual Width head_size() const = 0;
+  virtual Width head_alignment() const = 0;
 };
 
 // Base class for all PJ types that represent values; i.e., everything except
@@ -85,6 +86,10 @@ struct ValueType : public mlir::Type {
 
   Width head_size() const {
     return static_cast<const ValueTypeStorage*>(impl)->head_size();
+  }
+
+  Width head_alignment() const {
+    return static_cast<const ValueTypeStorage*>(impl)->head_alignment();
   }
 
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
@@ -122,6 +127,7 @@ struct StructuralTypeStorage : public ValueTypeStorage {
 
   void print(llvm::raw_ostream& os) const override { os << key; }
   Width head_size() const override { return key.head_size(); }
+  Width head_alignment() const override { return key.head_alignment(); }
 
   KeyTy key;
 };
@@ -170,7 +176,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
   static NominalTypeStorage* construct(mlir::TypeStorageAllocator& allocator,
                                        const KeyTy& key) {
     return new (allocator.allocate<NominalTypeStorage>())
-        NominalTypeStorage(key.first, allocator.copyInto(key.second));
+        NominalTypeStorage(key.first, type_intern(allocator, key.second));
   }
 
   void print(llvm::raw_ostream& os) const override {
@@ -194,6 +200,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
   }
 
   Width head_size() const override { return type_data_.head_size(); }
+  Width head_alignment() const override { return type_data_.head_alignment(); }
 
   mlir::LogicalResult mutate(mlir::TypeStorageAllocator& allocator,
                              const T& type_data) {
@@ -302,7 +309,7 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
     if (startsWith(prefix)) {
       return get(getContext(), getImpl()->key.slice(1));
     }
-    return *this;
+    return none(getContext());
   }
 };
 

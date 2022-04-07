@@ -24,13 +24,14 @@ typedef struct PJStructField PJStructField;
 typedef struct PJStructType PJStructType;
 typedef struct PJTerm PJTerm;
 typedef struct PJInlineVariantType PJInlineVariantType;
-typedef struct PJOutlineVariantType PJOutlineVariantType;
 typedef struct PJArrayType PJArrayType;
 typedef struct PJVectorType PJVectorType;
-typedef struct PJAnyType PJAnyType;
-typedef struct PJProtocolType PJProtocolType;
-typedef struct PJRawBufferType PJRawBufferType;
-typedef struct PJBoundedBufferType PJBoundedBufferType;
+typedef struct PJProtocol PJProtocol;
+
+typedef struct PJHandler {
+  const char* name;
+  const void* function;
+} PJHandler;
 
 const PJUnitType* PJCreateUnitType(PJContext* c);
 
@@ -55,29 +56,28 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_size, Bits size,
     Bits alignment);
 
-const PJOutlineVariantType* PJCreateOutlineVariantType(
-    PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits tag_size);
-
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      intptr_t length, Bits elem_size,
                                      Bits alignment);
 
 const PJVectorType* PJCreateVectorType(
     PJContext* c, const void* type, intptr_t min_length, intptr_t max_length,
-    intptr_t ppl_count, Bits length_offset, Bits length_size, Bits ref_offset,
-    Bits ref_size, PJReferenceMode reference_mode, Bits inline_payload_offset,
+    intptr_t wire_min_length, intptr_t ppl_count, Bits length_offset,
+    Bits length_size, Bits ref_offset, Bits ref_size,
+    PJReferenceMode reference_mode, Bits inline_payload_offset,
     Bits inline_payload_size, Bits partial_payload_offset,
     Bits partial_payload_size, Bits size, Bits alignment,
     Bits outlined_payload_alignment);
 
-const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_width,
-                                 Bits data_ref_offset, Bits type_ref_width,
-                                 Bits type_ref_offset, Bits tag_width,
-                                 Bits tag_offset, Bits version_width,
-                                 Bits version_offset, Bits size,
-                                 Bits alignment);
+const PJProtocol* PJPlanProtocol(PJContext* ctx, const void* head,
+                                 const char* tag_path);
+
+void PJAddEncodeFunction(PJContext* ctx, const char* name, const void* src,
+                         const PJProtocol* protocol, const char* src_path);
+
+void PJAddDecodeFunction(PJContext* ctx, const char* name,
+                         const PJProtocol* protocol, const void* dest,
+                         uintptr_t num_handlers, const PJHandler* handlers[]);
 
 #ifdef __cplusplus
 }  // extern "C"

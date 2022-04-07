@@ -4,7 +4,6 @@
 #include <pegtl/contrib/analyze.hpp>
 
 #include "protogen.hpp"
-#include "protojit.hpp"
 #include "types.hpp"
 #include "validate.hpp"
 
@@ -512,7 +511,7 @@ BEGIN_ACTION(ImportDecl) {
   }
 
   if (found) {
-    ParseProtoFile(__ parse_scope, found_path);
+    parseProtoFile(__ parse_scope, found_path);
     __ imports.emplace_back(found_path);
   } else {
     throw parse_error("Cannot find import", in.position());
@@ -570,8 +569,7 @@ BEGIN_ACTION(ProtoDecl) {
         break;
       }
 
-      auto struct_type = cur.dyn_cast<types::StructType>();
-      assert(struct_type);
+      auto struct_type = cur.cast<types::StructType>();
       auto it =
           std::find_if(struct_type->fields.begin(), struct_type->fields.end(),
                        [&term](const types::StructField& field) {
@@ -608,7 +606,7 @@ struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 
-void ParseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
+void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
   if (scope.pending_files.count(path)) {
     std::cerr << "Cycle in imports:\n";
     for (auto& p : scope.stack) {
