@@ -331,13 +331,31 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
   auto [__, callback_store] = pass->getEffectDefsFor(op);
 
   Value callback = _.create<LLVM::LoadOp>(loc, callback_store);
+
+  // Check if the callback is set
+  auto zero = _.create<LLVM::ConstantOp>(
+      loc, callback.getType(), _.getIntegerAttr(_.getIntegerType(64), 0));
+  auto cond =
+      _.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, callback, zero);
+
+  Block* cur_block = _.getBlock();
+  Block* end_block = _.splitBlock(cur_block, _.getInsertionPoint());
+  Block* call_block = _.createBlock(cur_block->getParent());
+
+  _.setInsertionPointToEnd(cur_block);
+  _.create<LLVM::CondBrOp>(loc, cond, end_block, ValueRange{}, call_block,
+                           ValueRange{});
+
+  _.setInsertionPointToStart(call_block);
   callback = _.create<LLVM::IntToPtrOp>(loc, dispatch_type, callback);
   auto call = _.create<LLVM::CallOp>(
       loc, TypeRange{LLVM::LLVMVoidType::get(_.getContext())},
       ValueRange{callback, operands[0], operands[1]});
   ASSERT(call.verify().succeeded());
+  _.create<LLVM::BrOp>(loc, ValueRange{}, end_block);
 
   _.eraseOp(op);
+  _.setInsertionPointToStart(end_block);
   return success();
 }
 

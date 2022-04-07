@@ -567,7 +567,9 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
 
 struct EncodeOpLowering : public OpConversionPattern<EncodeOp> {
   EncodeOpLowering(MLIRContext* C, GeneratePass* pass)
-      : OpConversionPattern<EncodeOp>(C), pass(pass) {}
+      : OpConversionPattern<EncodeOp>(C), pass(pass) {
+    setHasBoundedRewriteRecursion(true);
+  }
 
   LogicalResult matchAndRewrite(EncodeOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
