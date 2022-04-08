@@ -667,6 +667,7 @@ struct DispatchHandlerAttr
 
   DispatchHandlerAttr getValue() const { return *this; }
 
+  void print(llvm::raw_ostream& os) const;
   PathAttr path() const { return getImpl()->key.first; }
   const void* address() const { return getImpl()->key.second; }
 };
