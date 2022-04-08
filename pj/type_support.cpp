@@ -50,5 +50,10 @@ bool NominalType::classof(mlir::Type val) {
          VariantType::classof(val);
 }
 
+void DispatchHandlerAttr::print(llvm::raw_ostream& os) const {
+  path().print(os);
+  os << reinterpret_cast<uintptr_t>(address());
+}
+
 }  // namespace types
 }  // namespace pj

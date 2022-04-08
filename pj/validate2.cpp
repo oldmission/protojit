@@ -36,6 +36,9 @@ void validate(const InlineVariant& type, position pos) {
   std::unordered_set<uint64_t> tags;
   for (const Term& t : type.terms) {
     std::string name = t.name.str();
+    if (name == "undef") {
+      throw parse_error("'undef' is not a valid term name", pos);
+    }
     if (names.find(name) != names.end()) {
       throw parse_error("Duplicate term name '" + name + "' in variant", pos);
     }

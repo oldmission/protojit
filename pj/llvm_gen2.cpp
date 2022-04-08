@@ -243,9 +243,12 @@ LogicalResult TagOpLowering::matchAndRewrite(
 
   auto var_type = op.dst().getType().cast<VariantType>();
 
+  auto tag_ptr = _.create<GEPOp>(
+      loc, pass->bytePtrType(), operands[0],
+      pass->buildWordConstant(loc, _, var_type.tag_offset().bytes()));
+
   auto store_ptr = _.create<BitcastOp>(
-      loc, LLVMPointerType::get(pass->intType(var_type.tag_width())),
-      operands[0]);
+      loc, LLVMPointerType::get(pass->intType(var_type.tag_width())), tag_ptr);
 
   auto tag_cst = pass->buildIntConstant(loc, _, var_type.tag_width(), op.tag());
 
@@ -298,7 +301,7 @@ LogicalResult MatchOpLowering::matchAndRewrite(
                            /*defaultOperands=*/ValueRange{},
                            /*caseValues=*/case_vals,
                            /*caseDestinations=*/op.successors().drop_front(),
-                           /*caseOperands=*/ValueRange{});
+                           /*caseOperands=*/ArrayRef<ValueRange>{});
 
   _.eraseOp(op);
   return success();
