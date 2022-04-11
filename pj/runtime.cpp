@@ -131,9 +131,11 @@ const PJInlineVariantType* PJCreateInlineVariantType(
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      intptr_t length, Bits elem_size,
                                      Bits alignment) {
+  auto elem =
+      mlir::Type::getFromOpaquePointer(type).cast<pj::types::ValueType>();
   auto array_type = pj::types::ArrayType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
-      pj::types::Array{.elem = mlir::Type::getFromOpaquePointer(type),
+      pj::types::Array{.elem = elem,
                        .length = length,
                        .elem_size = pj::Bits(elem_size),
                        .alignment = pj::Bits(alignment)});

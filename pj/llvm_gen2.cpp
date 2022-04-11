@@ -546,8 +546,6 @@ LogicalResult CallOpLowering::matchAndRewrite(
     return failure();
   }
 
-  auto [check, cb] = pass->getEffectDefsFor(op);
-
   llvm::SmallVector<Value, 4> new_operands;
   for (size_t i = 0, j = 0; i < operands.size(); ++i) {
     if (j < buf_args.size() && i == buf_args[j]) {
@@ -562,6 +560,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
   }
 
   if (pass->effect_analysis->hasEffects(op)) {
+    auto [check, cb] = pass->getEffectDefsFor(op);
     new_operands.insert(new_operands.end(), {check, cb});
   }
 

@@ -1,4 +1,9 @@
 // Array tests
 
-type A1 = char8[4];
-type A2 = char8[6];
+struct A1 {
+  arr: char8[4];
+}
+
+struct A2 {
+  arr: char8[6];
+}
