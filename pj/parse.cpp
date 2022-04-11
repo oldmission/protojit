@@ -1,5 +1,5 @@
-#include <charconv>
 #include <mlir/IR/MLIRContext.h>
+#include <charconv>
 #include <pegtl.hpp>
 #include <pegtl/contrib/analyze.hpp>
 
@@ -232,7 +232,8 @@ BEGIN_ACTION(FixedArrayModifier) {
   assert(__ array_len != kNone);
   assert(__ type);
 
-  types::Array data{.elem = __ type, .length = __ array_len};
+  types::Array data{.elem = __ type.cast<types::ValueType>(),
+                    .length = __ array_len};
   validate(data, in.position());
 
   __ type = types::ArrayType::get(&__ ctx.ctx_, data);
