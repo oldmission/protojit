@@ -27,11 +27,19 @@ TEST_P(PJVariantTest, VariantMismatch) {
   Var2 T{.value = {.y = -1}, .tag = Var2::Kind::y};
 
   onNoMatch<0, Var2>("y", [&](const Var2& T) {});
-  onMatch<1, Var2>("undef", [&](const Var2& T) {});
+  onMatch<1, Var2>("undef",
+                   [&](const Var2& T) { EXPECT_EQ(T.tag, Var2::Kind::undef); });
 
   transcode<Var1, Var2>(&F, &T, "x", "_");
+}
 
-  EXPECT_EQ(T.tag, Var2::Kind::undef);
+TEST_P(PJVariantTest, VariantInvalidHandler) {
+  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
+  Var2 T{.value = {.y = 0}, .tag = Var2::Kind::undef};
+
+  onNoMatch<0, Var2>("x", [&](const Var2& T) {});
+
+  transcode<Var1, Var2>(&F, &T, "x", "_");
 }
 
 TEST_P(PJVariantTest, VariantAddCaseBig) {
@@ -50,6 +58,16 @@ TEST_P(PJVariantTest, VariantAddCaseBig) {
   // TODO: GenSize does not yet exist
   // Ensure the tag is added -- message size shouldn't include BigStruct.
   // EXPECT_EQ((GenSize<Var1, Var1>(0x1000, {"x"}, {"."})(&F)), 9);
+}
+
+TEST_P(PJVariantTest, VariantMissingHandler) {
+  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
+  Var3 T{.value = {.x = 0}, .tag = Var3::Kind::undef};
+
+  onNoMatch<0, Var3>("y", [&](const Var3& T) {});
+  onNoMatch<0, Var3>("undef", [&](const Var3& T) {});
+
+  transcode<Var1, Var3>(&F, &T, "x", "_");
 }
 
 TEST_P(PJVariantTest, VariantMoveCase) {

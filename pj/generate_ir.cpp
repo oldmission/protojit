@@ -437,23 +437,28 @@ mlir::FuncOp GeneratePass::getOrCreateVariantDecodeFn(
     _.setInsertionPointToStart(block);
     Value result_buf = func.getArgument(2);
 
-    if (auto it = dst_terms.find(src_term.name.str()); it != dst_terms.end()) {
+    auto src_term_name = src_term.name.str();
+    if (auto it = dst_terms.find(src_term_name); it != dst_terms.end()) {
       transcodeTerm(_, loc, src_type, dst_type, &src_term, it->second, src, dst,
                     result_buf);
+
+      if (auto hit = handler_map.find(src_term_name);
+          hit != handler_map.end()) {
+        _.create<SetCallbackOp>(
+            loc,
+            mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
+                                   reinterpret_cast<int64_t>(hit->second)));
+      }
     } else {
       transcodeTerm(_, loc, src_type, dst_type, &src_term, nullptr, src, dst,
                     result_buf);
-    }
 
-    if (auto it = handler_map.find(src_term.name.str());
-        it != handler_map.end()) {
-      _.create<SetCallbackOp>(
-          loc, mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
-                                      reinterpret_cast<int64_t>(it->second)));
-    } else if (auto it = handler_map.find("undef"); it != handler_map.end()) {
-      _.create<SetCallbackOp>(
-          loc, mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
-                                      reinterpret_cast<int64_t>(it->second)));
+      if (auto hit = handler_map.find("undef"); hit != handler_map.end()) {
+        _.create<SetCallbackOp>(
+            loc,
+            mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
+                                   reinterpret_cast<int64_t>(hit->second)));
+      }
     }
 
     _.create<ReturnOp>(loc, result_buf);
