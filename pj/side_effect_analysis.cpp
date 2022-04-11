@@ -10,6 +10,7 @@ namespace pj {
 
 using namespace mlir;
 using namespace ir2;
+using namespace types;
 
 SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   // Most functions in ProtoJIT IR have only one call site.
@@ -46,6 +47,7 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   });
 
   // 2. Implement closure via BFS.
+
   while (!roots.empty()) {
     auto* effect_op = roots.front();
     if (auto it = enclosing_fns.find(effect_op); it != enclosing_fns.end()) {
@@ -64,6 +66,32 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
     }
     roots.pop_front();
   }
+
+  // 3. Collect arguments to functions that need to be flattened for no-alias
+  //    annotations. In no particular order w.r.t. the other steps.
+
+  root->walk([&](FuncOp op) {
+    llvm::SmallVector<size_t, 1> flattened_args;
+    for (size_t i = 0; i < op.getNumArguments(); ++i) {
+      if (op.getArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName()) &&
+          op.getArgument(i).getType().isa<BoundedBufferType>()) {
+        flattened_args.push_back(i);
+      }
+    }
+    if (flattened_args.size() > 0) {
+      flattened_buffer_args.insert(
+          {op.getName().str(), std::move(flattened_args)});
+    }
+  });
+}
+
+llvm::ArrayRef<size_t> SideEffectAnalysis::flattenedBufferArguments(
+    llvm::StringRef callee) const {
+  if (auto it = flattened_buffer_args.find(callee);
+      it != flattened_buffer_args.end()) {
+    return it->second;
+  }
+  return {};
 }
 
 }  // namespace pj
