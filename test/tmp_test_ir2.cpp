@@ -85,7 +85,7 @@ TEST_F(TmpIR2Test, BasicArrayTest) {
       &ctx.ctx_,                          //
       types::Array{
           .elem = int_m_ty,
-          .length = 4,
+          .length = 8,
           .elem_size = Bytes(8),
           .alignment = Bytes(8),
       });
@@ -94,7 +94,7 @@ TEST_F(TmpIR2Test, BasicArrayTest) {
       &ctx.ctx_,                          //
       types::Array{
           .elem = int_p_ty,
-          .length = 2,
+          .length = 8,
           .elem_size = Bytes(8),
           .alignment = Bytes(1),
       });

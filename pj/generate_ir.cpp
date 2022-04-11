@@ -127,7 +127,15 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
   // LLVM knows it can throw away the body if all callsites are inlined.
   mlir::OpBuilder _ = mlir::OpBuilder::atBlockBegin(module().getBody());
   _.setListener(listener);
-  return _.create<mlir::FuncOp>(loc, name, signature);
+
+  auto func = _.create<mlir::FuncOp>(loc, name, signature);
+
+  for (size_t i = 0; i < func.getNumArguments(); ++i) {
+    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(&getContext()));
+  }
+
+  return func;
 }
 
 void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
@@ -281,9 +289,9 @@ mlir::FuncOp GeneratePass::getOrCreateStructDecodeFn(
 mlir::FuncOp GeneratePass::getOrCreateVariantEncodeFn(
     mlir::Location loc, OpBuilder::Listener* listener, VariantType src_type,
     VariantType dst_type, PathAttr path) {
+  auto* ctx = &getContext();
   auto fntype = mlir::FunctionType::get(
-      &getContext(),
-      {src_type, dst_type, types::RawBufferType::get(&getContext())},
+      ctx, {src_type, dst_type, types::RawBufferType::get(&getContext())},
       types::RawBufferType::get(&getContext()));
   auto key = FnKey{src_type, dst_type, path};
   auto func = getOrCreateFn(loc, listener, "enc", key, fntype);
@@ -488,7 +496,12 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
   auto fntype = mlir::FunctionType::get(ctx, {from, to, buf_type.getValue()},
                                         buf_type.getValue());
   auto key = FnKey{from, to, buf_type};
-  auto func = getOrCreateFn(loc, listener, "enc", key, fntype);
+  auto func = getOrCreateFn(loc, listener, "xcd", key, fntype);
+
+  for (size_t i : {0, 1, 2}) {
+    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(ctx));
+  }
 
   if (!func.isDeclaration()) {
     return func;
@@ -576,6 +589,11 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
       loc, op.name(),
       _.getFunctionType({op.src(), RawBufferType::get(ctx)}, llvm::None));
 
+  for (size_t i : {0, 1}) {
+    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(ctx));
+  }
+
   mlir::ModuleOp module{op.getOperation()->getParentOp()};
   module.push_back(func);
   auto* entry_block = func.addEntryBlock();
@@ -622,6 +640,11 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
           {op.src(), op.dst(), types::BoundedBufferType::get(getContext()),
            UserStateType::get(getContext())},
           types::BoundedBufferType::get(getContext())));
+
+  for (size_t i : {0, 1, 2}) {
+    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(ctx));
+  }
 
   mlir::ModuleOp module{op.getOperation()->getParentOp()};
   module.push_back(func);
