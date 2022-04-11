@@ -22,8 +22,6 @@ namespace {
 struct LLVMGenPass
     : public mlir::PassWrapper<LLVMGenPass,
                                mlir::OperationPass<mlir::ModuleOp>> {
-  LLVMGenPass(const llvm::TargetMachine* machine) : machine(machine) {}
-
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<ir::ProtoJitDialect, LLVMDialect>();
   }
@@ -72,7 +70,21 @@ struct LLVMGenPass
         &getContext(), wordSize().bits(), mlir::IntegerType::Signless));
   }
 
+  mlir::Type boundedBufType() {
+    if (!bounded_buf_type) {
+      bounded_buf_type = mlir::LLVM::LLVMStructType::getNewIdentified(
+          &getContext(), "!pj.bbuf", {bytePtrType(), wordType()});
+    }
+    return bounded_buf_type;
+  }
+
+  std::pair<Value, Value> buildBoundedBufferDestructuring(
+      Location loc, ConversionPatternRewriter& _, Value buf);
+
+  LLVMGenPass(const llvm::TargetMachine* machine) : machine(machine) {}
+
   const llvm::TargetMachine* const machine;
+  mlir::Type bounded_buf_type;
   SideEffectAnalysis* effect_analysis;
   llvm::DenseMap<Operation*, std::pair<Value, Value>> effect_defs;
 };
@@ -81,23 +93,29 @@ struct LLVMGenPass
 struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
   ProtoJitTypeConverter(mlir::MLIRContext* ctx, LLVMGenPass* pass)
       : mlir::LLVMTypeConverter(ctx), pass(pass) {
-    auto bounded_buf_type = mlir::LLVM::LLVMStructType::getNewIdentified(
-        &getContext(), "!pj.bbuf", {pass->bytePtrType(), pass->wordType()});
-
     addConversion(
         [=](pj::types::ValueType type) { return pass->bytePtrType(); });
     addConversion(
         [=](pj::types::RawBufferType type) { return pass->bytePtrType(); });
     addConversion(
         [=](pj::ir::UserStateType type) { return pass->bytePtrType(); });
-    addConversion(
-        [=](pj::types::BoundedBufferType type) { return bounded_buf_type; });
+    addConversion([=](pj::types::BoundedBufferType type) {
+      return pass->boundedBufType();
+    });
   }
 
   LLVMGenPass* pass;
 };
 
-}  // namespace
+std::pair<Value, Value> LLVMGenPass::buildBoundedBufferDestructuring(
+    Location loc, ConversionPatternRewriter& _, Value buf) {
+  return {
+      _.create<LLVM::ExtractValueOp>(  //
+          loc, bytePtrType(), buf, _.getI64ArrayAttr(0)),
+      _.create<LLVM::ExtractValueOp>(  //
+          loc, wordType(), buf, _.getI64ArrayAttr(1)),
+  };
+}
 
 struct ProjectOpLowering : public OpConversionPattern<ProjectOp> {
   ProjectOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
@@ -117,24 +135,55 @@ struct FuncOpLowering : public OpConversionPattern<FuncOp> {
 
   LogicalResult matchAndRewrite(FuncOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final {
-    if (!pass->effect_analysis->hasEffects(op)) {
-      return failure();
-    }
-
     auto* ctx = _.getContext();
+    auto loc = op.getLoc();
+
     _.startRootUpdate(op);
 
-    // success
-    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
-                      DictionaryAttr::get(ctx));
-    // callback
-    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
-                      DictionaryAttr::get(ctx));
+    if (pass->effect_analysis->hasEffects(op)) {
+      // success
+      op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
+                        DictionaryAttr::get(ctx));
+      // callback
+      op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
+                        DictionaryAttr::get(ctx));
 
-    pass->effect_defs[op] = {
-        op.getArgument(op.getNumArguments() - 2),
-        op.getArgument(op.getNumArguments() - 1),
-    };
+      pass->effect_defs[op] = {
+          op.getArgument(op.getNumArguments() - 2),
+          op.getArgument(op.getNumArguments() - 1),
+      };
+    }
+
+    _.setInsertionPointToStart(&*op.body().begin());
+
+    auto buf_args =
+        pass->effect_analysis->flattenedBufferArguments(op.getName());
+
+    size_t arg_delta = 0;
+    for (auto arg : buf_args) {
+      auto arg_pos = arg + arg_delta++;
+      auto old_arg = op.getArgument(arg_pos);
+
+      op.insertArgument(arg_pos + 1, pass->bytePtrType(),
+                        DictionaryAttr::get(ctx));
+      op.setArgAttr(arg_pos + 1, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(ctx));
+
+      op.insertArgument(arg_pos + 2, pass->wordType(),
+                        DictionaryAttr::get(ctx));
+
+      auto ptr = op.getArgument(arg_pos + 1);
+      auto size = op.getArgument(arg_pos + 2);
+
+      Value buf_struct = _.create<LLVM::UndefOp>(loc, pass->boundedBufType());
+      buf_struct = _.create<LLVM::InsertValueOp>(  //
+          loc, buf_struct, ptr, _.getI64ArrayAttr(0));
+      buf_struct = _.create<LLVM::InsertValueOp>(  //
+          loc, buf_struct, size, _.getI64ArrayAttr(1));
+
+      old_arg.replaceAllUsesWith(buf_struct);
+      op.eraseArgument(arg_pos);
+    }
 
     _.finalizeRootUpdate(op);
     return success();
@@ -488,15 +537,33 @@ struct CallOpLowering : public OpConversionPattern<mlir::CallOp> {
 LogicalResult CallOpLowering::matchAndRewrite(
     mlir::CallOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
-  if (!pass->effect_analysis->hasEffects(op)) {
+  auto loc = op.getLoc();
+
+  const auto& buf_args =
+      pass->effect_analysis->flattenedBufferArguments(op.callee());
+
+  if (!pass->effect_analysis->hasEffects(op) && buf_args.empty()) {
     return failure();
   }
 
   auto [check, cb] = pass->getEffectDefsFor(op);
 
   llvm::SmallVector<Value, 4> new_operands;
-  new_operands.insert(new_operands.end(), operands.begin(), operands.end());
-  new_operands.insert(new_operands.end(), {check, cb});
+  for (size_t i = 0, j = 0; i < operands.size(); ++i) {
+    if (j < buf_args.size() && i == buf_args[j]) {
+      auto [buf_ptr, buf_size] =
+          pass->buildBoundedBufferDestructuring(loc, _, operands[i]);
+      new_operands.push_back(buf_ptr);
+      new_operands.push_back(buf_size);
+      ++j;
+    } else {
+      new_operands.push_back(operands[i]);
+    }
+  }
+
+  if (pass->effect_analysis->hasEffects(op)) {
+    new_operands.insert(new_operands.end(), {check, cb});
+  }
 
   auto call = _.create<mlir::CallOp>(op.getLoc(), op.getResultTypes(),
                                      op.callee(), new_operands);
@@ -563,6 +630,8 @@ void LLVMGenPass::runOnOperation() {
     }
   });
 }
+
+}  // namespace
 
 std::unique_ptr<Pass> createLLVMGenPass(const llvm::TargetMachine* machine) {
   return std::make_unique<LLVMGenPass>(machine);

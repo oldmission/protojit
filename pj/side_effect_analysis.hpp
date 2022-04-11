@@ -2,6 +2,7 @@
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/StringMap.h>
 #include <mlir/Support/LLVM.h>
 
 #include <llvm/Support/raw_ostream.h>
@@ -28,6 +29,8 @@ class SideEffectAnalysis {
     return effect_functions.contains(op) or effect_points.contains(op);
   }
 
+  llvm::ArrayRef<size_t> flattenedBufferArguments(llvm::StringRef callee) const;
+
   mlir::Operation* effectProviderFor(mlir::Operation* op) const {
     if (auto it = effect_providers.find(op); it != effect_providers.end()) {
       return it->second;
@@ -42,6 +45,7 @@ class SideEffectAnalysis {
   OpSet effect_points;
   OpSet effect_functions;
   llvm::DenseMap<mlir::Operation*, mlir::Operation*> effect_providers;
+  llvm::StringMap<llvm::SmallVector<size_t, 1>> flattened_buffer_args;
 };
 
 }  // namespace pj
