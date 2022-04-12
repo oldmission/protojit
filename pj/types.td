@@ -18,6 +18,9 @@ def BufferType :
 def ValueType :
     Type<CPred<"$_self.isa<::pj::types::ValueType>()">, "value">;
 
+def IntType :
+    Type<CPred<"$_self.isa<::pj::types::IntType>()">, "int">;
+
 def StructType :
     Type<CPred<"$_self.isa<::pj::types::StructType>()">, "struct">;
 

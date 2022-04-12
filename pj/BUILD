@@ -301,6 +301,7 @@ cc_shared_library(
         "@llvm-project//mlir:ROCDLOpsIncGen",
         "@llvm-project//mlir:ROCDLToLLVMIRTranslation",
         "@llvm-project//mlir:SCFDialect",
+        "@llvm-project//mlir:SCFToStandard",
         "@llvm-project//mlir:SCFIncGen",
         "@llvm-project//mlir:SCFPassIncGen",
         "@llvm-project//mlir:SideEffectInterfaces",

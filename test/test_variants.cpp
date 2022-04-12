@@ -100,18 +100,15 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
 }
 #endif
 
-// TODO: implement DefaultOp lowering
-#if 0
 TEST_F(PJTest, VariantAddTagField) {
   Outer2 F{.z = 0xab};
-  Outer T{.v = {.tag = Var4::Kind::undef}, .z = 0};
+  Outer T{.v = {.value = {.x = 42}, .tag = Var4::Kind::x}, .z = 0};
 
   transcode<Outer2, Outer>(&F, &T);
 
   EXPECT_EQ(T.v.tag, Var4::Kind::undef);
   EXPECT_EQ(T.z, 0xab);
 }
-#endif
 
 TEST_P(PJVariantTest, VariantRemoveTagField) {
   Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
@@ -143,20 +140,17 @@ TEST_F(PJTest, VariantNestedTagSize) {
 }
 #endif
 
-// TODO: implement DefaultOp lowering
-#if 0
 TEST_F(PJTest, VariantDispatchDefault) {
   Outer2 F{.z = 0xab};
   Outer T{.v = {.tag = Var4::Kind::w}, .z = 0};
 
-  onMatch<0, Outer>("undef", [&](const Outer& T) {
+  onMatch<0, Outer>("v.undef", [&](const Outer& T) {
     EXPECT_EQ(T.v.tag, Var4::Kind::undef);
     EXPECT_EQ(T.z, 0xab);
   });
 
-  transcode<Outer2, Outer, Outer>(&F, &T);
+  transcode<Outer2, Outer>(&F, &T);
 }
-#endif
 
 TEST_P(PJVariantTest, VariantDispatchUndef) {
   Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
@@ -168,6 +162,19 @@ TEST_P(PJVariantTest, VariantDispatchUndef) {
   });
 
   transcode<Outer>(&F, &T, "v.undef", "v._");
+}
+
+TEST_F(PJTest, VariantDispatchDefaultNested) {
+  Outer2 F{.z = 0xab};
+  NestedOuter T = {};
+
+  onMatch<0, NestedOuter>("p.a.undef", [&](const NestedOuter& T) {
+    EXPECT_EQ(T.p.a.tag, Var4::Kind::undef);
+    EXPECT_EQ(T.p.b.tag, Var4::Kind::undef);
+    EXPECT_EQ(T.z, 0xab);
+  });
+
+  transcode<Outer2, NestedOuter>(&F, &T);
 }
 
 TEST_P(PJVariantTest, VariantDifferentDispatchTag) {

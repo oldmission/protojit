@@ -33,7 +33,6 @@ class Scope {
   }
 
   mlir::MLIRContext* Context() { return context_; }
-  types::StructType Unit();
 
  private:
   std::vector<Scoped*> allocations;
