@@ -32,7 +32,7 @@ struct ParseState {
 
   // Used when parsing int types and modifiers.
   // Populated after parsing a 'Type' rule.
-  mlir::Type type;
+  types::ValueType type;
 
   // Populated after parsing Len, MinLen, and MaxLen rules.
   intptr_t array_len = kNone;
@@ -92,8 +92,8 @@ struct ParseState {
   }
 
   template <typename I>
-  mlir::Type resolveType(const I& in, const SourceId& id,
-                         bool error_on_failure = true) {
+  types::ValueType resolveType(const I& in, const SourceId& id,
+                               bool error_on_failure = true) {
     std::vector<llvm::StringRef> id_vec;
     id_vec.reserve(space.size() + id_vec.size());
     for (intptr_t i = space.size(); i >= 0; --i) {
@@ -113,11 +113,11 @@ struct ParseState {
     if (error_on_failure) {
       throw parse_error("Cannot resolve ID.", in.position());
     }
-    return mlir::Type{};
+    return {};
   }
 
   template <typename I>
-  void defineType(const I& in, const SourceId& name, mlir::Type type) {
+  void defineType(const I& in, const SourceId& name, types::ValueType type) {
     if (parse_scope.type_defs.count(name)) {
       throw parse_error("Cannot re-define type", in.position());
     }
