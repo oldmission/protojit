@@ -114,18 +114,26 @@ cc_library(
         "@llvm-project//mlir:ExecutionEngine",
         "@llvm-project//mlir:ExecutionEngineUtils",
         "@llvm-project//mlir:LLVMDialect",
-        "@llvm-project//mlir:StandardOps",
-        "@llvm-project//mlir:StandardToLLVM",
         "@llvm-project//mlir:SCFDialect",
         "@llvm-project//mlir:SCFToStandard",
+        "@llvm-project//mlir:StandardOps",
+        "@llvm-project//mlir:StandardToLLVM",
         "@llvm-project//mlir:Transforms",
     ],
 )
 
 cc_library(
     name = "runtime",
-    srcs = ["runtime.cpp", "protojit.cpp", "plan2.cpp"],
-    hdrs = ["runtime.h", "protojit.hpp", "plan.hpp"],
+    srcs = [
+        "plan2.cpp",
+        "protojit.cpp",
+        "runtime.cpp",
+    ],
+    hdrs = [
+        "plan.hpp",
+        "protojit.hpp",
+        "runtime.h",
+    ],
     linkopts = ["-lstdc++"],
     deps = [
         ":compiler",
@@ -221,6 +229,7 @@ cc_shared_library(
         "@llvm-project//mlir:BuiltinLocationAttributesIncGen",
         "@llvm-project//mlir:BuiltinOpsIncGen",
         "@llvm-project//mlir:BuiltinTypeInterfacesIncGen",
+        "@llvm-project//mlir:SCFToStandard",
         "@llvm-project//mlir:BuiltinTypesIncGen",
         "@llvm-project//mlir:CallOpInterfaces",
         "@llvm-project//mlir:CallOpInterfacesIncGen",

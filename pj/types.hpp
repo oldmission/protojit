@@ -350,7 +350,19 @@ struct Array {
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
   A.elem.print(os);
-  return os << "[" << A.length << "|" << A.elem_size << "]/" << A.alignment;
+  os << "[" << A.length;
+
+  if (A.elem_size != A.elem.head_size()) {
+    os << "|" << A.elem_size;
+  }
+
+  os << "]";
+
+  if (A.alignment != A.elem.head_alignment()) {
+    os << "/" << A.alignment;
+  }
+
+  return os;
 }
 
 inline ::llvm::hash_code hash_value(const Array& ary) {

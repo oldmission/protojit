@@ -12,9 +12,7 @@ def ProtoJit_Dialect : Dialect {
 class ProtoJit_Op<string mnemonic, list<OpTrait> traits = []> :
     Op<ProtoJit_Dialect, mnemonic, traits>;
 
-// EncodeOp encodes a value from a memory type (src) into a wire type (dst).
-//
-// 'dst' must be a fixed-size type.
+// TranscodeOp decodes a value from a source to destination type.
 //
 // Path defines a restriction on what values in the 'src' type can be observed.
 // The path may be empty, implying no restriction, or a sequence of the form
@@ -22,42 +20,20 @@ class ProtoJit_Op<string mnemonic, list<OpTrait> traits = []> :
 // following the field names will also hold the tag implied by the term name.
 //
 // Receives a buffer which it may use to store outline data. The buffer must
-// *not* alias with with 'dst'. Returns a new buffer object referencing the
-// remaining space in the original buffer.
-//
-// Assumes the provided buffer space is sufficient -- undefined behavior may
-// ensue otherwise.
-def EncodeOp : ProtoJit_Op<"encode"> {
-  let arguments = (
-    ins ValueType:$src, ValueType:$dst, RawBufferType:$buf, PathAttr:$path
-  );
-  let results = (outs RawBufferType);
-}
-
-// DecodeOp decodes a value from a wire type (src) into a memory type (dst).
-//
-// Receives a buffer which it may use to store outline data. Returns a new
-// buffer object referencing the remaining space in the original buffer.
-// Throws an "exception" if there is insufficient space in the buffer.
-def DecodeOp : ProtoJit_Op<"decode"> {
-  let arguments = (
-     ins ValueType:$src, ValueType:$dst, BoundedBufferType:$buf,
-     TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
-  );
-  let results = (outs BoundedBufferType);
-}
-
-// TranscodeOp decodes a value from a any source to destination type.
-//
-// It is agnostic of paths.
-//
-// Receives a buffer which it may use to store outline data. Returns a new
-// buffer object referencing the remaining space in the original buffer.
-// Buffer handling depends on whether buf is raw or bounded
-// (see EncodeOp and DecodeOp).
+// *not* alias with with 'dst'. Returns a new buffer object referencing
+// the remaining space in the original buffer. Buffer handling depends on
+// whether buf is raw or bounded -- raw buffer accesses are not checked,
+// bounded buffer accesses are.
 def TranscodeOp : ProtoJit_Op<"transcode"> {
-  let arguments = (ins AnyType:$src, AnyType:$dst, Optional<BufferType>:$buf);
-  let results = (outs Optional<BufferType>);
+  let arguments = (ins
+    AnyType:$src,
+    AnyType:$dst,
+    BufferType:$buf,
+    PathAttr:$path,
+    TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
+  );
+
+  let results = (outs BufferType);
 }
 
 // DefaultOp populates a value with a default for that type.
@@ -65,7 +41,10 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
 // No buffer is accepted because the default value for types with external
 // data is empty anyway.
 def DefaultOp : ProtoJit_Op<"default"> {
-  let arguments = (ins AnyType:$dst);
+  let arguments = (ins
+      AnyType:$dst,
+      TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
+  );
 }
 
 // Calculate the size that the given value of the provided memory type will

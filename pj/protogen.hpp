@@ -59,7 +59,7 @@ struct SourceIdLess : std::less<SourceId> {
 struct ParsingScope {
   ProtoJitContext& ctx;
   std::map<std::filesystem::path, ParsedProtoFile> parsed_files;
-  std::map<SourceId, mlir::Type, SourceIdLess> type_defs;
+  std::map<SourceId, types::ValueType, SourceIdLess> type_defs;
   // std::map<SourceId, mlir::Type, SourceIdLess> protocol_defs;
 
   std::set<std::filesystem::path> pending_files;

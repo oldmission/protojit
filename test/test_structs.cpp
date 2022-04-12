@@ -19,6 +19,7 @@ TEST_F(PJTest, StructRemoveFieldSecondTest) {
   EXPECT_EQ(b.x, 42);
 }
 
+#if 0
 TEST_F(PJTest, StructRemoveFieldFirstTest) {
   S_xy a{.x = 42, .y = 43};
   S_y b{.y = 0};
@@ -87,5 +88,6 @@ TEST_F(PJTest, NestedStructRemoveInnerFieldLargeTest) {
   EXPECT_EQ(y.x.x, 2);
   EXPECT_EQ(y.y.x, 4);
 }
+#endif
 
 }  // namespace pj
