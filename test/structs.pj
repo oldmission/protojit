@@ -52,3 +52,17 @@ struct TO2 {
   x: TI2;
   y: TI2;
 }
+
+struct UI {
+  x: int32;
+  y: int8;
+}
+
+struct UO {
+  x: UI;
+  y: UI;
+}
+
+struct UO2 {
+  x: UI;
+}

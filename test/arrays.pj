@@ -7,3 +7,8 @@ struct A1 {
 struct A2 {
   arr: char8[6];
 }
+
+struct A3 {
+  arr: char8[4];
+  arr2: A2[3];
+}

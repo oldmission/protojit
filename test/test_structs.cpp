@@ -30,8 +30,6 @@ TEST_F(PJTest, StructRemoveFieldFirstTest) {
   EXPECT_EQ(b.y, 43);
 }
 
-// TODO: implement DefaultOp lowering
-#if 0
 TEST_F(PJTest, StructAddFieldSecondTest) {
   S_x a{.x = 42};
   S_xy b{.x = 0, .y = 0xff};
@@ -53,7 +51,6 @@ TEST_F(PJTest, StructAddFieldFirstTest) {
   EXPECT_EQ(b.x, 0);
   EXPECT_EQ(b.y, 42);
 }
-#endif
 
 TEST_F(PJTest, NestedStructSameTest) {
   SO x{.s1 = {.x = 2, .y = 3}, .s2 = {.x = 4, .y = 5}};
@@ -78,6 +75,18 @@ TEST_F(PJTest, NestedStructRemoveInnerFieldSmallTest) {
   EXPECT_EQ(y.s2.y, 5);
 }
 
+TEST_F(PJTest, NestedStructAddInnerFieldSmallTest) {
+  SOS x{.s1 = {.x = 2}, .s2 = {.x = 3, .y = 4}};
+  SO y = {.s1 = {.x = -1, .y = -1}, .s2 = {.x = -1, .y = -1}};
+
+  transcode<SOS, SO>(&x, &y);
+
+  EXPECT_EQ(y.s1.x, 2);
+  EXPECT_EQ(y.s1.y, 0);
+  EXPECT_EQ(y.s2.x, 3);
+  EXPECT_EQ(y.s2.y, 4);
+}
+
 TEST_F(PJTest, NestedStructRemoveInnerFieldLargeTest) {
   TO x{.x = {.x = 2, .y = 3}, .y = {.x = 4, .y = 5}};
   TO2 y = {};
@@ -86,6 +95,40 @@ TEST_F(PJTest, NestedStructRemoveInnerFieldLargeTest) {
 
   EXPECT_EQ(y.x.x, 2);
   EXPECT_EQ(y.y.x, 4);
+}
+
+TEST_F(PJTest, NestedStructAddInnerFieldLargeTest) {
+  TO2 x{.x = {.x = 2}, .y = {.x = 3}};
+  TO y = {.x = {.x = -1, .y = -1}, .y = {.x = -1, .y = -1}};
+
+  transcode<TO2, TO>(&x, &y);
+
+  EXPECT_EQ(y.x.x, 2);
+  EXPECT_EQ(y.x.y, 0);
+  EXPECT_EQ(y.y.x, 3);
+  EXPECT_EQ(y.y.y, 0);
+}
+
+TEST_F(PJTest, NestedStructRemoveInnerStruct) {
+  UO x{.x = {.x = 1, .y = 2}, .y = {.x = 3, .y = 4}};
+  UO2 y = {};
+
+  transcode<UO, UO2>(&x, &y);
+
+  EXPECT_EQ(y.x.x, 1);
+  EXPECT_EQ(y.x.y, 2);
+}
+
+TEST_F(PJTest, NestedStructAddInnerStruct) {
+  UO2 x = {.x = {.x = 1, .y = 2}};
+  UO y{.x = {.x = -1, .y = -1}, .y = {.x = -1, .y = -1}};
+
+  transcode<UO2, UO>(&x, &y);
+
+  EXPECT_EQ(y.x.x, 1);
+  EXPECT_EQ(y.x.y, 2);
+  EXPECT_EQ(y.y.x, 0);
+  EXPECT_EQ(y.y.y, 0);
 }
 
 }  // namespace pj

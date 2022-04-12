@@ -322,6 +322,13 @@ LogicalResult MatchOpLowering::matchAndRewrite(
     MatchOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
+  // LLVM SwitchOp does not support 0 cases, so it must be handled explicitly.
+  if (op.cases().empty()) {
+    _.create<LLVM::BrOp>(loc, ValueRange{}, op.dflt());
+    _.eraseOp(op);
+    return success();
+  }
+
   // Load the tag so we can switch on it.
   auto var_type = op.var().getType().cast<VariantType>();
 
@@ -346,10 +353,10 @@ LogicalResult MatchOpLowering::matchAndRewrite(
   // Switch on the tag and dispatch to the appropriate branch.
   _.create<LLVM::SwitchOp>(loc,
                            /*value=*/tag_val,
-                           /*defaultDestination=*/op.successors()[0],
+                           /*defaultDestination=*/op.dflt(),
                            /*defaultOperands=*/ValueRange{},
                            /*caseValues=*/case_vals,
-                           /*caseDestinations=*/op.successors().drop_front(),
+                           /*caseDestinations=*/op.cases(),
                            /*caseOperands=*/ArrayRef<ValueRange>{});
 
   _.eraseOp(op);
@@ -574,28 +581,49 @@ LogicalResult CallOpLowering::matchAndRewrite(
 struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
   DefaultOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
                     LLVMGenPass* pass)
-      : OpConversionPattern<DefaultOp>(converter, ctx), pass(pass) {}
+      : OpConversionPattern<DefaultOp>(converter, ctx) {}
 
   LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final {
-    auto type = op.dst().getType();
-    auto loc = op.getLoc();
+                                ConversionPatternRewriter& _) const final;
+};
 
-    if (auto int_type = type.dyn_cast<IntType>()) {
-      Value dst_ptr = _.create<BitcastOp>(
-          loc, LLVMPointerType::get(int_type.toMLIR()), operands[0]);
-      Value zero = pass->buildIntConstant(loc, _, int_type->width, 0);
-      _.create<StoreOp>(op.getLoc(), zero, dst_ptr,
-                        int_type->alignment.bytes());
-      _.eraseOp(op);
-      return success();
-    }
+LogicalResult DefaultOpLowering::matchAndRewrite(
+    DefaultOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
 
-    return failure();
-  }
+  // All other types should have been lowered prior.
+  auto type = op.dst().getType().cast<IntType>();
+
+  Value ptr =
+      _.create<BitcastOp>(loc, LLVMPointerType::get(type.toMLIR()), op.dst());
+  auto zero = _.create<LLVM::ConstantOp>(loc, type.toMLIR(),
+                                         _.getIntegerAttr(type.toMLIR(), 0));
+  _.create<StoreOp>(loc, zero, ptr, type->alignment.bytes());
+
+  _.eraseOp(op);
+  return success();
+}
+
+struct UnitOpLowering : public OpConversionPattern<UnitOp> {
+  UnitOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                 LLVMGenPass* pass)
+      : OpConversionPattern<UnitOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(UnitOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
 
   LLVMGenPass* const pass;
 };
+
+LogicalResult UnitOpLowering::matchAndRewrite(
+    UnitOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto zero = pass->buildWordConstant(loc, _, 0);
+  auto ptr = _.create<IntToPtrOp>(loc, pass->bytePtrType(), zero);
+  _.replaceOp(op, ptr.getResult());
+  return success();
+}
 
 void LLVMGenPass::runOnOperation() {
   auto* ctx = &getContext();
@@ -612,7 +640,8 @@ void LLVMGenPass::runOnOperation() {
   patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
                DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
                TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
-               DefaultOpLowering, IndexOpLowering>(type_converter, ctx, this);
+               DefaultOpLowering, UnitOpLowering, IndexOpLowering>(
+      type_converter, ctx, this);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {

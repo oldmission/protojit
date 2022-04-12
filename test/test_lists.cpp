@@ -5,11 +5,12 @@
 
 #include "pj/protojit.hpp"
 
-#include "test/lists.pj.hpp"
 #include "harness.hpp"
+#include "test/lists.pj.hpp"
 
 namespace pj {
 
+#if 0
 TEST_F(PJTest, CharListLongTransport) {
   auto sizer0 = GenSize<A1>();
 
@@ -106,6 +107,7 @@ TEST_F(PJTest, VariantLists) {
   auto sizer0 = GenSize<TV1, PV1>(1L << 16);
   sizer0(&list);
 };
+#endif
 #endif
 
 }  // namespace pj

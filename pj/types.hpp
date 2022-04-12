@@ -150,7 +150,7 @@ struct Term {
 // is at least as large as the size of the largest term.
 struct InlineVariant {
   /*** Parsed ***/
-  ArrayRef<Term> terms;
+  ArrayRef<Term> terms = {};
 
   /*** Generated ***/
   // Invariant: term and tag should not overlap.
@@ -176,7 +176,7 @@ struct InlineVariant {
 // TODO(kapil.kanwar): ensure fixed offset variant is the first field which
 // accesses external storage.
 struct OutlineVariant {
-  ArrayRef<Term> terms;
+  ArrayRef<Term> terms = {};
 
   Width tag_width = Width::None();
   Width tag_alignment = Width::None();

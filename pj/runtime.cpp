@@ -41,8 +41,9 @@ pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
 const PJUnitType* PJCreateUnitType(PJContext* c) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
+  llvm::StringRef name = "<unit>";
   auto unit_type = pj::types::StructType::get(
-      &ctx->ctx_, pj::types::TypeDomain::kHost, "<unit>");
+      &ctx->ctx_, pj::types::TypeDomain::kHost, &name);
   unit_type.setTypeData(
       {.fields = llvm::ArrayRef<pj::types::StructField>{nullptr, 0ul},
        .size = pj::Bytes(0),

@@ -36,6 +36,12 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
   let results = (outs BufferType);
 }
 
+// UnitOp generates a placeholder value that will not be used at runtime.
+// Lowers to nullptr and is expected to be optimized out by LLVM.
+def UnitOp : ProtoJit_Op<"empty"> {
+  let results = (outs AnyType);
+}
+
 // DefaultOp populates a value with a default for that type.
 //
 // No buffer is accepted because the default value for types with external
@@ -79,7 +85,9 @@ def TagOp : ProtoJit_Op<"tag"> {
 // TODO: rename to match after IR rewrite is complete.
 def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
   let arguments = (ins VariantType:$var);
-  let successors = (successor VariadicSuccessor<AnySuccessor>:$successors);
+  let successors = (
+    successor AnySuccessor:$dflt, VariadicSuccessor<AnySuccessor>:$cases
+  );
 }
 
 // Retrieve a reference to a value at the given index in an Array or Vector.

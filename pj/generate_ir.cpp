@@ -300,16 +300,15 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     llvm::SmallVector<std::pair<intptr_t, mlir::Block*>, 4> blocks;
 
     // Check for undef in the source.
+    auto* default_block = _.createBlock(&func.body());
     {
-      auto* block = _.createBlock(&func.body());
-      _.setInsertionPointToStart(block);
+      _.setInsertionPointToStart(default_block);
       Value result_buf = func.getArgument(2);
 
       transcodeTerm(_, loc, src_type, dst_type, nullptr, nullptr, src, dst,
                     result_buf, handler_map);
 
       _.create<ReturnOp>(loc, result_buf);
-      blocks.emplace_back(VariantType::kUndefTag, block);
     }
 
     for (auto& src_term : src_type.terms()) {
@@ -335,12 +334,12 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
 
     _.setInsertionPointToEnd(entry_block);
 
-    llvm::SmallVector<mlir::Block*, 4> succs;
+    llvm::SmallVector<mlir::Block*, 4> cases;
     for (auto& [_, block] : blocks) {
-      succs.push_back(block);
+      cases.push_back(block);
     }
 
-    _.create<MatchOp>(loc, src, succs);
+    _.create<MatchOp>(loc, src, default_block, cases);
   }
 
   cached_fns.emplace(key, func);
@@ -575,6 +574,46 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
   return success();
 }
 
+struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
+  DefaultOpLowering(MLIRContext* ctx) : OpConversionPattern<DefaultOp>(ctx) {
+    setHasBoundedRewriteRecursion(true);
+  }
+
+  LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+};
+
+LogicalResult DefaultOpLowering::matchAndRewrite(
+    DefaultOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
+  auto loc = op.getLoc();
+  auto type = op.dst().getType();
+
+  UnitOp src;
+  auto buf = _.create<UnitOp>(loc, RawBufferType::get(ctx));
+
+  if (type.isa<StructType>()) {
+    llvm::StringRef name = "<empty>";
+    src = _.create<UnitOp>(
+        loc, StructType::get(ctx, types::TypeDomain::kHost, &name));
+  } else if (type.isa<VariantType>()) {
+    llvm::StringRef name = "<empty>";
+    src = _.create<UnitOp>(
+        loc, InlineVariantType::get(ctx, types::TypeDomain::kHost, &name));
+  } else if (type.isa<ArrayType>()) {
+    src = _.create<UnitOp>(
+        loc, ArrayType::get(ctx, Array{.elem = type.cast<ArrayType>()->elem}));
+  } else {
+    return failure();
+  }
+
+  _.create<TranscodeOp>(loc, buf.getType(), src, op.dst(), buf,
+                        PathAttr::none(ctx), op.handlers());
+  _.eraseOp(op);
+  return success();
+}
+
 }  // namespace
 
 void GeneratePass::runOnOperation() {
@@ -589,9 +628,13 @@ void GeneratePass::runOnOperation() {
     return op.src().getType().isa<IntType>() &&
            op.dst().getType().isa<IntType>();
   });
+  target.addDynamicallyLegalOp<DefaultOp>(
+      [](DefaultOp op) { return op.dst().getType().isa<IntType>(); });
 
   OwningRewritePatternList patterns(ctx);
-  patterns.insert<EncodeFunctionLowering, DecodeFunctionLowering>(ctx)
+  patterns
+      .insert<EncodeFunctionLowering, DecodeFunctionLowering,
+              DefaultOpLowering>(ctx)
       .insert<TranscodeOpLowering>(ctx, this);
 
   if (failed(applyPartialConversion(getOperation(), target,

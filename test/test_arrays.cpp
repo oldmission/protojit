@@ -33,4 +33,23 @@ TEST_F(PJTest, ArrayExtendTest) {
   EXPECT_EQ(y.arr[5], 0);
 }
 
+TEST_F(PJTest, ArrayDefaultTest) {
+  A1 x = {.arr = {'a', 'b', 'c', 'd'}};
+  A3 y = {.arr = {-1, -1, -1, -1},
+          .arr2 = {A2{.arr = {-1, -1, -1, -1, -1, -1}},
+                   A2{.arr = {-1, -1, -1, -1, -1, -1}},
+                   A2{.arr = {-1, -1, -1, -1, -1, -1}}}};
+
+  transcode<A1, A3>(&x, &y);
+
+  for (intptr_t i = 0; i < 4; ++i) {
+    EXPECT_EQ(y.arr[i], x.arr[i]);
+  }
+  for (intptr_t i = 0; i < 3; ++i) {
+    for (intptr_t j = 0; j < 6; ++j) {
+      EXPECT_EQ(y.arr2[i].arr[j], 0);
+    }
+  }
+}
+
 }  // namespace pj

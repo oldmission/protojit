@@ -21,6 +21,12 @@ struct Name : public llvm::ArrayRef<llvm::StringRef> {
   using llvm::ArrayRef<llvm::StringRef>::ArrayRef;
 
   Name(llvm::ArrayRef<llvm::StringRef> o) : ArrayRef(o) {}
+
+  // Delete this error-prone constructor...
+  Name(const llvm::StringRef&) = delete;
+
+  // ...And replace it with something more sane.
+  Name(const llvm::StringRef* one) : ArrayRef(one, 1) {}
 };
 
 template <typename T>
