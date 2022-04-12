@@ -267,11 +267,7 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
 
     _.create<StoreOp>(op.getLoc(), val, dst_ptr, dst->alignment.bytes());
 
-    if (op.getNumResults() > 0) {
-      _.replaceOp(op, operands[2]);
-    } else {
-      _.eraseOp(op);
-    }
+    _.replaceOp(op, operands[2]);
     return success();
   }
 
