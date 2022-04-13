@@ -144,7 +144,7 @@ std::string buildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
       pj::Width actual_width = generateIntTypeRef(I->width, I->sign, output);
       output << ") << 3";
       // TODO: come back to this when implementing bitfields
-      assert(I->width == actual_width);
+      ASSERT(I->width == actual_width);
     }
     output << ", /*sign=*/";
     switch (I->sign) {
@@ -460,7 +460,7 @@ void generateProtocol(const SourceId& name, mlir::Type head,
        << "using Head = ";
   generateTypeRef(head, back);
   back << ";\n";
-  back << "constexpr std::optional<std::vector<std::string_view>> tag = ";
+  back << "const std::optional<std::vector<std::string_view>> tag = ";
   if (tag_path.has_value()) {
     back << "std::vector<std::string_view>{";
     for (const std::string& term : *tag_path) {
