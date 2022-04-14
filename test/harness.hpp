@@ -72,7 +72,13 @@ class PJGenericTest
   void transcode(const X* from, Y* to_msg = nullptr,
                  const std::string& src_path = "",
                  const std::string& tag_path = "") {
-    const PJProtocol* protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
+    const PJProtocol* protocol;
+    if constexpr (std::is_same_v<Proto, void>) {
+      protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
+    } else {
+      protocol = planProtocol<Proto>(ctx);
+    }
+
     addEncodeFunction<Src>(ctx, "encode", protocol,
                            no_src_path ? "" : src_path);
     addDecodeFunction<Dest>(ctx, "decode", protocol, branches);

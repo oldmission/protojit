@@ -56,7 +56,7 @@ ValueType plan(PlanningContext& ctx, StructType type,
   Width alignment = Bytes(1);
 
   bool outline_reached = false;
-  Width outline_offset_start;
+  Width outline_offset_start = Bytes(0);
 
   std::vector<StructField> fields;
   for (const StructField& f : type->fields) {
@@ -73,7 +73,7 @@ ValueType plan(PlanningContext& ctx, StructType type,
     }
   }
 
-  if (ctx.outline) {
+  if (matches(path) && ctx.outline) {
     auto data = OutlineVariant(ctx.outline);
     data.term_offset += offset - outline_offset_start;
     ctx.outline.setTypeData(data);
@@ -225,6 +225,7 @@ ValueType plan(mlir::MLIRContext& mlir_ctx, mlir::Type type,
 
   auto planned =
       dispatch(type, [&ctx, path](auto t) { return plan(ctx, t, path); });
+  auto str = planned.dyn_cast<StructType>();
 
   if (ctx.outline) {
     // Update the outlined variant's term offset to the correct alignment

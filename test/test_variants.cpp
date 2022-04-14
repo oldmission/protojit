@@ -82,8 +82,6 @@ TEST_P(PJVariantTest, VariantMoveCase) {
   transcode<Var1, Var4>(&F, &T, "x", "_");
 }
 
-// TODO: TranscodeOp not yet implemented for non-primitives
-#if 0
 TEST_P(PJVariantTest, VariantMoveCase2) {
   Var3 F{.value = {.x = 42}, .tag = Var3::Kind::x};
   Var4 T{.value = {.x = -1}, .tag = Var4::Kind::undef};
@@ -98,7 +96,6 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
   // TODO: GenSize does not yet exist
   // EXPECT_EQ((GenSize<Var3, Var4>(0x1000, {"x"}, {"."})(&F)), 9);
 }
-#endif
 
 TEST_F(PJTest, VariantAddTagField) {
   Outer2 F{.z = 0xab};
@@ -114,7 +111,7 @@ TEST_P(PJVariantTest, VariantRemoveTagField) {
   Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
   Outer2 T{.z = 0};
 
-  transcode<Outer, Outer2, Outer>(&F, &T, "v.undef", "v._");
+  transcode<Outer, Outer2>(&F, &T, "v.undef", "v._");
 
   EXPECT_EQ(T.z, 0xab);
 }
