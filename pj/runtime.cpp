@@ -3,6 +3,7 @@
 #include "context.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
+#include "span.hpp"
 #include "types.hpp"
 
 #include <cstring>
@@ -45,9 +46,7 @@ const PJUnitType* PJCreateUnitType(PJContext* c) {
   auto unit_type = pj::types::StructType::get(
       &ctx->ctx_, pj::types::TypeDomain::kHost, &name);
   unit_type.setTypeData(
-      {.fields = llvm::ArrayRef<pj::types::StructField>{nullptr, 0ul},
-       .size = pj::Bytes(0),
-       .alignment = pj::Bytes(0)});
+      {.fields = {}, .size = pj::Bytes(0), .alignment = pj::Bytes(0)});
   return reinterpret_cast<const PJUnitType*>(unit_type.getAsOpaquePointer());
 }
 
@@ -78,8 +77,8 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::types::ArrayRefConverter<pj::types::StructField> fields_converter{
+  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::SpanConverter<pj::types::StructField> fields_converter{
       fields, num_fields, [](const PJStructField* f) {
         auto casted = reinterpret_cast<const pj::types::StructField*>(f);
         DEFER(delete casted);
@@ -108,8 +107,8 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     Bits size, Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  pj::types::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::types::ArrayRefConverter<pj::types::Term> terms_converter{
+  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::SpanConverter<pj::types::Term> terms_converter{
       terms, num_terms, [](const PJTerm* t) {
         auto casted = reinterpret_cast<const pj::types::Term*>(t);
         DEFER(delete casted);

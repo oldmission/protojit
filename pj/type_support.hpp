@@ -17,39 +17,7 @@ namespace pj {
 namespace types {
 
 // Contains the pieces of a fully qualified name
-struct Name : public llvm::ArrayRef<llvm::StringRef> {
-  using llvm::ArrayRef<llvm::StringRef>::ArrayRef;
-
-  Name(llvm::ArrayRef<llvm::StringRef> o) : ArrayRef(o) {}
-
-  // Delete this error-prone constructor...
-  Name(const llvm::StringRef&) = delete;
-
-  // ...And replace it with something more sane.
-  Name(const llvm::StringRef* one) : ArrayRef(one, 1) {}
-};
-
-template <typename T>
-struct ArrayRefConverter {
-  template <typename Array, typename Convert = pj::Identity>
-  ArrayRefConverter(const Array& arr, uintptr_t size, Convert&& convert = {}) {
-    storage.reserve(size);
-    for (uintptr_t i = 0; i < size; ++i) {
-      storage.push_back(convert(arr[i]));
-    }
-  }
-
-  template <typename Array, typename Convert = pj::Identity>
-  ArrayRefConverter(const Array& arr, Convert&& convert = {})
-      : ArrayRefConverter(arr, arr.size(), std::forward<Convert>(convert)) {}
-
-  llvm::ArrayRef<T> get() {
-    return llvm::ArrayRef<T>{&storage[0], storage.size()};
-  }
-
- private:
-  std::vector<T> storage;
-};
+using Name = Span<llvm::StringRef>;
 
 }  // namespace types
 }  // namespace pj
@@ -109,7 +77,7 @@ inline Name type_intern(mlir::TypeStorageAllocator& allocator, Name n) {
   for (llvm::StringRef piece : n) {
     pieces.push_back(allocator.copyInto(piece));
   }
-  return allocator.copyInto(Name{&pieces[0], pieces.size()});
+  return Name{allocator.copyInto(Name{&pieces[0], pieces.size()})};
 }
 
 template <typename T>
@@ -259,7 +227,7 @@ struct NominalTypeBase : public Base {
 };
 
 struct PathAttrStorage : public mlir::AttributeStorage {
-  using KeyTy = llvm::ArrayRef<llvm::StringRef>;
+  using KeyTy = Span<llvm::StringRef>;
 
   PathAttrStorage(KeyTy key) : key(key) {}
 
@@ -279,16 +247,15 @@ struct PathAttrStorage : public mlir::AttributeStorage {
   // PathAttr, don't re-copy all the strings into the allocator.
   static PathAttrStorage* construct(mlir::AttributeStorageAllocator& allocator,
                                     KeyTy key) {
-    auto list = llvm::makeMutableArrayRef<llvm::StringRef>(
-        reinterpret_cast<llvm::StringRef*>(allocator.allocate(
-            sizeof(llvm::StringRef) * key.size(), alignof(llvm::StringRef))),
-        key.size());
+    auto list = reinterpret_cast<llvm::StringRef*>(allocator.allocate(
+        sizeof(llvm::StringRef) * key.size(), alignof(llvm::StringRef)));
 
     for (uintptr_t i = 0; i < key.size(); ++i) {
       list[i] = allocator.copyInto(key[i]);
     }
 
-    return new (allocator.allocate<PathAttrStorage>()) PathAttrStorage(list);
+    return new (allocator.allocate<PathAttrStorage>())
+        PathAttrStorage(Span<llvm::StringRef>{&list[0], key.size()});
   }
 
   KeyTy key;
@@ -302,7 +269,7 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   void print(llvm::raw_ostream& os) const;
   static PathAttr none(mlir::MLIRContext* C);
   static PathAttr fromString(mlir::MLIRContext* C, llvm::StringRef src_path);
-  llvm::ArrayRef<llvm::StringRef> getValue() const { return getImpl()->key; }
+  Span<llvm::StringRef> getValue() const { return getImpl()->key; }
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 
   bool startsWith(llvm::StringRef prefix) const {

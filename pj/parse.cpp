@@ -4,6 +4,7 @@
 #include <pegtl/contrib/analyze.hpp>
 
 #include "protogen.hpp"
+#include "span.hpp"
 #include "types.hpp"
 #include "validate.hpp"
 
@@ -335,12 +336,12 @@ BEGIN_ACTION(StructDecl) {
   }
 
   auto name = __ popScopedId();
-  types::ArrayRefConverter<llvm::StringRef> name_converter{name};
+  SpanConverter<llvm::StringRef> name_converter{name};
   auto type = types::StructType::get(&__ ctx.ctx_, types::TypeDomain::kHost,
                                      name_converter.get());
 
-  types::Struct data{
-      .fields = llvm::ArrayRef<types::StructField>{&fields[0], fields.size()}};
+  types::Struct data{.fields =
+                         Span<types::StructField>{&fields[0], fields.size()}};
   validate(data, in.position());
   type.setTypeData(data);
 
@@ -432,12 +433,12 @@ static void handleVariant(const ActionInput& in, ParseState* state,
   }
 
   auto name = __ popScopedId();
-  types::ArrayRefConverter<llvm::StringRef> name_converter{name};
+  SpanConverter<llvm::StringRef> name_converter{name};
   auto type = types::InlineVariantType::get(
       &__ ctx.ctx_, types::TypeDomain::kHost, name_converter.get());
 
-  types::InlineVariant data{
-      .terms = llvm::ArrayRef<types::Term>{&terms[0], terms.size()}};
+  types::InlineVariant data{.terms =
+                                Span<types::Term>{&terms[0], terms.size()}};
   validate(data, in.position());
   type.setTypeData(data);
 

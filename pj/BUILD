@@ -103,6 +103,7 @@ cc_library(
         "protocol.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
+        "span.hpp",
         "tag.hpp",
         "target.hpp",
         "type_support.hpp",

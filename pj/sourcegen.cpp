@@ -202,8 +202,8 @@ std::string buildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   UNREACHABLE();
 }
 
-void buildCStringArray(llvm::ArrayRef<llvm::StringRef> arr,
-                       std::string_view var, std::ostream& output) {
+void buildCStringArray(Span<llvm::StringRef> arr, std::string_view var,
+                       std::ostream& output) {
   output << "const char* " << var << "[" << arr.size() << "] = {";
   for (uintptr_t i = 0; i < arr.size(); ++i) {
     output << "\"" << std::string_view(arr[i]) << "\"";

@@ -54,7 +54,7 @@ struct ProtoJitInlinerInterface : public DialectInlinerInterface {
   }
 
   void handleTerminator(Operation* op,
-                        ArrayRef<Value> valuesToRepl) const final {
+                        llvm::ArrayRef<Value> valuesToRepl) const final {
     auto returnOp = cast<RetOp>(op);
     assert(returnOp.getNumOperands() == valuesToRepl.size());
     for (const auto& it : llvm::enumerate(returnOp.getOperands())) {

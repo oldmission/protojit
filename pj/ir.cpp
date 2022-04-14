@@ -233,7 +233,7 @@ TypeRange ReplaceTerminators(ConversionPatternRewriter& _, Block* final,
   return types;
 }
 
-OpFoldResult CastOp::fold(ArrayRef<Attribute> cstOperands) {
+OpFoldResult CastOp::fold(llvm::ArrayRef<Attribute> cstOperands) {
   auto cast = getOperand().getDefiningOp<CastOp>();
   if (cast && cast.getOperand().getType() == getType()) {
     return cast.getOperand();
