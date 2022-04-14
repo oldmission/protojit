@@ -42,10 +42,9 @@ const PJProtocol* plan(PJContext* ctx, const std::string& tag_path = "") {
 }
 
 template <typename Proto>
-const PJProtocol* planProtocol(PJContext* ctx,
-                               const std::string& tag_path = "") {
+const PJProtocol* planProtocol(PJContext* ctx) {
   using Head = typename gen::ProtocolHead<Proto>::Head;
-  return plan<Head>(ctx);
+  return plan<Head>(ctx, gen::ProtocolHead<Proto>::tag());
 }
 
 template <typename Src>

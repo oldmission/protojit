@@ -56,7 +56,7 @@ struct ParseState {
 
   // Populated after parsing TagPathDecl.
   // Cleared after parsing ProtoDecl.
-  std::optional<std::vector<std::string>> tag_path;
+  std::optional<types::PathAttr> tag_path;
 
   SourceId space;
 
@@ -521,23 +521,13 @@ BEGIN_ACTION(ImportDecl) {
 }
 END_ACTION()
 
-struct TagPath : sor<plus<seq<tok<'.'>, identifier>>, tok<'.'>> {};
+struct TagPath : seq<star<seq<identifier, tok<'.'>>>, identifier> {};
 
 BEGIN_ACTION(TagPath) {
   assert(!__ tag_path.has_value());
-
-  std::vector<std::string> path;
-  if (std::distance(in.begin(), in.end()) > 1) {
-    const char* cur = in.begin() + 1;
-    const char* it;
-    while ((it = std::find(cur, in.end(), '.')) != in.end()) {
-      path.push_back(std::string{cur, it});
-      cur = it + 1;
-    }
-    path.push_back(std::string{cur, in.end()});
-  }
-
-  __ tag_path = std::move(path);
+  __ tag_path = types::PathAttr::fromString(
+      &__ ctx.ctx_,
+      {in.begin(), static_cast<size_t>(std::distance(in.begin(), in.end()))});
 }
 END_ACTION()
 
@@ -561,10 +551,11 @@ BEGIN_ACTION(ProtoDecl) {
   // Validate that the tag path points to a variant via struct fields
   if (__ tag_path.has_value()) {
     mlir::Type cur = head;
-    for (uintptr_t i = 0; i < __ tag_path->size(); ++i) {
-      const std::string& term = __ tag_path.value()[i];
+    auto path = __ tag_path->getValue();
+    for (uintptr_t i = 0; i < path.size(); ++i) {
+      const std::string& term = path[i].str();
 
-      if (!types::StructType::classof(cur)) {
+      if (!cur.isa<types::StructType>()) {
         throw parse_error("Protocol tag path requests field '" + term +
                               "' in non-struct type",
                           in.position());
@@ -586,7 +577,7 @@ BEGIN_ACTION(ProtoDecl) {
       cur = it->type;
     }
 
-    if (!types::VariantType::classof(cur)) {
+    if (!cur.isa<types::VariantType>()) {
       throw parse_error("Protocol tag path does not point to a variant type",
                         in.position());
     }

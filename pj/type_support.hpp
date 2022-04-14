@@ -163,13 +163,8 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
         break;
     }
 
-    bool first = true;
     for (auto p : name_) {
-      if (first) {
-        os << "::";
-        first = false;
-      }
-      os << p;
+      os << "::" << p;
     }
   }
 
@@ -269,6 +264,7 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   void print(llvm::raw_ostream& os) const;
   static PathAttr none(mlir::MLIRContext* C);
   static PathAttr fromString(mlir::MLIRContext* C, llvm::StringRef src_path);
+  std::string toString() const;
   Span<llvm::StringRef> getValue() const { return getImpl()->key; }
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 

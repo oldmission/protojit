@@ -60,6 +60,12 @@ pj_test(
     protos = ["lists.pj"],
 )
 
+pj_test(
+    name = "test_protocols",
+    srcs = ["test_protocols.cpp"],
+    protos = ["protocols.pj", "protocols2.pj"],
+)
+
 cc_test(
   name = 'tmp_test_ir2',
   srcs = ['tmp_test_ir2.cpp'],

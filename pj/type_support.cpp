@@ -45,6 +45,19 @@ PathAttr PathAttr::fromString(mlir::MLIRContext* C, llvm::StringRef src_path) {
   return get(C, vec);
 }
 
+std::string PathAttr::toString() const {
+  std::ostringstream sstr;
+  bool first = true;
+  for (auto piece : getValue()) {
+    if (!first) {
+      sstr << ".";
+    }
+    first = false;
+    sstr << std::string_view(piece);
+  }
+  return sstr.str();
+}
+
 bool NominalType::classof(mlir::Type val) {
   return val.getTypeID() == StructType::getTypeID() ||
          VariantType::classof(val);
