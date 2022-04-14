@@ -9,6 +9,8 @@
 
 #include <memory>
 
+#include "span.hpp"
+
 namespace mlir {
 class Operation;
 }  // namespace mlir
@@ -29,7 +31,7 @@ class SideEffectAnalysis {
     return effect_functions.contains(op) or effect_points.contains(op);
   }
 
-  llvm::ArrayRef<size_t> flattenedBufferArguments(llvm::StringRef callee) const;
+  Span<size_t> flattenedBufferArguments(llvm::StringRef callee) const;
 
   mlir::Operation* effectProviderFor(mlir::Operation* op) const {
     if (auto it = effect_providers.find(op); it != effect_providers.end()) {

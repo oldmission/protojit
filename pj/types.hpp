@@ -1,13 +1,13 @@
 #pragma once
 
 #include "arch.hpp"
+#include "span.hpp"
 #include "type_support.hpp"
 #include "util.hpp"
 
 namespace pj {
 namespace types {
 
-using llvm::ArrayRef;
 using llvm::StringRef;
 
 struct Int {
@@ -92,7 +92,7 @@ struct StructField {
 struct Struct {
   /*** Parsed ***/
   // Invariant: fields are listed in alphabetical order.
-  ArrayRef<StructField> fields = {};
+  Span<StructField> fields = {};
 
   /*** Generated ***/
   Width size = Width::None();
@@ -104,10 +104,8 @@ struct Struct {
 
 inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
                           const Struct& key) {
-  auto fields = llvm::makeMutableArrayRef<StructField>(
-      reinterpret_cast<StructField*>(allocator.allocate(
-          sizeof(StructField) * key.fields.size(), alignof(StructField))),
-      key.fields.size());
+  auto fields = reinterpret_cast<StructField*>(allocator.allocate(
+      sizeof(StructField) * key.fields.size(), alignof(StructField)));
 
   for (uintptr_t i = 0; i < key.fields.size(); ++i) {
     fields[i] = StructField{
@@ -117,7 +115,9 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
     };
   }
 
-  return Struct{.fields = fields, .size = key.size, .alignment = key.alignment};
+  return Struct{.fields = {&fields[0], key.fields.size()},
+                .size = key.size,
+                .alignment = key.alignment};
 }
 
 struct StructType
@@ -150,7 +150,7 @@ struct Term {
 // is at least as large as the size of the largest term.
 struct InlineVariant {
   /*** Parsed ***/
-  ArrayRef<Term> terms = {};
+  Span<Term> terms = {};
 
   /*** Generated ***/
   // Invariant: term and tag should not overlap.
@@ -176,7 +176,7 @@ struct InlineVariant {
 // TODO(kapil.kanwar): ensure fixed offset variant is the first field which
 // accesses external storage.
 struct OutlineVariant {
-  ArrayRef<Term> terms = {};
+  Span<Term> terms = {};
 
   Width tag_width = Width::None();
   Width tag_alignment = Width::None();
@@ -190,10 +190,8 @@ struct OutlineVariant {
 template <typename V>
 inline V intern_variant(mlir::TypeStorageAllocator& allocator,
                         const V& type_data) {
-  auto terms = llvm::makeMutableArrayRef<Term>(
-      reinterpret_cast<Term*>(allocator.allocate(
-          sizeof(Term) * type_data.terms.size(), alignof(Term))),
-      type_data.terms.size());
+  auto terms = reinterpret_cast<Term*>(
+      allocator.allocate(sizeof(Term) * type_data.terms.size(), alignof(Term)));
 
   for (uintptr_t i = 0; i < type_data.terms.size(); ++i) {
     terms[i] = Term{
@@ -204,7 +202,7 @@ inline V intern_variant(mlir::TypeStorageAllocator& allocator,
   }
 
   V result = type_data;
-  result.terms = terms;
+  result.terms = {&terms[0], type_data.terms.size()};
   return result;
 }
 
@@ -237,7 +235,7 @@ struct VariantType : public NominalType {
 
   static bool classof(mlir::Type val);
 
-  llvm::ArrayRef<Term> terms() const;
+  Span<Term> terms() const;
   Width tag_width() const;
   Width tag_offset() const;
   Width term_offset() const;
@@ -254,7 +252,7 @@ struct InlineVariantType
 
   void print(llvm::raw_ostream& os) const;
 
-  llvm::ArrayRef<Term> terms() const { return (*this)->terms; }
+  Span<Term> terms() const { return (*this)->terms; }
 
   friend struct NominalTypeBase<VariantType, InlineVariant, InlineVariantType>;
 };
@@ -270,13 +268,13 @@ struct OutlineVariantType
 
   void print(llvm::raw_ostream& os) const;
 
-  llvm::ArrayRef<Term> terms() const { return (*this)->terms; }
+  Span<Term> terms() const { return (*this)->terms; }
 
   friend struct NominalTypeBase<VariantType, OutlineVariant,
                                 OutlineVariantType>;
 };
 
-inline llvm::ArrayRef<Term> VariantType::terms() const {
+inline Span<Term> VariantType::terms() const {
   if (auto v = dyn_cast<OutlineVariantType>()) {
     return v->terms;
   } else if (auto v = dyn_cast<InlineVariantType>()) {

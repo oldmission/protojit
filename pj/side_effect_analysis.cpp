@@ -5,6 +5,7 @@
 
 #include "ir.hpp"
 #include "side_effect_analysis.hpp"
+#include "span.hpp"
 
 namespace pj {
 
@@ -85,11 +86,11 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   });
 }
 
-llvm::ArrayRef<size_t> SideEffectAnalysis::flattenedBufferArguments(
+Span<size_t> SideEffectAnalysis::flattenedBufferArguments(
     llvm::StringRef callee) const {
   if (auto it = flattened_buffer_args.find(callee);
       it != flattened_buffer_args.end()) {
-    return it->second;
+    return Span<size_t>{&it->second[0], it->second.size()};
   }
   return {};
 }
