@@ -44,3 +44,15 @@ struct NestedOuter {
   p: Outer3;
   z: uint8;
 }
+
+variant EnumA {
+  x;
+  y;
+  z;
+}
+
+variant EnumB {
+  z;
+  y;
+  x;
+}

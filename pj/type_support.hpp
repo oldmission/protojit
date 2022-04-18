@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "arch.hpp"
+#include "span.hpp"
 #include "util.hpp"
 
 namespace pj {
@@ -62,6 +63,8 @@ struct ValueType : public mlir::Type {
     // The pjc parser represents unit types via nullptr.
     return impl == nullptr || headSize() == Bits(0);
   }
+
+  bool isEnum() const;
 
   Width headSize() const {
     return static_cast<const ValueTypeStorage*>(impl)->headSize();

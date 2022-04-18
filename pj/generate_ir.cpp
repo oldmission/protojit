@@ -555,6 +555,21 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         dst_type.cast<StructType>(), op.path(), op.handlers(),
         op.getResult().getType());
   } else if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
+    if (src_type.isEnum() && dst_type.isEnum()) {
+      // Check that tag values are so large that we build an absurd lookup
+      // table.
+      static constexpr size_t kEnumTableExpansionLimit = 4;
+      uint64_t max_src_tag = 0;
+      for (auto& term : src_type.cast<VariantType>().terms()) {
+        max_src_tag = std::max(max_src_tag, term.tag);
+      }
+      if (max_src_tag <= kEnumTableExpansionLimit *
+                             src_type.cast<VariantType>().terms().size()) {
+        _.create<CopyTagOp>(loc, operands[0], operands[1]);
+        _.replaceOp(op, operands[2]);
+        return success();
+      }
+    }
     fn = pass->getOrCreateVariantTranscodeFn(
         loc, _.getListener(), src_type.cast<VariantType>(),
         dst_type.cast<VariantType>(), op.path(), op.handlers(),
