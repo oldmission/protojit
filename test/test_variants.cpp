@@ -198,6 +198,15 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
   // EXPECT_EQ(GenSize<Outer3>(0x400, {"a", "w"}, {"a", "."})(&F), 11);
 }
 
+TEST_F(PJTest, EnumTableTest) {
+  EnumA F{.tag = EnumA::Kind::x};
+  EnumB T{.tag = EnumB::Kind::undef};
+
+  transcode<EnumA, EnumB>(&F, &T);
+
+  EXPECT_EQ(T.tag, EnumB::Kind::x);
+}
+
 // Automatically tests all combinations of src_path and tag_path being provided
 // or not being provided.
 INSTANTIATE_TEST_SUITE_P(Variants, PJVariantTest,

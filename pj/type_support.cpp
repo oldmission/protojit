@@ -69,5 +69,12 @@ void DispatchHandlerAttr::print(llvm::raw_ostream& os) const {
   os << reinterpret_cast<uintptr_t>(address());
 }
 
+bool ValueType::isEnum() const {
+  if (auto var_this = dyn_cast<InlineVariantType>()) {
+    return var_this->is_enum;
+  }
+  return false;
+}
+
 }  // namespace types
 }  // namespace pj

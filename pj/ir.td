@@ -42,6 +42,10 @@ def UnitOp : ProtoJit_Op<"empty"> {
   let results = (outs AnyType);
 }
 
+def CopyTagOp : ProtoJit_Op<"copytag"> {
+  let arguments = (ins InlineVariantType:$src, InlineVariantType:$dst);
+}
+
 // DefaultOp populates a value with a default for that type.
 //
 // No buffer is accepted because the default value for types with external

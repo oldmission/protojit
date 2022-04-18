@@ -164,6 +164,9 @@ struct InlineVariant {
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
+
+  // Set during internment.
+  bool is_enum = false;
 };
 
 // Variants can have two representations.
@@ -188,32 +191,42 @@ struct OutlineVariant {
 };
 
 template <typename V>
-inline V intern_variant(mlir::TypeStorageAllocator& allocator,
-                        const V& type_data) {
-  auto terms = reinterpret_cast<Term*>(
+inline V internVariant(mlir::TypeStorageAllocator& allocator,
+                       const V& type_data) {
+  auto* terms = reinterpret_cast<Term*>(
       allocator.allocate(sizeof(Term) * type_data.terms.size(), alignof(Term)));
 
+  bool is_enum = true;
   for (uintptr_t i = 0; i < type_data.terms.size(); ++i) {
     terms[i] = Term{
         .name = allocator.copyInto(type_data.terms[i].name),
         .type = type_data.terms[i].type,
         .tag = type_data.terms[i].tag,
     };
+    if (is_enum && !type_data.terms[i].type.isUnit()) {
+      is_enum = false;
+    }
   }
+
+  std::sort(terms, terms + type_data.terms.size(),
+            [&](const Term& l, const Term& r) { return l.name < r.name; });
 
   V result = type_data;
   result.terms = {&terms[0], type_data.terms.size()};
+  if constexpr (std::is_same_v<V, InlineVariant>) {
+    result.is_enum = is_enum;
+  }
   return result;
 }
 
 inline InlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
                                  const InlineVariant& type_data) {
-  return intern_variant(allocator, type_data);
+  return internVariant(allocator, type_data);
 }
 
 inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
                                   const OutlineVariant& type_data) {
-  return intern_variant(allocator, type_data);
+  return internVariant(allocator, type_data);
 }
 
 template <typename Variant>

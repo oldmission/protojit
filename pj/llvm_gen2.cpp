@@ -1,5 +1,7 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
+#include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
@@ -81,14 +83,36 @@ struct LLVMGenPass
     return bounded_buf_type_;
   }
 
+  Value buildTagPtr(Location loc, ConversionPatternRewriter& _,
+                    VariantType type, Value variant) {
+    auto tag_ptr =
+        _.create<GEPOp>(loc, bytePtrType(), variant,
+                        buildWordConstant(loc, _, type.tag_offset().bytes()));
+
+    return _.create<BitcastOp>(
+        loc, LLVMPointerType::get(intType(type.tag_width())), tag_ptr);
+  }
+
   std::pair<Value, Value> buildBoundedBufferDestructuring(
       Location loc, ConversionPatternRewriter& _, Value buf);
 
   LLVMGenPass(const llvm::TargetMachine* machine) : machine_(machine) {}
 
+  LLVM::GlobalOp buildGlobalConstant(Location loc,
+                                     OpBuilder::Listener* listener,
+                                     mlir::Type type, mlir::Attribute value) {
+    auto name = "#const_" + std::to_string(const_suffix_++);
+    ModuleOp mod{getOperation()};
+    auto _ = mlir::OpBuilder::atBlockBegin(mod.getBody());
+    _.setListener(listener);
+    return _.create<LLVM::GlobalOp>(loc, type, /*isConstant=*/false,
+                                    LLVM::Linkage::Private, name, value);
+  }
+
   SideEffectAnalysis* effectAnalysis() { return effect_analysis_; };
 
  private:
+  size_t const_suffix_ = 0;
   const llvm::TargetMachine* const machine_;
   mlir::Type bounded_buf_type_;
   SideEffectAnalysis* effect_analysis_;
@@ -292,16 +316,117 @@ LogicalResult TagOpLowering::matchAndRewrite(
 
   auto var_type = op.dst().getType().cast<VariantType>();
 
-  auto tag_ptr = _.create<GEPOp>(
-      loc, pass->bytePtrType(), operands[0],
-      pass->buildWordConstant(loc, _, var_type.tag_offset().bytes()));
-
-  auto store_ptr = _.create<BitcastOp>(
-      loc, LLVMPointerType::get(pass->intType(var_type.tag_width())), tag_ptr);
-
+  auto store_ptr = pass->buildTagPtr(loc, _, var_type, operands[0]);
   auto tag_cst = pass->buildIntConstant(loc, _, var_type.tag_width(), op.tag());
 
   _.create<StoreOp>(op.getLoc(), tag_cst, store_ptr);
+
+  _.eraseOp(op);
+  return success();
+}
+
+struct CopyTagOpLowering : public OpConversionPattern<CopyTagOp> {
+  CopyTagOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                    LLVMGenPass* pass)
+      : OpConversionPattern<CopyTagOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(CopyTagOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult CopyTagOpLowering::matchAndRewrite(
+    CopyTagOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  Value src = operands[0], dst = operands[1];
+
+  auto src_type = op.src().getType().cast<InlineVariantType>();
+  auto dst_type = op.dst().getType().cast<InlineVariantType>();
+  auto src_terms = src_type->terms;
+
+  llvm::StringMap<const Term*> dst_terms;
+  for (auto& term : dst_type->terms) {
+    dst_terms[term.name] = &term;
+  }
+
+  Value src_tag_ptr = pass->buildTagPtr(loc, _, src_type, src);
+  Value dst_tag_ptr = pass->buildTagPtr(loc, _, dst_type, dst);
+
+  Value src_tag = _.create<LoadOp>(loc, src_tag_ptr);
+
+  bool exact_match = true;
+
+  std::vector<std::pair<uint64_t, uint64_t>> tag_mapping{{0, 0}};
+  for (auto& term : src_terms) {
+    if (auto it = dst_terms.find(term.name); it != dst_terms.end()) {
+      exact_match &= it->second->tag == term.tag;
+      tag_mapping.emplace_back(term.tag, it->second->tag);
+    } else {
+      exact_match = false;
+      tag_mapping.emplace_back(term.tag, 0);
+    }
+  }
+
+  if (exact_match) {
+    if (src_type->tag_width < dst_type->tag_width) {
+      src_tag =
+          _.create<ZExtOp>(loc, pass->intType(dst_type->tag_width), src_tag);
+    } else if (src_type->tag_width > dst_type->tag_width) {
+      src_tag =
+          _.create<TruncOp>(loc, pass->intType(dst_type->tag_width), src_tag);
+    }
+    _.create<StoreOp>(loc, src_tag, dst_tag_ptr);
+    _.eraseOp(op);
+    return success();
+  }
+
+  // Build a table to look up the tag.
+  std::sort(tag_mapping.begin(), tag_mapping.end(),
+            [](auto& l, auto& r) { return l.first < r.first; });
+
+  // TODO: this is int64_t whereas tags can be uint64_t
+  llvm::SmallVector<int64_t> table;
+  for (size_t i = 0, t = 0; i < tag_mapping.size(); ++t) {
+    if (tag_mapping[i].first == t) {
+      table.push_back(tag_mapping[i++].second);
+    } else {
+      table.push_back(0);
+    }
+  }
+
+  auto too_high = _.create<ICmpOp>(
+      loc, pass->intType(Bits(1)), ICmpPredicate::uge, src_tag,
+      pass->buildIntConstant(loc, _, src_type->tag_width, table.size()));
+
+  auto dst_tag = _.create<scf::IfOp>(loc, pass->intType(dst_type->tag_width),
+                                     too_high, /*withElseRegion=*/true);
+  _.create<StoreOp>(loc, dst_tag.getResult(0), dst_tag_ptr);
+
+  // src_tag is in bounds, use the table.
+  {
+    _.setInsertionPointToStart(dst_tag.elseBlock());
+    auto table_type =
+        LLVMArrayType::get(pass->intType(dst_type->tag_width), table.size());
+    auto table_cst = pass->buildGlobalConstant(loc, _.getListener(), table_type,
+                                               _.getI64TensorAttr(table));
+    Value table_ptr = _.create<LLVM::AddressOfOp>(
+        loc, LLVMPointerType::get(table_type), table_cst.getName());
+    table_ptr = _.create<BitcastOp>(loc, dst_tag_ptr.getType(), table_ptr);
+
+    auto result_tag_ptr =
+        _.create<GEPOp>(loc, table_ptr.getType(), table_ptr, src_tag);
+    Value result = _.create<LoadOp>(loc, result_tag_ptr);
+    _.create<scf::YieldOp>(loc, result);
+  }
+
+  // src_tag is not in bounds, use undef.
+  {
+    _.setInsertionPointToStart(dst_tag.thenBlock());
+    Value undef_tag = pass->buildIntConstant(loc, _, dst_type->tag_width, 0);
+    _.create<scf::YieldOp>(loc, undef_tag);
+  }
 
   _.eraseOp(op);
   return success();
@@ -637,11 +762,12 @@ void LLVMGenPass::runOnOperation() {
   OwningRewritePatternList patterns(ctx);
   ProtoJitTypeConverter type_converter(ctx, this);
   populateStdToLLVMConversionPatterns(type_converter, patterns);
+  populateLoopToStdConversionPatterns(patterns);
   patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
                DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
                TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
-               DefaultOpLowering, UnitOpLowering, IndexOpLowering>(
-      type_converter, ctx, this);
+               DefaultOpLowering, UnitOpLowering, IndexOpLowering,
+               CopyTagOpLowering>(type_converter, ctx, this);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {
