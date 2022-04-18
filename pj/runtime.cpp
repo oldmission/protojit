@@ -40,14 +40,10 @@ pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
 }
 
 const PJUnitType* PJCreateUnitType(PJContext* c) {
-  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
-
-  llvm::StringRef name = "<unit>";
-  auto unit_type = pj::types::StructType::get(
-      &ctx->ctx_, pj::types::TypeDomain::kHost, &name);
-  unit_type.setTypeData(
-      {.fields = {}, .size = pj::Bytes(0), .alignment = pj::Bytes(0)});
-  return reinterpret_cast<const PJUnitType*>(unit_type.getAsOpaquePointer());
+  return reinterpret_cast<const PJUnitType*>(
+      reinterpret_cast<pj::ProtoJitContext*>(c)
+          ->unitType()
+          .getAsOpaquePointer());
 }
 
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
@@ -96,7 +92,11 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
 
 const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag) {
   const auto* term = new pj::types::Term{
-      .name = name, .type = mlir::Type::getFromOpaquePointer(type), .tag = tag};
+      .name = name,
+      .type =
+          mlir::Type::getFromOpaquePointer(type).cast<pj::types::ValueType>(),
+      .tag = tag,
+  };
   return reinterpret_cast<const PJTerm*>(term);
 }
 

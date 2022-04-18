@@ -3,29 +3,6 @@ load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 
 package(default_visibility = ["//visibility:public"])
 
-gentbl_cc_library(
-    name = "ProtojitIncGen",
-    strip_include_prefix = "",
-    tbl_outs = [
-        (
-            ["-gen-op-decls"],
-            "ops.hpp.inc",
-        ),
-        (
-            ["-gen-op-defs"],
-            "ops.cpp.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
-    td_file = "ops.td",
-    deps = [
-        "@llvm-project//mlir:CallInterfacesTdFiles",
-        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
-        "@llvm-project//mlir:OpBaseTdFiles",
-        "@llvm-project//mlir:SideEffectInterfacesTdFiles",
-    ],
-)
-
 td_library(
     name = "TypesTdFiles",
     srcs = ["types.td"],
@@ -33,7 +10,7 @@ td_library(
 )
 
 gentbl_cc_library(
-    name = "ProtojitIRIncGen",
+    name = "ProtoJITIRIncGen",
     strip_include_prefix = "",
     tbl_outs = [
         (
@@ -58,54 +35,32 @@ gentbl_cc_library(
 cc_library(
     name = "compiler",
     srcs = [
-        "abstract_types.cpp",
-        "compile.cpp",
-        "concrete_types.cpp",
         "context.cpp",
-        "decode_gen.cpp",
-        "default_gen.cpp",
-        "encode_gen.cpp",
-        "fold_projects.cpp",
         "gdb.cpp",
         "generate_ir.cpp",
-        "inline_regions.cpp",
         "ir.cpp",
         "ir.cpp.inc",
         "lib.cpp",
-        "llvm_gen.cpp",
         "llvm_gen2.cpp",
-        "ops.cpp.inc",
-        "plan.cpp",
         "portal.cpp",
-        "protocol.cpp",
         "scope.cpp",
         "side_effect_analysis.cpp",
-        "size_gen.cpp",
-        "tag.cpp",
-        "target.cpp",
         "type_support.cpp",
-        "validate.cpp",
     ],
     hdrs = [
-        "abstract_types.hpp",
         "arch.hpp",
-        "concrete_types.hpp",
         "context.hpp",
         "defer.hpp",
         "exceptions.hpp",
         "ir.hpp",
         "ir.hpp.inc",
         "llvm_gen_base.hpp",
-        "ops.hpp.inc",
         "passes.hpp",
         "portal.hpp",
         "portal_impl.hpp",
-        "protocol.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
         "span.hpp",
-        "tag.hpp",
-        "target.hpp",
         "type_support.hpp",
         "types.hpp",
         "util.hpp",

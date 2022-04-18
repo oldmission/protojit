@@ -19,15 +19,7 @@ void freeContext(PJContext* ctx) {
 }
 
 std::unique_ptr<Portal> compile(PJContext* ctx) {
-  return reinterpret_cast<ProtoJitContext*>(ctx)->compile(
-      /*new_pipeline=*/true);
+  return reinterpret_cast<ProtoJitContext*>(ctx)->compile();
 }
-
-#if 0
-const Protocol* Negotiate(Scope* scope, const ProtoSpec* recv,
-                          const ProtoSpec* send) {
-  throw IssueError(12);
-}
-#endif
 
 }  // namespace pj

@@ -61,11 +61,11 @@ ValueType plan(PlanningContext& ctx, StructType type,
   std::vector<StructField> fields;
   for (const StructField& f : type->fields) {
     auto el = plan(ctx, f.type, into(path, f.name));
-    offset = RoundUp(offset, el.head_alignment());
+    offset = RoundUp(offset, el.headAlignment());
     fields.emplace_back(
         StructField{.type = el, .name = f.name, .offset = offset});
-    offset += el.head_size();
-    alignment = std::max(alignment, el.head_alignment());
+    offset += el.headSize();
+    alignment = std::max(alignment, el.headAlignment());
 
     if (matches(path) && ctx.outline && !outline_reached) {
       outline_reached = true;
@@ -96,8 +96,8 @@ ValueType plan(PlanningContext& ctx, InlineVariantType type,
     // Outlining variants within variants is not supported, so path is not
     // passed through
     auto planned = plan(ctx, term.type, std::nullopt);
-    term_size = std::max(term_size, planned.head_size());
-    term_align = RoundUp(term_align, planned.head_alignment());
+    term_size = std::max(term_size, planned.headSize());
+    term_align = RoundUp(term_align, planned.headAlignment());
     terms.push_back({.name = term.name, .type = planned, .tag = term.tag});
   }
 
@@ -151,16 +151,16 @@ ValueType plan(PlanningContext& ctx, ArrayType type,
       &ctx.ctx,
       Array{.elem = elem,
             .length = type->length,
-            .elem_size = RoundUp(elem.head_size(), elem.head_alignment()),
-            .alignment = elem.head_alignment()});
+            .elem_size = RoundUp(elem.headSize(), elem.headAlignment()),
+            .alignment = elem.headAlignment()});
 }
 
 ValueType plan(PlanningContext& ctx, VectorType type,
                std::optional<PathAttr> path) {
   auto elem = plan(ctx, type->elem, std::nullopt);
-  const Width el_align = elem.head_alignment();
+  const Width el_align = elem.headAlignment();
   assert(el_align.bytes() > 0);
-  const Width el_size = RoundUp(elem.head_size(), el_align);
+  const Width el_size = RoundUp(elem.headSize(), el_align);
 
   const intptr_t min_length = type->wire_min_length;
 

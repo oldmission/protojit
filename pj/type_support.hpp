@@ -43,8 +43,8 @@ namespace types {
 struct ValueTypeStorage : public mlir::TypeStorage {
   virtual ~ValueTypeStorage(){};
   virtual void print(llvm::raw_ostream& os) const = 0;
-  virtual Width head_size() const = 0;
-  virtual Width head_alignment() const = 0;
+  virtual Width headSize() const = 0;
+  virtual Width headAlignment() const = 0;
 };
 
 // Base class for all PJ types that represent values; i.e., everything except
@@ -58,12 +58,17 @@ struct ValueType : public mlir::Type {
     static_cast<const ValueTypeStorage*>(impl)->print(os);
   }
 
-  Width head_size() const {
-    return static_cast<const ValueTypeStorage*>(impl)->head_size();
+  bool isUnit() const {
+    // The pjc parser represents unit types via nullptr.
+    return impl == nullptr || headSize() == Bits(0);
   }
 
-  Width head_alignment() const {
-    return static_cast<const ValueTypeStorage*>(impl)->head_alignment();
+  Width headSize() const {
+    return static_cast<const ValueTypeStorage*>(impl)->headSize();
+  }
+
+  Width headAlignment() const {
+    return static_cast<const ValueTypeStorage*>(impl)->headAlignment();
   }
 
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
@@ -100,8 +105,8 @@ struct StructuralTypeStorage : public ValueTypeStorage {
   }
 
   void print(llvm::raw_ostream& os) const override { os << key; }
-  Width head_size() const override { return key.head_size(); }
-  Width head_alignment() const override { return key.head_alignment(); }
+  Width headSize() const override { return key.headSize(); }
+  Width headAlignment() const override { return key.headAlignment(); }
 
   KeyTy key;
 };
@@ -168,8 +173,8 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
     }
   }
 
-  Width head_size() const override { return type_data_.head_size(); }
-  Width head_alignment() const override { return type_data_.head_alignment(); }
+  Width headSize() const override { return type_data_.headSize(); }
+  Width headAlignment() const override { return type_data_.headAlignment(); }
 
   mlir::LogicalResult mutate(mlir::TypeStorageAllocator& allocator,
                              const T& type_data) {

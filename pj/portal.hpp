@@ -1,16 +1,8 @@
 #pragma once
 
-#include "target.hpp"
 #include "util.hpp"
 
 namespace pj {
-
-class PortalSpec : public Scoped {
- public:
-  const std::vector<const Target*> targets;
-
-  PortalSpec(std::vector<const Target*>&& targets) : targets(targets) {}
-};
 
 struct Artifact {};
 

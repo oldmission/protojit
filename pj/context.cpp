@@ -32,7 +32,7 @@
 #include "portal_impl.hpp"
 
 namespace pj {
-using namespace ir2;
+using namespace ir;
 
 ProtoJitContext::ProtoJitContext()
     : builder_(&ctx_),
@@ -40,6 +40,16 @@ ProtoJitContext::ProtoJitContext()
   ctx_.getOrLoadDialect<pj::ir::ProtoJitDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
+
+  constexpr llvm::StringRef kUnitName = "<unit>";
+  auto unit = pj::types::StructType::get(&ctx_, pj::types::TypeDomain::kHost,
+                                         pj::Span<llvm::StringRef>{kUnitName});
+  unit.setTypeData({
+      .fields = pj::Span<pj::types::StructField>{nullptr, 0ul},
+      .size = pj::Bytes(0),
+      .alignment = pj::Bytes(0),
+  });
+  unit_type_ = unit;
 }
 
 ProtoJitContext::~ProtoJitContext() {}
@@ -112,7 +122,7 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
   return machine;
 }
 
-std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
+std::unique_ptr<Portal> ProtoJitContext::compile() {
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
                       "Before compilation:\n"
@@ -134,7 +144,6 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
 
   mlir::PassManager pjpm(&ctx_);
   pjpm.addPass(mlir::createLowerToCFGPass());
-  pjpm.addPass(pj::createInlineRegionsPass());
   pjpm.addPass(mlir::createCanonicalizerPass());
 
   if (mlir::failed(pjpm.run(*module_))) {
@@ -151,11 +160,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(bool new_pipeline) {
 
   // Lower to LLVM IR
   mlir::PassManager pm(&ctx_);
-  if (new_pipeline) {
-    pm.addPass(pj::createLLVMGenPass(machine.get()));
-  } else {
-    pm.addPass(createLowerToLLVMPass());
-  }
+  pm.addPass(pj::createLLVMGenPass(machine.get()));
   pm.addPass(mlir::createCanonicalizerPass());
 
   if (mlir::failed(pm.run(*module_))) {

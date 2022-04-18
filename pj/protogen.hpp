@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <set>
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Types.h>

@@ -1,9 +1,9 @@
 include "mlir/IR/OpBase.td"
 
-def WidthAttr : Attr<CPred<"$_self.isa<::pj::ir::WidthAttr>()">, "width attribute"> {
-  let storageType = [{ ::pj::ir::WidthAttr }];
+def WidthAttr : Attr<CPred<"$_self.isa<::pj::types::WidthAttr>()">, "width attribute"> {
+  let storageType = [{ ::pj::types::WidthAttr }];
   let returnType = [{ ::pj::Width }];
-  let constBuilderCall = "::pj::ir::WidthAttr::get($_builder.getContext(), $0)";
+  let constBuilderCall = "::pj::types::WidthAttr::get($_builder.getContext(), $0)";
 }
 
 def BoundedBufferType :
@@ -13,7 +13,8 @@ def RawBufferType :
     Type<CPred<"$_self.isa<::pj::types::RawBufferType>()">, "rbuf">;
 
 def BufferType :
-    Type<CPred<"$_self.isa<::pj::types::RawBufferType>() || $_self.isa<::pj::types::BoundedBufferType>()">, "buf">;
+    Type<CPred<"$_self.isa<::pj::types::RawBufferType>() ||"
+               "$_self.isa<::pj::types::BoundedBufferType>()">, "buf">;
 
 def ValueType :
     Type<CPred<"$_self.isa<::pj::types::ValueType>()">, "value">;
@@ -26,6 +27,9 @@ def StructType :
 
 def VariantType :
     Type<CPred<"$_self.isa<::pj::types::VariantType>()">, "variant">;
+
+def InlineVariantType :
+    Type<CPred<"$_self.isa<::pj::types::InlineVariantType>()">, "inline_variant">;
 
 def ArrayType :
     Type<CPred<"$_self.isa<::pj::types::ArrayType>()">, "vector">;

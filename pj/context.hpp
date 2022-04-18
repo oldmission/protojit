@@ -30,12 +30,15 @@ struct ProtoJitContext {
                        llvm::Optional<llvm::StringRef> src_path,
                        mlir::Type protocol);
 
-  std::unique_ptr<Portal> compile(bool new_pipeline = false);
+  std::unique_ptr<Portal> compile();
+
+  pj::types::ValueType unitType() const { return unit_type_; }
 
   // TODO: make these private after removing old compile API.
   mlir::MLIRContext ctx_;
   mlir::OpBuilder builder_;
   mlir::OwningModuleRef module_;
+  pj::types::ValueType unit_type_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);

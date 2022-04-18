@@ -39,7 +39,6 @@ struct hash<pj::FnKey> {
 namespace pj {
 using namespace mlir;
 using namespace ir;
-using namespace ir2;
 using namespace types;
 
 namespace {
@@ -82,15 +81,15 @@ struct GeneratePass
   mlir::FuncOp getOrCreateFn(mlir::Location loc, OpBuilder::Listener* listener,
                              llvm::StringRef prefix, const FnKey& key);
 
-  std::unordered_map<FnKey, Operation*> cached_fns;
-  std::unordered_map<std::string, std::unordered_set<uint32_t>> used_names;
+  std::unordered_map<FnKey, Operation*> cached_fns_;
+  std::unordered_map<std::string, std::unordered_set<uint32_t>> used_names_;
 };
 
 mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
                                          OpBuilder::Listener* listener,
                                          llvm::StringRef prefix,
                                          const FnKey& key) {
-  if (auto it = cached_fns.find(key); it != cached_fns.end()) {
+  if (auto it = cached_fns_.find(key); it != cached_fns_.end()) {
     return mlir::FuncOp{it->second};
   }
 
@@ -118,7 +117,7 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
     }
 
     // Types don't always print all the details involved in their uniquing.
-    auto suffixes = used_names[name];
+    auto suffixes = used_names_[name];
     uint32_t suffix = 0;
     while (suffixes.count(suffix)) {
       suffix = std::rand();
@@ -150,21 +149,20 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
   auto* ctx = _.getContext();
 
   if (dst_term != nullptr) {
-    auto src_body = _.create<ir2::ProjectOp>(loc, src_term->type, src,
-                                             src_type.term_offset());
-    auto dst_body = _.create<ir2::ProjectOp>(loc, dst_term->type, dst,
-                                             dst_type.term_offset());
+    auto src_body = _.create<ir::ProjectOp>(loc, src_term->type, src,
+                                            src_type.term_offset());
+    auto dst_body = _.create<ir::ProjectOp>(loc, dst_term->type, dst,
+                                            dst_type.term_offset());
 
     if (dst_type.isa<OutlineVariantType>()) {
       // TODO: ensure sufficient space if decoding into an outline variant.
-      buffer = _.create<ir2::ProjectOp>(
-          loc, buffer.getType(), buffer,
-          dst_term->type.cast<ValueType>().head_size());
+      buffer =
+          _.create<ir::ProjectOp>(loc, buffer.getType(), buffer,
+                                  dst_term->type.cast<ValueType>().headSize());
     }
 
-    _.create<ir2::TranscodeOp>(loc, buffer.getType(), src_body, dst_body,
-                               buffer, PathAttr::none(ctx),
-                               ArrayAttr::get(ctx, {}));
+    _.create<ir::TranscodeOp>(loc, buffer.getType(), src_body, dst_body, buffer,
+                              PathAttr::none(ctx), ArrayAttr::get(ctx, {}));
   }
 
   _.create<TagOp>(loc, dst,
@@ -219,26 +217,26 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
 
     // Project out the target field.
     auto dst_field =
-        _.create<ir2::ProjectOp>(loc, to_field.type, dst, to_field.offset);
+        _.create<ir::ProjectOp>(loc, to_field.type, dst, to_field.offset);
     if (auto it = from_fields.find(to_field.name); it != from_fields.end()) {
       auto& from_field = it->second;
-      auto src_field = _.create<ir2::ProjectOp>(loc, from_field->type, src,
-                                                from_field->offset);
+      auto src_field = _.create<ir::ProjectOp>(loc, from_field->type, src,
+                                               from_field->offset);
 
       // If the target field exists in the source struct, encode
       // the source field into the target.
-      result_buf = _.create<ir2::TranscodeOp>(
+      result_buf = _.create<ir::TranscodeOp>(
           loc, result_buf.getType(), src_field, dst_field, result_buf,
           path.into(to_field.name), handlers_attr);
     } else {
       // Otherwise fill in the target field with a default value.
-      _.create<ir2::DefaultOp>(loc, dst_field, handlers_attr);
+      _.create<ir::DefaultOp>(loc, dst_field, handlers_attr);
     }
   }
 
   _.create<ReturnOp>(loc, result_buf);
 
-  cached_fns.emplace(key, func);
+  cached_fns_.emplace(key, func);
   return mlir::FuncOp{func};
 }
 
@@ -247,7 +245,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     VariantType dst_type, PathAttr path, ArrayAttr handlers,
     mlir::Type buf_type) {
   auto key = FnKey{src_type, dst_type, path, handlers, buf_type};
-  auto func = getOrCreateFn(loc, listener, "enc", key);
+  auto func = getOrCreateFn(loc, listener, "xcd", key);
 
   if (!func.isDeclaration()) {
     return func;
@@ -260,9 +258,9 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
   auto src = func.getArgument(0);
   auto dst = func.getArgument(1);
 
-  std::map<std::string, const Term*> dst_terms;
+  llvm::StringMap<const Term*> dst_terms;
   for (auto& term : dst_type.terms()) {
-    dst_terms.emplace(term.name.str(), &term);
+    dst_terms.insert({term.name.str(), &term});
   }
 
   llvm::StringMap<const void*> handler_map;
@@ -342,7 +340,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     _.create<MatchOp>(loc, src, default_block, cases);
   }
 
-  cached_fns.emplace(key, func);
+  cached_fns_.emplace(key, func);
   return mlir::FuncOp{func};
 }
 
@@ -418,7 +416,7 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     // we have no loop carried variables.
   }
 
-  cached_fns.emplace(key, func);
+  cached_fns_.emplace(key, func);
   return mlir::FuncOp{func};
 }
 
@@ -456,11 +454,11 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
   _.setInsertionPointToStart(entry_block);
 
   auto dst =
-      _.create<ir2::ProjectOp>(loc, proto->head, func.getArgument(1), Bits(0));
+      _.create<ir::ProjectOp>(loc, proto->head, func.getArgument(1), Bits(0));
 
   auto dst_buf =
-      _.create<ir2::ProjectOp>(loc, RawBufferType::get(ctx),
-                               func.getArgument(1), proto->head.head_size());
+      _.create<ir::ProjectOp>(loc, RawBufferType::get(ctx), func.getArgument(1),
+                              proto->head.headSize());
 
   _.create<TranscodeOp>(loc, RawBufferType::get(ctx), func.getArgument(0), dst,
                         dst_buf, op.src_path(), ArrayAttr::get(ctx, {}));
@@ -517,7 +515,7 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
   _.setInsertionPointToStart(catch_body);
 
   auto src =
-      _.create<ir2::ProjectOp>(loc, proto->head, func.getArgument(0), Bits(0));
+      _.create<ir::ProjectOp>(loc, proto->head, func.getArgument(0), Bits(0));
 
   Value buf = _.create<TranscodeOp>(loc, BoundedBufferType::get(ctx), src,
                                     func.getArgument(1), func.getArgument(2),
@@ -546,8 +544,8 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     TranscodeOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
-  auto src_type = op.src().getType();
-  auto dst_type = op.dst().getType();
+  auto src_type = op.src().getType().cast<ValueType>();
+  auto dst_type = op.dst().getType().cast<ValueType>();
 
   FuncOp fn;
 

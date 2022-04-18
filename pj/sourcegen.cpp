@@ -5,7 +5,6 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "concrete_types.hpp"
 #include "protogen.hpp"
 #include "types.hpp"
 

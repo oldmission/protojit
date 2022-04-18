@@ -6,7 +6,7 @@ include "types.td"
 
 def ProtoJit_Dialect : Dialect {
   let name = "pj";
-  let cppNamespace = "::pj::ir2";
+  let cppNamespace = "::pj::ir";
 }
 
 class ProtoJit_Op<string mnemonic, list<OpTrait> traits = []> :
@@ -26,8 +26,8 @@ class ProtoJit_Op<string mnemonic, list<OpTrait> traits = []> :
 // bounded buffer accesses are.
 def TranscodeOp : ProtoJit_Op<"transcode"> {
   let arguments = (ins
-    AnyType:$src,
-    AnyType:$dst,
+    ValueType:$src,
+    ValueType:$dst,
     BufferType:$buf,
     PathAttr:$path,
     TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
@@ -138,7 +138,7 @@ def InvokeCallbackOp : ProtoJit_Op<"invoke"> {
 //
 // If an exception is thrown inside, returns a null buffer.
 // Otherwise, returns whatever YieldOp returns.
-def DecodeCatchOp : ProtoJit_Op<"catch", [SingleBlockImplicitTerminator<"::pj::ir2::YieldOp">]> {
+def DecodeCatchOp : ProtoJit_Op<"catch", [SingleBlockImplicitTerminator<"::pj::ir::YieldOp">]> {
   let results = (outs BufferType:$buf);
   let regions = (region SizedRegion<1>:$body);
 }

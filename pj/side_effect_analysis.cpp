@@ -10,7 +10,7 @@
 namespace pj {
 
 using namespace mlir;
-using namespace ir2;
+using namespace ir;
 using namespace types;
 
 SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
@@ -41,6 +41,7 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
     effect_providers[op] = op->getParentOp();
 
     if (auto call = dyn_cast<CallOp>(op)) {
+      // TODO: lookupSymbol is a linear scan
       call_sites_per_fn[mod.lookupSymbol(call.callee())].push_back(op);
     } else {
       roots.push_back(op);

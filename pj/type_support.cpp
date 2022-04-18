@@ -26,13 +26,14 @@ void PathAttr::print(llvm::raw_ostream& os) const {
   }
 }
 
-PathAttr PathAttr::none(mlir::MLIRContext* C) {
-  return get(C, llvm::ArrayRef<llvm::StringRef>{});
+PathAttr PathAttr::none(mlir::MLIRContext* ctx) {
+  return get(ctx, llvm::ArrayRef<llvm::StringRef>{});
 }
 
-PathAttr PathAttr::fromString(mlir::MLIRContext* C, llvm::StringRef src_path) {
+PathAttr PathAttr::fromString(mlir::MLIRContext* ctx,
+                              llvm::StringRef src_path) {
   if (src_path.size() == 0) {
-    return get(C, llvm::ArrayRef<llvm::StringRef>{});
+    return get(ctx, llvm::ArrayRef<llvm::StringRef>{});
   }
 
   llvm::SmallVector<llvm::StringRef, 2> vec;
@@ -42,7 +43,7 @@ PathAttr PathAttr::fromString(mlir::MLIRContext* C, llvm::StringRef src_path) {
     vec.push_back({src_path.data() + pos, end - pos});
     pos = end + 1;
   }
-  return get(C, vec);
+  return get(ctx, vec);
 }
 
 std::string PathAttr::toString() const {

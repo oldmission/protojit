@@ -14,8 +14,7 @@
 namespace pj {
 using namespace mlir;
 using namespace mlir::LLVM;
-
-using namespace ir2;
+using namespace ir;
 using namespace types;
 
 namespace {
@@ -27,13 +26,17 @@ struct LLVMGenPass
   }
   void runOnOperation() final;
 
-  std::pair<Value, Value> getEffectDefsFor(Operation* op) {
-    auto* provider = effect_analysis->effectProviderFor(op);
-    assert(provider && effect_defs.count(provider));
-    return effect_defs[provider];
+  void setEffectDefs(Operation* op, Value check, Value callback) {
+    effect_defs_[op] = {check, callback};
   }
 
-  Width wordSize() const { return Bytes(machine->getPointerSize(0)); };
+  std::pair<Value, Value> getEffectDefsFor(Operation* op) {
+    auto* provider = effect_analysis_->effectProviderFor(op);
+    assert(provider && effect_defs_.count(provider));
+    return effect_defs_[provider];
+  }
+
+  Width wordSize() const { return Bytes(machine_->getPointerSize(0)); };
 
   mlir::IntegerType wordType() {
     return mlir::IntegerType::get(&getContext(), wordSize().bits(),
@@ -71,37 +74,36 @@ struct LLVMGenPass
   }
 
   mlir::Type boundedBufType() {
-    if (!bounded_buf_type) {
-      bounded_buf_type = mlir::LLVM::LLVMStructType::getNewIdentified(
+    if (!bounded_buf_type_) {
+      bounded_buf_type_ = mlir::LLVM::LLVMStructType::getNewIdentified(
           &getContext(), "!pj.bbuf", {bytePtrType(), wordType()});
     }
-    return bounded_buf_type;
+    return bounded_buf_type_;
   }
 
   std::pair<Value, Value> buildBoundedBufferDestructuring(
       Location loc, ConversionPatternRewriter& _, Value buf);
 
-  LLVMGenPass(const llvm::TargetMachine* machine) : machine(machine) {}
+  LLVMGenPass(const llvm::TargetMachine* machine) : machine_(machine) {}
 
-  const llvm::TargetMachine* const machine;
-  mlir::Type bounded_buf_type;
-  SideEffectAnalysis* effect_analysis;
-  llvm::DenseMap<Operation*, std::pair<Value, Value>> effect_defs;
+  SideEffectAnalysis* effectAnalysis() { return effect_analysis_; };
+
+ private:
+  const llvm::TargetMachine* const machine_;
+  mlir::Type bounded_buf_type_;
+  SideEffectAnalysis* effect_analysis_;
+  llvm::DenseMap<Operation*, std::pair<Value, Value>> effect_defs_;
 };
 
 // Convert ProtoJit IR types to LLVM.
 struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
   ProtoJitTypeConverter(mlir::MLIRContext* ctx, LLVMGenPass* pass)
       : mlir::LLVMTypeConverter(ctx), pass(pass) {
+    addConversion([=](ValueType type) { return pass->bytePtrType(); });
+    addConversion([=](RawBufferType type) { return pass->bytePtrType(); });
+    addConversion([=](UserStateType type) { return pass->bytePtrType(); });
     addConversion(
-        [=](pj::types::ValueType type) { return pass->bytePtrType(); });
-    addConversion(
-        [=](pj::types::RawBufferType type) { return pass->bytePtrType(); });
-    addConversion(
-        [=](pj::ir::UserStateType type) { return pass->bytePtrType(); });
-    addConversion([=](pj::types::BoundedBufferType type) {
-      return pass->boundedBufType();
-    });
+        [=](BoundedBufferType type) { return pass->boundedBufType(); });
   }
 
   LLVMGenPass* pass;
@@ -140,7 +142,7 @@ struct FuncOpLowering : public OpConversionPattern<FuncOp> {
 
     _.startRootUpdate(op);
 
-    if (pass->effect_analysis->hasEffects(op)) {
+    if (pass->effectAnalysis()->hasEffects(op)) {
       // success
       op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
                         DictionaryAttr::get(ctx));
@@ -148,16 +150,14 @@ struct FuncOpLowering : public OpConversionPattern<FuncOp> {
       op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
                         DictionaryAttr::get(ctx));
 
-      pass->effect_defs[op] = {
-          op.getArgument(op.getNumArguments() - 2),
-          op.getArgument(op.getNumArguments() - 1),
-      };
+      pass->setEffectDefs(op, op.getArgument(op.getNumArguments() - 2),
+                          op.getArgument(op.getNumArguments() - 1));
     }
 
     _.setInsertionPointToStart(&*op.body().begin());
 
     auto buf_args =
-        pass->effect_analysis->flattenedBufferArguments(op.getName());
+        pass->effectAnalysis()->flattenedBufferArguments(op.getName());
 
     size_t arg_delta = 0;
     for (auto arg : buf_args) {
@@ -235,8 +235,8 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     TranscodeOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
-  auto src_type = op.src().getType();
-  auto dst_type = op.dst().getType();
+  auto src_type = op.src().getType().cast<ValueType>();
+  auto dst_type = op.dst().getType().cast<ValueType>();
 
   // Handle conversion of primitives.
   if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
@@ -493,7 +493,7 @@ LogicalResult DecodeCatchOpLowering::matchAndRewrite(
   auto check_alloc = _.create<AllocaOp>(loc, pass->wordPtrType(), one);
   auto callback_alloc = _.create<AllocaOp>(loc, pass->wordPtrType(), one);
 
-  pass->effect_defs[op] = {check_alloc, callback_alloc};
+  pass->setEffectDefs(op, check_alloc, callback_alloc);
 
   // Initialize the allocations.
   auto zero = pass->buildWordConstant(loc, _, 0);
@@ -543,9 +543,9 @@ LogicalResult CallOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
 
   const auto& buf_args =
-      pass->effect_analysis->flattenedBufferArguments(op.callee());
+      pass->effectAnalysis()->flattenedBufferArguments(op.callee());
 
-  if (!pass->effect_analysis->hasEffects(op) && buf_args.empty()) {
+  if (!pass->effectAnalysis()->hasEffects(op) && buf_args.empty()) {
     return failure();
   }
 
@@ -562,7 +562,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
     }
   }
 
-  if (pass->effect_analysis->hasEffects(op)) {
+  if (pass->effectAnalysis()->hasEffects(op)) {
     auto [check, cb] = pass->getEffectDefsFor(op);
     new_operands.insert(new_operands.end(), {check, cb});
   }
@@ -628,7 +628,7 @@ LogicalResult UnitOpLowering::matchAndRewrite(
 void LLVMGenPass::runOnOperation() {
   auto* ctx = &getContext();
 
-  effect_analysis = &getAnalysis<SideEffectAnalysis>();
+  effect_analysis_ = &getAnalysis<SideEffectAnalysis>();
 
   ConversionTarget target(*ctx);
   target.addLegalDialect<LLVMDialect>();
