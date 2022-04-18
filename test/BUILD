@@ -65,13 +65,3 @@ pj_test(
     srcs = ["test_protocols.cpp"],
     protos = ["protocols.pj", "protocols2.pj"],
 )
-
-cc_test(
-  name = 'tmp_test_ir2',
-  srcs = ['tmp_test_ir2.cpp'],
-  deps = [
-    "//pj:compiler",
-    "@gtest//:gtest_main",
-  ],
-  size = "small",
-)

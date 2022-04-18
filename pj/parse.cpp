@@ -25,7 +25,7 @@ struct ParseState {
 
   // Updated after parsing a 'FieldDecl' rule.
   // Cleared when done with a struct/variant decl.
-  std::map<std::string, mlir::Type> fields;
+  std::map<std::string, pj::types::ValueType> fields;
 
   // Populated after parsing a `VariantFieldDecl` or `EnumFieldDecl` rule.
   // Cleared after parsing a `VariantDecl` or `EnumDecl` rule.
@@ -426,10 +426,11 @@ static void handleVariant(const ActionInput& in, ParseState* state,
       tag = cur_tag;
       reserved_tags.insert(tag);
     }
-    terms.push_back(
-        types::Term{.name = llvm::StringRef{name.c_str(), name.length()},
-                    .type = it->second,
-                    .tag = tag});
+    terms.push_back(types::Term{
+        .name = llvm::StringRef{name.c_str(), name.length()},
+        .type = it->second,
+        .tag = tag,
+    });
   }
 
   auto name = __ popScopedId();

@@ -29,8 +29,8 @@ struct Int {
            alignment == other.alignment;
   }
 
-  Width head_size() const { return width; }
-  Width head_alignment() const { return alignment; }
+  Width headSize() const { return width; }
+  Width headAlignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Int& I) {
@@ -98,8 +98,8 @@ struct Struct {
   Width size = Width::None();
   Width alignment = Width::None();
 
-  Width head_size() const { return size; }
-  Width head_alignment() const { return alignment; }
+  Width headSize() const { return size; }
+  Width headAlignment() const { return alignment; }
 };
 
 inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
@@ -133,7 +133,7 @@ struct StructType
 struct Term {
   /*** Parsed ***/
   StringRef name;
-  mlir::Type type;
+  ValueType type;
   uint64_t tag;  // Must be >0. 0 is reserved for UNDEF.
 
   bool operator==(const Term& other) const {
@@ -162,8 +162,8 @@ struct InlineVariant {
   Width size = Width::None();
   Width alignment = Width::None();
 
-  Width head_size() const { return size; }
-  Width head_alignment() const { return alignment; }
+  Width headSize() const { return size; }
+  Width headAlignment() const { return alignment; }
 };
 
 // Variants can have two representations.
@@ -183,8 +183,8 @@ struct OutlineVariant {
   Width term_offset = Width::None();
   Width term_alignment = Width::None();
 
-  Width head_size() const { return tag_width; }
-  Width head_alignment() const { return tag_alignment; }
+  Width headSize() const { return tag_width; }
+  Width headAlignment() const { return tag_alignment; }
 };
 
 template <typename V>
@@ -342,21 +342,21 @@ struct Array {
            elem_size == ary.elem_size && alignment == ary.alignment;
   }
 
-  Width head_size() const { return elem_size * length; }
-  Width head_alignment() const { return alignment; }
+  Width headSize() const { return elem_size * length; }
+  Width headAlignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
   A.elem.print(os);
   os << "[" << A.length;
 
-  if (A.elem_size != A.elem.head_size()) {
+  if (A.elem_size != A.elem.headSize()) {
     os << "|" << A.elem_size;
   }
 
   os << "]";
 
-  if (A.alignment != A.elem.head_alignment()) {
+  if (A.alignment != A.elem.headAlignment()) {
     os << "/" << A.alignment;
   }
 
@@ -468,12 +468,12 @@ struct Vector {
   Width partial_payload_size;
 
   Width size;
-  Width head_size() const { return size; }
+  Width headSize() const { return size; }
 
   // Alignment must be at least as large as the element type's alignment
   // if min_length > 0.
   Width alignment;
-  Width head_alignment() const { return alignment; }
+  Width headAlignment() const { return alignment; }
 
   // At least as large as element type's alignment.
   // May be None if min_length == max_length.
@@ -563,8 +563,8 @@ struct Any {
            alignment == other.alignment;
   }
 
-  Width head_size() const { return size; }
-  Width head_alignment() const { return alignment; }
+  Width headSize() const { return size; }
+  Width headAlignment() const { return alignment; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Any& A) {
@@ -598,8 +598,8 @@ struct Protocol {
   ValueType head;
 
   bool operator==(const Protocol& P) const { return head == P.head; }
-  Width head_size() const { return head.head_size(); }
-  Width head_alignment() const { return head.head_alignment(); }
+  Width headSize() const { return head.headSize(); }
+  Width headAlignment() const { return head.headAlignment(); }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
@@ -687,6 +687,42 @@ struct DispatchHandlerAttr
 };
 
 void printType(llvm::raw_ostream& os, mlir::Type type);
+
+struct WidthAttributeStorage : public mlir::AttributeStorage {
+  using KeyTy = Width;
+
+  WidthAttributeStorage(Width value) : value(value) {}
+
+  /// Key equality function.
+  bool operator==(const KeyTy& key) const { return key == value; }
+
+  static llvm::hash_code hashKey(const KeyTy& key) { return key.bits(); }
+
+  /// Construct a new storage instance.
+  static WidthAttributeStorage* construct(
+      mlir::AttributeStorageAllocator& allocator, const KeyTy& key) {
+    return new (allocator.allocate<WidthAttributeStorage>())
+        WidthAttributeStorage(key);
+  }
+
+  Width value;
+};
+
+struct WidthAttr : public mlir::Attribute::AttrBase<WidthAttr, mlir::Attribute,
+                                                    WidthAttributeStorage> {
+  using Base::Base;
+  using Base::get;
+  Width* operator->() const { return &getImpl()->value; }
+  Width getValue() const { return getImpl()->value; }
+};
+
+struct UserStateType : public mlir::Type::TypeBase<UserStateType, mlir::Type,
+                                                   mlir::TypeStorage> {
+  using Base::Base;
+  mlir::Type toLLVM() const;
+
+  static UserStateType get(mlir::MLIRContext* ctx) { return Base::get(ctx); }
+};
 
 }  // namespace types
 }  // namespace pj

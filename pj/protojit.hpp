@@ -7,7 +7,6 @@
 #include "arch.hpp"
 #include "exceptions.hpp"
 #include "portal.hpp"
-#include "protocol.hpp"
 #include "runtime.h"
 
 namespace pj {
