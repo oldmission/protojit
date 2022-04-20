@@ -462,7 +462,7 @@ void generateProtocol(const SourceId& name, mlir::Type head,
   back << ";\n";
   back << "static std::string tag() { return \"";
   if (tag_path.has_value()) {
-    back << tag_path->toString() << "._\"; }\n";
+    back << tag_path->toString() << "\"; }\n";
   } else {
     back << "\"; }\n";
   }

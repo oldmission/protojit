@@ -521,7 +521,7 @@ BEGIN_ACTION(ImportDecl) {
 }
 END_ACTION()
 
-struct TagPath : seq<star<seq<identifier, tok<'.'>>>, identifier> {};
+struct TagPath : seq<star<seq<identifier, tok<'.'>>>, tok<'_'>> {};
 
 BEGIN_ACTION(TagPath) {
   assert(!__ tag_path.has_value());
@@ -552,7 +552,7 @@ BEGIN_ACTION(ProtoDecl) {
   if (__ tag_path.has_value()) {
     mlir::Type cur = head;
     auto path = __ tag_path->getValue();
-    for (uintptr_t i = 0; i < path.size(); ++i) {
+    for (uintptr_t i = 0; i < path.size() - 1; ++i) {
       const std::string& term = path[i].str();
 
       if (!cur.isa<types::StructType>()) {
