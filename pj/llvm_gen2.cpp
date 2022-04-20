@@ -1,5 +1,7 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
+#include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
@@ -228,6 +230,17 @@ struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
   LogicalResult matchAndRewrite(TranscodeOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 
+  Value generateInlineVectorTranscode(mlir::Location loc, Value src, Value dst,
+                                      Value copy_length, Value buf,
+                                      ConversionPatternRewriter& _) const;
+
+  Value generateOutlineVectorTranscode(mlir::Location loc, Value src, Value dst,
+                                       Value copy_length, Value buf,
+                                       ConversionPatternRewriter& _) const;
+
+  Value generateVectorTranscode(mlir::Location loc, Value src, Value dst,
+                                Value buf, ConversionPatternRewriter& _) const;
+
   LLVMGenPass* const pass;
 };
 
@@ -269,10 +282,145 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
 
     _.replaceOp(op, operands[2]);
     return success();
+  } else if (src_type.isa<VectorType>() && dst_type.isa<VectorType>()) {
+    auto result_buf =
+        generateVectorTranscode(loc, op.src(), op.dst(), op.buf(), _);
+
+    _.replaceOp(op, result_buf);
+    return success();
   }
 
-  // Other forms of transcode are not legal at this point.
+  // Other forms of transcode should have been lowered already.
   return failure();
+}
+
+Value TranscodeOpLowering::generateInlineVectorTranscode(
+    mlir::Location loc, Value src, Value dst, Value copy_length, Value buf,
+    ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
+  auto src_type = src.getType().cast<VectorType>();
+  auto dst_type = dst.getType().cast<VectorType>();
+
+  Value true_val = pass->buildIntConstant(loc, _, Bits(1), 1);
+  // TODO: if dst->min_length is 0 we don't need a test either (and in fact
+  // this is borderline wrong...)
+  Value is_dst_inline =
+      (src_type->min_length <= dst_type->min_length)
+          ? true_val
+          : _.create<LLVM::ICmpOp>(
+                loc, LLVM::ICmpPredicate::ule, copy_length,
+                pass->buildIntConstant(loc, _, Bits(64), dst_type->min_length));
+
+  auto dst_inline_if = _.create<scf::IfOp>(loc, buf.getType(), is_dst_inline,
+                                           /*withElseRegion=*/true);
+
+  // If dst is inline
+  {
+    _.setInsertionPointToStart(dst_inline_if.thenBlock());
+
+    auto loop_start = pass->buildIntConstant(loc, _, Bits(64), 0);
+    auto loop_end = copy_length;
+    auto step = pass->buildIntConstant(loc, _, Bits(64), 1);
+    auto copy_loop =
+        _.create<scf::ForOp>(loc, loop_start, loop_end, step, ValueRange{buf});
+    _.create<scf::YieldOp>(loc, copy_loop.getResult(0));
+
+    {
+      auto* body = copy_loop.getBody();
+      _.setInsertionPointToEnd(body);
+
+      Value idx = body->getArgument(0);
+      Value loop_buf = body->getArgument(1);
+
+      auto src_elem = _.create<VectorIndexOp>(loc, src_type->elem, src, idx,
+                                              VectorRegion::Inline);
+      auto dst_elem = _.create<VectorIndexOp>(loc, dst_type->elem, dst, idx,
+                                              VectorRegion::Inline);
+
+      loop_buf = _.create<TranscodeOp>(loc, loop_buf.getType(), src_elem,
+                                       dst_elem, loop_buf, PathAttr::none(ctx),
+                                       ArrayAttr::get(ctx, {}));
+      _.create<scf::YieldOp>(loc, loop_buf);
+    }
+  }
+
+  // If dst is outline
+  {
+    _.setInsertionPointToStart(dst_inline_if.elseBlock());
+    _.create<scf::YieldOp>(loc, buf);
+  }
+
+  return dst_inline_if.getResult(0);
+}
+
+Value TranscodeOpLowering::generateOutlineVectorTranscode(
+    mlir::Location loc, Value src, Value dst, Value copy_length, Value buf,
+    ConversionPatternRewriter& _) const {
+  return buf;
+}
+
+Value TranscodeOpLowering::generateVectorTranscode(
+    mlir::Location loc, Value src, Value dst, Value buf,
+    ConversionPatternRewriter& _) const {
+  auto src_type = src.getType().cast<VectorType>();
+  auto dst_type = dst.getType().cast<VectorType>();
+
+  Value src_length = [&]() {
+    auto length_gep = _.create<GEPOp>(
+        loc, pass->bytePtrType(), src,
+        pass->buildWordConstant(loc, _, src_type->length_offset.bytes()));
+    auto length_type =
+        LLVMPointerType::get(pass->intType(src_type->length_size));
+    auto load = _.create<LoadOp>(
+        loc, _.create<BitcastOp>(loc, length_type, length_gep));
+    return _.create<ZExtOp>(loc, pass->wordType(), load);
+  }();
+
+  Value copy_length = [&]() -> Value {
+    if (dst_type->max_length < 0) {
+      return src_length;
+    }
+    if (src_type->max_length >= 0 &&
+        src_type->max_length <= dst_type->max_length) {
+      return src_length;
+    }
+    auto max = pass->buildIntConstant(loc, _, Bits(64), dst_type->max_length);
+    auto cond =
+        _.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ule, src_length, max);
+    return _.create<LLVM::SelectOp>(loc, cond, src_length, max);
+  }();
+
+  Value false_val = pass->buildIntConstant(loc, _, Bits(1), 0);
+
+  Value is_src_inline =
+      (src_type->min_length == 0)
+          ? false_val
+          : _.create<LLVM::ICmpOp>(
+                loc, LLVM::ICmpPredicate::ule, src_length,
+                pass->buildWordConstant(loc, _, src_type->min_length));
+
+  auto src_inline_if = _.create<scf::IfOp>(loc, buf.getType(), is_src_inline,
+                                           /*withElseRegion=*/true);
+
+  // If src is inline
+  {
+    _.setInsertionPointToStart(src_inline_if.thenBlock());
+    Value result_buf =
+        generateInlineVectorTranscode(loc, src, dst, copy_length, buf, _);
+    _.setInsertionPointToEnd(src_inline_if.thenBlock());
+    _.create<scf::YieldOp>(loc, result_buf);
+  }
+
+  // If src is outline
+  {
+    _.setInsertionPointToStart(src_inline_if.thenBlock());
+    Value result_buf =
+        generateOutlineVectorTranscode(loc, src, dst, copy_length, buf, _);
+    _.setInsertionPointToEnd(src_inline_if.elseBlock());
+    _.create<scf::YieldOp>(loc, result_buf);
+  }
+
+  return src_inline_if.getResult(0);
 }
 
 struct TagOpLowering : public OpConversionPattern<TagOp> {
@@ -453,33 +601,84 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
-struct IndexOpLowering : public OpConversionPattern<IndexOp> {
-  IndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                  LLVMGenPass* pass)
-      : OpConversionPattern<IndexOp>(converter, ctx), pass(pass) {}
+struct ArrayIndexOpLowering : public OpConversionPattern<ArrayIndexOp> {
+  ArrayIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                       LLVMGenPass* pass)
+      : OpConversionPattern<ArrayIndexOp>(converter, ctx), pass(pass) {}
 
-  LogicalResult matchAndRewrite(IndexOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(ArrayIndexOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 
   LLVMGenPass* const pass;
 };
 
-LogicalResult IndexOpLowering::matchAndRewrite(
-    IndexOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+LogicalResult ArrayIndexOpLowering::matchAndRewrite(
+    ArrayIndexOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
+  Value offset = _.create<MulOp>(
+      loc, operands[1],
+      pass->buildWordConstant(
+          loc, _, op.arr().getType().cast<ArrayType>()->elem_size.bytes()));
+  Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
+  _.replaceOp(op, val);
+  return success();
+}
 
-  auto src_type = op.seq().getType();
+struct VectorIndexOpLowering : public OpConversionPattern<VectorIndexOp> {
+  VectorIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                        LLVMGenPass* pass)
+      : OpConversionPattern<VectorIndexOp>(converter, ctx), pass(pass) {}
 
-  if (auto ary = src_type.dyn_cast<ArrayType>()) {
-    Value offset = _.create<MulOp>(
-        loc, operands[1],
-        pass->buildWordConstant(loc, _, ary->elem_size.bytes()));
-    Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
-    _.replaceOp(op, val);
-    return success();
+  LogicalResult matchAndRewrite(VectorIndexOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult VectorIndexOpLowering::matchAndRewrite(
+    VectorIndexOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto type = op.vec().getType().cast<VectorType>();
+
+  Value start;
+  switch (op.region()) {
+    case VectorRegion::Inline:
+      start = _.create<GEPOp>(
+          loc, pass->bytePtrType(), operands[0],
+          pass->buildWordConstant(loc, _, type->inline_payload_offset.bytes()));
+      break;
+    case VectorRegion::Partial:
+      start =
+          _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
+                          pass->buildWordConstant(
+                              loc, _, type->partial_payload_offset.bytes()));
+      break;
+    case VectorRegion::Outline: {
+      auto ref_gep = _.create<GEPOp>(
+          loc, pass->bytePtrType(), operands[0],
+          pass->buildWordConstant(loc, _, type->ref_offset.bytes()));
+      auto ref_ptr =
+          _.create<BitcastOp>(loc, pass->intType(type->ref_size), ref_gep);
+      auto ref = _.create<LoadOp>(loc, ref_ptr);
+
+      if (type->reference_mode == VectorType::kOffset) {
+      } else {
+        // TODO: support kPointer
+        assert(false);
+      }
+    } break;
   }
 
-  return failure();
+  Value offset = _.create<MulOp>(
+      loc, operands[1],
+      pass->buildWordConstant(
+          loc, _, op.vec().getType().cast<VectorType>()->elemSize().bytes()));
+
+  Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
+  _.replaceOp(op, val);
+  return success();
 }
 
 LogicalResult DecodeCatchOpLowering::matchAndRewrite(
@@ -637,10 +836,11 @@ void LLVMGenPass::runOnOperation() {
   OwningRewritePatternList patterns(ctx);
   ProtoJitTypeConverter type_converter(ctx, this);
   populateStdToLLVMConversionPatterns(type_converter, patterns);
+  populateLoopToStdConversionPatterns(patterns);
   patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
                DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
                TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
-               DefaultOpLowering, UnitOpLowering, IndexOpLowering>(
+               DefaultOpLowering, UnitOpLowering, ArrayIndexOpLowering>(
       type_converter, ctx, this);
 
   if (failed(

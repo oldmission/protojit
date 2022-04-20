@@ -10,7 +10,7 @@ td_library(
 )
 
 gentbl_cc_library(
-    name = "ProtoJITIRIncGen",
+    name = "ProtoJITIROpsIncGen",
     strip_include_prefix = "",
     tbl_outs = [
         (
@@ -32,6 +32,29 @@ gentbl_cc_library(
     ],
 )
 
+gentbl_cc_library(
+    name = "ProtoJITIREnumIncGen",
+    strip_include_prefix = "",
+    tbl_outs = [
+        (
+            ["-gen-enum-decls"],
+            "enums.hpp.inc",
+        ),
+        (
+            ["-gen-enum-defs"],
+            "enums.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "ir.td",
+    deps = [
+        ":TypesTdFiles",
+        "@llvm-project//mlir:LLVMOpsTdFiles",
+        "@llvm-project//mlir:OpBaseTdFiles",
+        "@llvm-project//mlir:SideEffectInterfacesTdFiles",
+    ],
+)
+
 cc_library(
     name = "compiler",
     srcs = [
@@ -40,6 +63,7 @@ cc_library(
         "generate_ir.cpp",
         "ir.cpp",
         "ir.cpp.inc",
+        "enums.cpp.inc",
         "lib.cpp",
         "llvm_gen2.cpp",
         "portal.cpp",
@@ -54,6 +78,7 @@ cc_library(
         "exceptions.hpp",
         "ir.hpp",
         "ir.hpp.inc",
+        "enums.hpp.inc",
         "llvm_gen_base.hpp",
         "passes.hpp",
         "portal.hpp",

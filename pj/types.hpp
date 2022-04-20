@@ -469,6 +469,7 @@ struct Vector {
 
   Width size;
   Width headSize() const { return size; }
+  Width elemSize() const { return RoundUp(size, alignment); }
 
   // Alignment must be at least as large as the element type's alignment
   // if min_length > 0.

@@ -86,6 +86,8 @@ struct ArrayView {
       : length(length),
         offset(reinterpret_cast<const char*>(data) -
                reinterpret_cast<const char*>(this)) {}
+
+  ArrayView() : length(0), offset(0) {}
 };
 
 }  // namespace pj

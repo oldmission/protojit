@@ -352,11 +352,6 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
       FnKey{from, to, PathAttr::none(ctx), ArrayAttr::get(ctx, {}), buf_type};
   auto func = getOrCreateFn(loc, listener, "xcd", key);
 
-  for (size_t i : {0, 1, 2}) {
-    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
-                    UnitAttr::get(ctx));
-  }
-
   if (!func.isDeclaration()) {
     return func;
   }
@@ -395,8 +390,8 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     Value idx = body->getArgument(0);
     result_buf = body->getArgument(1);
 
-    auto src_elem = _.create<IndexOp>(loc, from->elem, src, idx);
-    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+    auto src_elem = _.create<ArrayIndexOp>(loc, from->elem, src, idx);
+    auto dst_elem = _.create<ArrayIndexOp>(loc, to->elem, dst, idx);
 
     result_buf = _.create<TranscodeOp>(
         loc, result_buf.getType(), src_elem, dst_elem, result_buf,
@@ -410,7 +405,7 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     auto* body = default_loop.getBody();
     _.setInsertionPointToStart(body);
     Value idx = body->getArgument(0);
-    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+    auto dst_elem = _.create<ArrayIndexOp>(loc, to->elem, dst, idx);
     _.create<DefaultOp>(loc, dst_elem, ArrayAttr::get(ctx, {}));
     // ForOp::build automatically creates a terminating yield since
     // we have no loop carried variables.
@@ -623,8 +618,10 @@ void GeneratePass::runOnOperation() {
   target.addLegalOp<FuncOp>();
   target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp>();
   target.addDynamicallyLegalOp<TranscodeOp>([](TranscodeOp op) {
-    return op.src().getType().isa<IntType>() &&
-           op.dst().getType().isa<IntType>();
+    return (op.src().getType().isa<IntType>() &&
+            op.dst().getType().isa<IntType>()) ||
+           (op.src().getType().isa<VectorType>() &&
+            op.dst().getType().isa<VectorType>());
   });
   target.addDynamicallyLegalOp<DefaultOp>(
       [](DefaultOp op) { return op.dst().getType().isa<IntType>(); });

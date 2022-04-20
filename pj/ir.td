@@ -90,9 +90,24 @@ def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
   );
 }
 
-// Retrieve a reference to a value at the given index in an Array or Vector.
-def IndexOp : ProtoJit_Op<"index", [NoSideEffect]> {
-  let arguments = (ins SeqType:$seq, Index:$index);
+// Retrieve a reference to a value at the given index in an Array.
+def ArrayIndexOp : ProtoJit_Op<"arrindex", [NoSideEffect]> {
+  let arguments = (ins ArrayType:$arr, Index:$index);
+  let results = (outs ValueType);
+}
+
+def Inline : I64EnumAttrCase<"Inline", 0>;
+def Partial : I64EnumAttrCase<"Partial", 1>;
+def Outline : I64EnumAttrCase<"Outline", 2>;
+
+def VectorRegion : I64EnumAttr<"VectorRegion", "", [Inline, Partial, Outline]>;
+
+// Retrieve a reference to a value at the given index in the given storage
+// region of a Vector.
+def VectorIndexOp : ProtoJit_Op<"vecindex", [NoSideEffect]> {
+  let arguments = (
+    ins VectorType:$vec, Index:$index, VectorRegion: $region
+  );
   let results = (outs ValueType);
 }
 
