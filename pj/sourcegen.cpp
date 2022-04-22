@@ -10,6 +10,11 @@
 
 namespace pj {
 
+std::string getUniqueID() {
+  static size_t counter = 0;
+  return std::to_string(counter++);
+}
+
 void generateNameRef(types::Name name, std::ostream& output) {
   for (uintptr_t i = 0; i < name.size(); ++i) {
     output << std::string_view(name[i]);
@@ -65,7 +70,7 @@ void generateTypeRef(mlir::Type type, std::ostream& output) {
   } else if (auto V = type.dyn_cast<types::VectorType>()) {
     output << "pj::ArrayView<";
     generateTypeRef(V->elem, output);
-    output << ">";
+    output << ", " << V->min_length << ", " << V->max_length << ">";
   } else {
     UNREACHABLE();
   }
@@ -84,30 +89,29 @@ void printNamespacedName(const T& name, std::ostream& output) {
 
 std::pair<std::string, std::string> buildPJVariableDecl(mlir::Type type,
                                                         std::ostream& output) {
-  static uintptr_t counter = 0;
   std::string rt_type;
   std::string var;
   if (!type) {
     output << (rt_type = "const PJUnitType*") << " "
-           << (var = "unit" + std::to_string(counter++));
+           << (var = "unit" + getUniqueID());
   } else if (type.isa<types::StructType>()) {
     output << (rt_type = "const PJStructType*") << " "
-           << (var = "struct" + std::to_string(counter++));
+           << (var = "struct" + getUniqueID());
   } else if (type.isa<types::InlineVariantType>()) {
     output << (rt_type = "const PJInlineVariantType*") << " "
-           << (var = "inline_variant" + std::to_string(counter++));
+           << (var = "inline_variant" + getUniqueID());
   } else if (type.isa<types::OutlineVariantType>()) {
     // OutlineVariants only exist on the wire
     UNREACHABLE();
   } else if (type.isa<types::IntType>()) {
     output << (rt_type = "const PJIntType*") << " "
-           << (var = "int" + std::to_string(counter++));
+           << (var = "int" + getUniqueID());
   } else if (type.isa<types::ArrayType>()) {
     output << (rt_type = "const PJArrayType*") << " "
-           << (var = "arr" + std::to_string(counter++));
+           << (var = "arr" + getUniqueID());
   } else if (type.isa<types::VectorType>()) {
     output << (rt_type = "const PJVectorType*") << " "
-           << (var = "vector" + std::to_string(counter++));
+           << (var = "vector" + getUniqueID());
   } else {
     UNREACHABLE();
   }
@@ -175,25 +179,35 @@ std::string buildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
   }
 
   if (auto V = type.dyn_cast<types::VectorType>()) {
+    std::string using_decl = "Vec" + getUniqueID();
+    output << "using " << using_decl << " = " << type_ref << ";\n";
+
     std::string elem_var = buildTypeGeneratorStmt(V->elem, output);
     auto [_, var] = buildPJVariableDecl(type, output);
     output << " = PJCreateVectorType(ctx";
     output << ", /*elem=*/" << elem_var;
-    output << ", /*min_length=*/0";
+    output << ", /*min_length=*/" << V->min_length;
     output << ", /*max_length=*/" << V->max_length;
     output << ", /*wire_min_length=*/" << V->min_length;
     output << ", /*ppl_count=*/0";
-    output << ", /*length_offset=*/offsetof(" << type_ref << ", length) << 3";
-    output << ", /*length_size=*/sizeof(" << type_ref << "::length) << 3";
-    output << ", /*ref_offset=*/offsetof(" << type_ref << ", offset) << 3";
-    output << ", /*ref_size=*/sizeof(" << type_ref << "::offset) << 3";
-    output << ", /*reference_mode=*/PJ_REFERENCE_MODE_OFFSET";
-    output << ", /*inline_payload_offset=*/-1";
-    output << ", /*inline_payload_size=*/0";
+    output << ", /*length_offset=*/offsetof(" << using_decl << ", length) << 3";
+    output << ", /*length_size=*/sizeof(" << using_decl << "::length) << 3";
+    output << ", /*ref_offset=*/offsetof(" << using_decl << ", outline) << 3";
+    output << ", /*ref_size=*/sizeof(" << using_decl << "::outline) << 3";
+    output << ", /*reference_mode=*/PJ_REFERENCE_MODE_POINTER";
+    if (V->min_length > 0) {
+      output << ", /*inline_payload_offset=*/offsetof(" << using_decl
+             << ", storage) << 3";
+      output << ", /*inline_payload_size=*/sizeof(" << using_decl
+             << "::storage) << 3";
+    } else {
+      output << ", /*inline_payload_offset=*/-1";
+      output << ", /*inline_payload_size=*/0";
+    }
     output << ", /*partial_payload_offset=*/-1";
     output << ", /*partial_payload_size=*/0";
-    output << ", /*size=*/sizeof(" << type_ref << ") << 3";
-    output << ", /*alignment=*/alignof(" << type_ref << ") << 3";
+    output << ", /*size=*/sizeof(" << using_decl << ") << 3";
+    output << ", /*alignment=*/alignof(" << using_decl << ") << 3";
     output << ", /*outlined_payload_alignment=*/64);\n";
     return var;
   }

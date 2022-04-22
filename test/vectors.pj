@@ -1,0 +1,39 @@
+struct A {
+  vec: uint64[8:16];
+}
+
+struct B {
+  vec: uint64[4:12];
+}
+
+struct C {
+  vec: uint64[:16];
+}
+
+struct NestedA {
+  vec: uint64[:][2:4];
+}
+
+struct NestedB {
+  vec: uint64[2:6][8:16];
+}
+
+struct ItemA {
+  name: char8[8:];
+  price: uint32;
+}
+
+struct ItemB {
+  name: char8[12:];
+  price: uint32;
+  quantity: uint32;
+}
+
+struct CollectionA {
+  items: ItemA[3:];
+}
+
+struct CollectionB {
+  owners: char8[:12][3:];
+  items: ItemB[5:];
+}

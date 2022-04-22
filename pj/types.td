@@ -37,10 +37,6 @@ def ArrayType :
 def VectorType :
     Type<CPred<"$_self.isa<::pj::types::VectorType>()">, "vector">;
 
-def SeqType :
-    Type<CPred<"$_self.isa<::pj::types::ArrayType>() || "
-               "$_self.isa<::pj::types::VectorType>()">, "vector">;
-
 def ProtocolType :
     Type<CPred<"$_self.isa<::pj::types::ProtocolType>()">, "protocol">;
 

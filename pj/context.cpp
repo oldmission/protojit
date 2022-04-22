@@ -26,6 +26,8 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <string.h>
+
 #include "ir.hpp"
 #include "passes.hpp"
 #include "portal.hpp"
@@ -234,32 +236,26 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
     asm_pass.run(*llvm_module);
   });
 
-  llvm::raw_svector_ostream dest(out);
+  auto jit = []() {
+    auto jit = llvm::orc::LLJITBuilder().create();
+    if (!jit) abort();
+    return std::move(jit.get());
+  }();
 
-  llvm::legacy::PassManager pass;
-  machine->addPassesToEmitFile(pass, dest, nullptr,
-                               llvm::CodeGenFileType::CGFT_ObjectFile);
-  pass.run(*llvm_module);
+  llvm::orc::SymbolMap symbols;
+  symbols.try_emplace(jit->mangleAndIntern("memcpy"),
+                      llvm::JITEvaluatedSymbol::fromPointer(&memcpy));
+  if (auto err =
+          jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(symbols))) {
+    abort();
+  }
 
-  auto jit = llvm::orc::LLJITBuilder().create();
-
-  if (!jit) abort();
-
-  if (auto err = jit.get()->addIRModule(llvm::orc::ThreadSafeModule(
+  if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(
           std::move(llvm_module), std::move(llvm_context)))) {
     abort();
   }
 
-  auto buffer = std::make_unique<llvm::SmallVectorMemoryBuffer>(std::move(out));
-
-  auto loaded_object =
-      llvm::object::ObjectFile::createObjectFile(buffer->getMemBufferRef());
-
-  if (!loaded_object) {
-    throw InternalError("Failed to generate machine code.");
-  }
-
-  return std::make_unique<PortalImpl>(std::move(*jit));
+  return std::make_unique<PortalImpl>(std::move(jit));
 }
 
 }  // namespace pj

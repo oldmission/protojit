@@ -36,6 +36,11 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
   let results = (outs BufferType);
 }
 
+def AllocateOp : ProtoJit_Op<"allocate"> {
+  let arguments = (ins BufferType:$buf, Index:$len);
+  let results = (outs BufferType);
+}
+
 // UnitOp generates a placeholder value that will not be used at runtime.
 // Lowers to nullptr and is expected to be optimized out by LLVM.
 def UnitOp : ProtoJit_Op<"empty"> {
@@ -94,20 +99,50 @@ def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
   );
 }
 
-// Retrieve a reference to a value at the given index in an Array or Vector.
-def IndexOp : ProtoJit_Op<"index", [NoSideEffect]> {
-  let arguments = (ins SeqType:$seq, Index:$index);
+// Retrieve a reference to a value at the given index in an Array.
+def ArrayIndexOp : ProtoJit_Op<"arrindex", [NoSideEffect]> {
+  let arguments = (ins ArrayType:$arr, Index:$index);
   let results = (outs ValueType);
 }
 
-// Initialize a vector with a given length.
-//
-// Buffer is handled similarly to 'Transcode'.
-def VectorInitOp : ProtoJit_Op<"vecinit"> {
+// Reads the stored length of a Vector.
+def LengthOp : ProtoJit_Op<"length", [NoSideEffect]> {
+  let arguments = (ins VectorType:$vec);
+  let results = (outs Index);
+}
+
+// Stores the provided length into the length field of a Vector.
+def StoreLengthOp : ProtoJit_Op<"storelength"> {
+  let arguments = (ins VectorType:$vec, Index:$length);
+}
+
+// Stores the provided buffer into the ref field of a Vector.
+def RefOp : ProtoJit_Op<"ref"> {
+  let arguments = (ins VectorType:$vec, BufferType:$buf);
+}
+
+def Inline : I64EnumAttrCase<"Inline", 0>;
+def Partial : I64EnumAttrCase<"Partial", 1>;
+def OutlineRef : I64EnumAttrCase<"OutlineRef", 2>;
+def OutlineBuf : I64EnumAttrCase<"OutlineBuf", 3>;
+
+def VectorRegion : I64EnumAttr<"VectorRegion", "",
+                               [Inline, Partial, OutlineRef, OutlineBuf]>;
+
+// Retrieve a reference to a value at the given index in the given storage
+// region of a Vector. Uses ref to find outlined data if OutlineRef is set and
+// uses $storage if OutlineBuf is set. OutlineBuf must exist because if ref is
+// used while also writing to the outline storage, LLVM believes the two alias
+// and refuses to hoist loads that are in actuality loop-invariant.
+def VectorIndexOp : ProtoJit_Op<"vecindex", [NoSideEffect]> {
   let arguments = (
-    ins VectorType:$vec, AnyUnsignedInteger:$len, BufferType:$buf
+    ins VectorType:$vec,
+    Index:$index,
+    Index:$offset,
+    VectorRegion:$region,
+    BufferType:$storage
   );
-  let results = (outs BufferType);
+  let results = (outs ValueType);
 }
 
 // Construct a generic representation of a value into an AnyType dst.

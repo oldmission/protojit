@@ -65,15 +65,21 @@ struct LLVMGenPass
                                       intAttr(width, value));
   }
 
-  auto bytePtrType() {
-    return mlir::LLVM::LLVMPointerType::get(
-        mlir::IntegerType::get(&getContext(), Bytes(1).bits()));
+  mlir::Value buildTrueVal(mlir::Location& loc, mlir::OpBuilder& _) {
+    return buildIntConstant(loc, _, Bits(1), 1);
   }
 
-  auto wordPtrType() {
-    return mlir::LLVM::LLVMPointerType::get(mlir::IntegerType::get(
-        &getContext(), wordSize().bits(), mlir::IntegerType::Signless));
+  mlir::Value buildFalseVal(mlir::Location& loc, mlir::OpBuilder& _) {
+    return buildIntConstant(loc, _, Bits(1), 0);
   }
+
+  auto ptrType(Width width) {
+    return mlir::LLVM::LLVMPointerType::get(intType(width));
+  }
+
+  auto bytePtrType() { return ptrType(Bytes(1)); }
+
+  auto wordPtrType() { return ptrType(wordSize()); }
 
   mlir::Type boundedBufType() {
     if (!bounded_buf_type_) {
@@ -83,18 +89,37 @@ struct LLVMGenPass
     return bounded_buf_type_;
   }
 
+  Value buildOffsetPtr(Location loc, ConversionPatternRewriter& _, Value src,
+                       Value offset, Width width) {
+    auto ptr = _.create<GEPOp>(loc, bytePtrType(), src, offset);
+    return _.create<BitcastOp>(loc, ptrType(width), ptr);
+  }
+
+  Value buildOffsetPtr(Location loc, ConversionPatternRewriter& _, Value src,
+                       Width offset, Width width) {
+    return buildOffsetPtr(loc, _, src,
+                          buildWordConstant(loc, _, offset.bytes()), width);
+  }
+
   Value buildTagPtr(Location loc, ConversionPatternRewriter& _,
                     VariantType type, Value variant) {
-    auto tag_ptr =
-        _.create<GEPOp>(loc, bytePtrType(), variant,
-                        buildWordConstant(loc, _, type.tag_offset().bytes()));
+    return buildOffsetPtr(loc, _, variant, type.tag_offset(), type.tag_width());
+  }
 
-    return _.create<BitcastOp>(
-        loc, LLVMPointerType::get(intType(type.tag_width())), tag_ptr);
+  Value buildBoundedBuf(Location loc, ConversionPatternRewriter& _, Value ptr,
+                        Value size) {
+    Value buf_struct = _.create<LLVM::UndefOp>(loc, boundedBufType());
+    buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, ptr,
+                                               _.getI64ArrayAttr(0));
+    buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, size,
+                                               _.getI64ArrayAttr(1));
+    return buf_struct;
   }
 
   std::pair<Value, Value> buildBoundedBufferDestructuring(
       Location loc, ConversionPatternRewriter& _, Value buf);
+
+  Value getBufPtr(Location loc, ConversionPatternRewriter& _, Value buf);
 
   LLVMGenPass(const llvm::TargetMachine* machine) : machine_(machine) {}
 
@@ -141,6 +166,15 @@ std::pair<Value, Value> LLVMGenPass::buildBoundedBufferDestructuring(
       _.create<LLVM::ExtractValueOp>(  //
           loc, wordType(), buf, _.getI64ArrayAttr(1)),
   };
+}
+
+Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
+                             Value buf) {
+  if (buf.getType() == boundedBufType()) {
+    return buildBoundedBufferDestructuring(loc, _, buf).first;
+  } else {
+    return buf;
+  }
 }
 
 struct ProjectOpLowering : public OpConversionPattern<ProjectOp> {
@@ -199,13 +233,7 @@ struct FuncOpLowering : public OpConversionPattern<FuncOp> {
       auto ptr = op.getArgument(arg_pos + 1);
       auto size = op.getArgument(arg_pos + 2);
 
-      Value buf_struct = _.create<LLVM::UndefOp>(loc, pass->boundedBufType());
-      buf_struct = _.create<LLVM::InsertValueOp>(  //
-          loc, buf_struct, ptr, _.getI64ArrayAttr(0));
-      buf_struct = _.create<LLVM::InsertValueOp>(  //
-          loc, buf_struct, size, _.getI64ArrayAttr(1));
-
-      old_arg.replaceAllUsesWith(buf_struct);
+      old_arg.replaceAllUsesWith(pass->buildBoundedBuf(loc, _, ptr, size));
       op.eraseArgument(arg_pos);
     }
 
@@ -247,7 +275,9 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
 struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
   TranscodeOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
                       LLVMGenPass* pass)
-      : OpConversionPattern<TranscodeOp>(converter, ctx), pass(pass) {}
+      : OpConversionPattern<TranscodeOp>(converter, ctx), pass(pass) {
+    setHasBoundedRewriteRecursion(true);
+  }
 
   LogicalResult matchAndRewrite(TranscodeOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
@@ -295,7 +325,7 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     return success();
   }
 
-  // Other forms of transcode are not legal at this point.
+  // Other forms of transcode should have been lowered already.
   return failure();
 }
 
@@ -578,33 +608,210 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
-struct IndexOpLowering : public OpConversionPattern<IndexOp> {
-  IndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                  LLVMGenPass* pass)
-      : OpConversionPattern<IndexOp>(converter, ctx), pass(pass) {}
+struct ArrayIndexOpLowering : public OpConversionPattern<ArrayIndexOp> {
+  ArrayIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                       LLVMGenPass* pass)
+      : OpConversionPattern<ArrayIndexOp>(converter, ctx), pass(pass) {}
 
-  LogicalResult matchAndRewrite(IndexOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(ArrayIndexOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 
   LLVMGenPass* const pass;
 };
 
-LogicalResult IndexOpLowering::matchAndRewrite(
-    IndexOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+LogicalResult ArrayIndexOpLowering::matchAndRewrite(
+    ArrayIndexOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
+  Value offset = _.create<MulOp>(
+      loc, operands[1],
+      pass->buildWordConstant(
+          loc, _, op.arr().getType().cast<ArrayType>()->elem_size.bytes()));
+  Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
+  _.replaceOp(op, val);
+  return success();
+}
 
-  auto src_type = op.seq().getType();
+struct VectorIndexOpLowering : public OpConversionPattern<VectorIndexOp> {
+  VectorIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                        LLVMGenPass* pass)
+      : OpConversionPattern<VectorIndexOp>(converter, ctx), pass(pass) {}
 
-  if (auto ary = src_type.dyn_cast<ArrayType>()) {
-    Value offset = _.create<MulOp>(
-        loc, operands[1],
-        pass->buildWordConstant(loc, _, ary->elem_size.bytes()));
-    Value val = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0], offset);
-    _.replaceOp(op, val);
+  LogicalResult matchAndRewrite(VectorIndexOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult VectorIndexOpLowering::matchAndRewrite(
+    VectorIndexOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto type = op.vec().getType().cast<VectorType>();
+
+  Value start;
+  switch (op.region()) {
+    case VectorRegion::Inline:
+      start = _.create<GEPOp>(
+          loc, pass->bytePtrType(), operands[0],
+          pass->buildWordConstant(loc, _, type->inline_payload_offset.bytes()));
+      break;
+    case VectorRegion::Partial:
+      start =
+          _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
+                          pass->buildWordConstant(
+                              loc, _, type->partial_payload_offset.bytes()));
+      break;
+    case VectorRegion::OutlineRef: {
+      auto ref_ptr = pass->buildOffsetPtr(loc, _, operands[0], type->ref_offset,
+                                          type->ref_size);
+      auto ref = _.create<LoadOp>(loc, ref_ptr);
+
+      if (type->reference_mode == Vector::kOffset) {
+        // TODO: bounds check on the offset
+        start = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
+                                ValueRange{ref});
+      } else {
+        assert(type->ref_size == pass->wordSize());
+        start = _.create<IntToPtrOp>(loc, pass->bytePtrType(), ref);
+      }
+    } break;
+    case VectorRegion::OutlineBuf:
+      start = pass->getBufPtr(loc, _, operands[3]);
+      break;
+  }
+
+  Value idx = _.create<AddOp>(loc, pass->wordType(), operands[1], operands[2]);
+  Value offset = _.create<MulOp>(
+      loc, idx,
+      pass->buildWordConstant(
+          loc, _, op.vec().getType().cast<VectorType>()->elemSize().bytes()));
+  Value val = _.create<GEPOp>(loc, pass->bytePtrType(), start, offset);
+
+  _.replaceOp(op, val);
+  return success();
+}
+
+struct AllocateOpLowering : public OpConversionPattern<AllocateOp> {
+  AllocateOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                     LLVMGenPass* pass)
+      : OpConversionPattern<AllocateOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(AllocateOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult AllocateOpLowering::matchAndRewrite(
+    AllocateOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto buf = operands[0];
+  if (buf.getType() == pass->boundedBufType()) {
+    auto [ptr, size] = pass->buildBoundedBufferDestructuring(loc, _, buf);
+    // TODO: insert a bounds check
+    ptr = _.create<GEPOp>(loc, pass->bytePtrType(), ptr, operands[1]);
+    size = _.create<SubOp>(loc, size, operands[1]);
+    buf = pass->buildBoundedBuf(loc, _, ptr, size);
+  } else {
+    buf = _.create<GEPOp>(loc, pass->bytePtrType(), buf, operands[1]);
+  }
+  _.replaceOp(op, buf);
+  return success();
+}
+
+struct LengthOpLowering : public OpConversionPattern<LengthOp> {
+  LengthOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                   LLVMGenPass* pass)
+      : OpConversionPattern<LengthOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(LengthOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult LengthOpLowering::matchAndRewrite(
+    LengthOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto type = op.vec().getType().cast<VectorType>();
+
+  if (type->max_length == 0) {
+    _.replaceOp(op, pass->buildWordConstant(loc, _, 0));
     return success();
   }
 
-  return failure();
+  Value length_ptr = pass->buildOffsetPtr(
+      loc, _, operands[0], type->length_offset, type->length_size);
+  Value length = _.create<ZExtOp>(loc, pass->wordType(),
+                                  _.create<LoadOp>(loc, length_ptr));
+  _.replaceOp(op, length);
+  return success();
+}
+
+struct StoreLengthOpLowering : public OpConversionPattern<StoreLengthOp> {
+  StoreLengthOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                        LLVMGenPass* pass)
+      : OpConversionPattern<StoreLengthOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(StoreLengthOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult StoreLengthOpLowering::matchAndRewrite(
+    StoreLengthOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto type = op.vec().getType().cast<VectorType>();
+
+  Value length_ptr = pass->buildOffsetPtr(
+      loc, _, operands[0], type->length_offset, type->length_size);
+  _.create<StoreOp>(
+      loc,
+      _.create<TruncOp>(loc, pass->intType(type->length_size), operands[1]),
+      length_ptr);
+  _.eraseOp(op);
+  return success();
+}
+
+struct RefOpLowering : public OpConversionPattern<RefOp> {
+  RefOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
+                LLVMGenPass* pass)
+      : OpConversionPattern<RefOp>(converter, ctx), pass(pass) {}
+
+  LogicalResult matchAndRewrite(RefOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
+};
+
+LogicalResult RefOpLowering::matchAndRewrite(
+    RefOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto type = op.vec().getType().cast<VectorType>();
+  auto buf_as_int = _.create<PtrToIntOp>(loc, pass->wordType(),
+                                         pass->getBufPtr(loc, _, operands[1]));
+  auto ref_ptr = pass->buildOffsetPtr(loc, _, operands[0], type->ref_offset,
+                                      type->ref_size);
+
+  if (type->reference_mode == Vector::kPointer) {
+    assert(type->ref_size == pass->wordSize());
+    _.create<StoreOp>(loc, buf_as_int, ref_ptr);
+  } else {
+    auto vec_as_int = _.create<PtrToIntOp>(loc, pass->wordType(), operands[0]);
+    auto offset =
+        _.create<SubOp>(loc, pass->wordType(), buf_as_int, vec_as_int);
+    // TODO: debug assert that this fits within ref_size
+    auto offset_trunc =
+        _.create<TruncOp>(loc, pass->intType(type->ref_size), offset);
+    _.create<StoreOp>(loc, offset_trunc, ref_ptr);
+  }
+
+  _.eraseOp(op);
+  return success();
 }
 
 LogicalResult DecodeCatchOpLowering::matchAndRewrite(
@@ -706,10 +913,12 @@ LogicalResult CallOpLowering::matchAndRewrite(
 struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
   DefaultOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
                     LLVMGenPass* pass)
-      : OpConversionPattern<DefaultOp>(converter, ctx) {}
+      : OpConversionPattern<DefaultOp>(converter, ctx), pass(pass) {}
 
   LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
+
+  LLVMGenPass* const pass;
 };
 
 LogicalResult DefaultOpLowering::matchAndRewrite(
@@ -717,17 +926,25 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
+  if (auto type = op.dst().getType().dyn_cast<IntType>()) {
+    Value ptr =
+        _.create<BitcastOp>(loc, LLVMPointerType::get(type.toMLIR()), op.dst());
+    auto zero = _.create<LLVM::ConstantOp>(loc, type.toMLIR(),
+                                           _.getIntegerAttr(type.toMLIR(), 0));
+    _.create<StoreOp>(loc, zero, ptr, type->alignment.bytes());
+
+    _.eraseOp(op);
+    return success();
+  } else if (auto type = op.dst().getType().dyn_cast<VectorType>()) {
+    auto zero = pass->buildWordConstant(loc, _, 0);
+    _.create<StoreLengthOp>(loc, op.dst(), zero);
+
+    _.eraseOp(op);
+    return success();
+  }
+
   // All other types should have been lowered prior.
-  auto type = op.dst().getType().cast<IntType>();
-
-  Value ptr =
-      _.create<BitcastOp>(loc, LLVMPointerType::get(type.toMLIR()), op.dst());
-  auto zero = _.create<LLVM::ConstantOp>(loc, type.toMLIR(),
-                                         _.getIntegerAttr(type.toMLIR(), 0));
-  _.create<StoreOp>(loc, zero, ptr, type->alignment.bytes());
-
-  _.eraseOp(op);
-  return success();
+  return failure();
 }
 
 struct UnitOpLowering : public OpConversionPattern<UnitOp> {
@@ -766,8 +983,10 @@ void LLVMGenPass::runOnOperation() {
   patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
                DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
                TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
-               DefaultOpLowering, UnitOpLowering, IndexOpLowering,
-               CopyTagOpLowering>(type_converter, ctx, this);
+               DefaultOpLowering, UnitOpLowering, AllocateOpLowering,
+               LengthOpLowering, StoreLengthOpLowering, RefOpLowering,
+               ArrayIndexOpLowering, VectorIndexOpLowering, CopyTagOpLowering>(
+      type_converter, ctx, this);
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {
