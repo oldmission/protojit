@@ -72,4 +72,5 @@ void printAttrForFunctionName(llvm::raw_ostream& os, mlir::Attribute attr) {
 }  // namespace pj
 
 #define GET_OP_CLASSES
+#include "pj/enums.cpp.inc"
 #include "pj/ir.cpp.inc"

@@ -153,7 +153,8 @@ const PJVectorType* PJCreateVectorType(
   auto vector_type = pj::types::VectorType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
       pj::types::Vector{
-          .elem = mlir::Type::getFromOpaquePointer(type),
+          .elem = mlir::Type::getFromOpaquePointer(type)
+                      .cast<pj::types::ValueType>(),
           .min_length = min_length,
           .max_length = max_length,
           .wire_min_length = wire_min_length,
