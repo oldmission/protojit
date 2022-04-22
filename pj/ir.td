@@ -36,6 +36,11 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
   let results = (outs BufferType);
 }
 
+def AllocateOp : ProtoJit_Op<"allocate"> {
+  let arguments = (ins BufferType:$buf, Index:$len);
+  let results = (outs BufferType);
+}
+
 // UnitOp generates a placeholder value that will not be used at runtime.
 // Lowers to nullptr and is expected to be optimized out by LLVM.
 def UnitOp : ProtoJit_Op<"empty"> {
@@ -94,20 +99,51 @@ def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
   );
 }
 
-// Retrieve a reference to a value at the given index in an Array or Vector.
-def IndexOp : ProtoJit_Op<"index", [NoSideEffect]> {
-  let arguments = (ins SeqType:$seq, Index:$index);
+// Retrieve a reference to a value at the given index in an Array.
+def ArrayIndexOp : ProtoJit_Op<"arrindex", [NoSideEffect]> {
+  let arguments = (ins ArrayType:$arr, Index:$index);
   let results = (outs ValueType);
 }
 
-// Initialize a vector with a given length.
-//
-// Buffer is handled similarly to 'Transcode'.
-def VectorInitOp : ProtoJit_Op<"vecinit"> {
+// Reads the stored length of a Vector.
+def LengthOp : ProtoJit_Op<"length", [NoSideEffect]> {
+  let arguments = (ins VectorType:$vec);
+  let results = (outs Index);
+}
+
+// Stores the provided length into the length field of a Vector.
+def StoreLengthOp : ProtoJit_Op<"storelength"> {
+  let arguments = (ins VectorType:$vec, Index:$length);
+}
+
+// Stores the provided buffer into the ref field of a Vector.
+def StoreRefOp : ProtoJit_Op<"storeref"> {
+  let arguments = (ins VectorType:$vec, BufferType:$buf);
+}
+
+def Inline : I64EnumAttrCase<"Inline", 0>;
+def Partial : I64EnumAttrCase<"Partial", 1>;
+def Reference : I64EnumAttrCase<"Reference", 2>;
+def Buffer : I64EnumAttrCase<"Buffer", 3>;
+
+def VectorRegion : I64EnumAttr<"VectorRegion", "",
+                               [Inline, Partial, Reference, Buffer]>;
+
+// Retrieves a reference to a value at the given index in the given storage
+// region of a Vector. The VectorRegion values have the corresponding meanings:
+//   Inline: the inline storage of the vector
+//   Partial: the partial payload storage of the vector
+//   Reference: the region of memory pointed to by the ref field of the vector
+//   Buffer: the provided buffer (for writing outline data)
+// $buf is only used if $region is set to Buffer
+def VectorIndexOp : ProtoJit_Op<"vecindex", [NoSideEffect]> {
   let arguments = (
-    ins VectorType:$vec, AnyUnsignedInteger:$len, BufferType:$buf
+    ins VectorType:$vec,
+    Index:$index,
+    VectorRegion:$region,
+    BufferType:$buf
   );
-  let results = (outs BufferType);
+  let results = (outs ValueType);
 }
 
 // Construct a generic representation of a value into an AnyType dst.

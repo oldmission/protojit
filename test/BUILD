@@ -55,9 +55,9 @@ pj_test(
 )
 
 pj_test(
-    name = "test_lists",
-    srcs = ["test_lists.cpp"],
-    protos = ["lists.pj"],
+    name = "test_vectors",
+    srcs = ["test_vectors.cpp"],
+    protos = ["vectors.pj"],
 )
 
 pj_test(

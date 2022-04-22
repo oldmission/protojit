@@ -185,7 +185,7 @@ ValueType plan(PlanningContext& ctx, VectorType type,
       DivideDown(std::max(Bits(0), inline_payload_offset + inline_payload_size -
                                        partial_payload_offset),
                  el_size);
-  const Width partial_payload_size = Bytes(el_size.bytes() * min_length);
+  const Width partial_payload_size = Bytes(el_size.bytes() * ppl_count);
 
   const Width size =
       std::max(inline_payload_offset + inline_payload_size,
@@ -225,7 +225,6 @@ ValueType plan(mlir::MLIRContext& mlir_ctx, mlir::Type type,
 
   auto planned =
       dispatch(type, [&ctx, path](auto t) { return plan(ctx, t, path); });
-  auto str = planned.dyn_cast<StructType>();
 
   if (ctx.outline) {
     // Update the outlined variant's term offset to the correct alignment

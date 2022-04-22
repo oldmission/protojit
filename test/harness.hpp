@@ -69,9 +69,9 @@ class PJGenericTest
 
   template <typename Src, typename Dest = Src, typename Proto = void,
             typename X, typename Y = void>
-  void transcode(const X* from, Y* to_msg = nullptr,
-                 const std::string& src_path = "",
-                 const std::string& tag_path = "") {
+  std::unique_ptr<char[]> transcode(const X* from, Y* to_msg = nullptr,
+                                    const std::string& src_path = "",
+                                    const std::string& tag_path = "") {
     const PJProtocol* protocol;
     if constexpr (std::is_same_v<Proto, void>) {
       protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
@@ -89,14 +89,18 @@ class PJGenericTest
         portal->ResolveTarget<void (*)(const X*, char*)>("encode");
 
     const auto decode =
-        portal->ResolveTarget<const char* (*)(const char*, char*,
-                                              std::pair<char*, uintptr_t>,
-                                              const void*)>("decode");
+        portal->ResolveTarget<std::pair<const char*, uintptr_t> (*)(
+            const char*, char*, std::pair<char*, uintptr_t>, const void*)>(
+            "decode");
 
-    char buffer[1024];
-    encode(from, buffer);
-    decode(buffer, reinterpret_cast<char*>(to_msg), std::make_pair(nullptr, 0),
-           &handlers);
+    std::array<char, 1024> enc_buffer;
+    auto dec_buffer = std::make_unique<char[]>(1024);
+
+    encode(from, enc_buffer.data());
+    auto [_, size] = decode(enc_buffer.data(), reinterpret_cast<char*>(to_msg),
+                            std::make_pair(dec_buffer.get(), 1024), &handlers);
+
+    return size == 1024 ? nullptr : std::move(dec_buffer);
   }
 
   std::vector<std::pair<std::string, const void*>> branches;

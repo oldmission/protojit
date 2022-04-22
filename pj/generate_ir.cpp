@@ -69,14 +69,42 @@ struct GeneratePass
                                            ArrayType from, ArrayType to,
                                            mlir::Type buf_type);
 
+  mlir::FuncOp getOrCreateVectorTranscodeFn(mlir::Location loc,
+                                            OpBuilder::Listener* listener,
+                                            VectorType from, VectorType to,
+                                            mlir::Type buf_type);
+
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
  private:
+  mlir::Value buildIndex(mlir::Location loc, mlir::OpBuilder& _, size_t value) {
+    return _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), value));
+  }
+
+  mlir::Value buildBool(mlir::Location loc, mlir::OpBuilder& _, bool value) {
+    return _.create<ConstantOp>(loc, _.getBoolAttr(value));
+  }
+
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                      VariantType src_type, VariantType dst_type,
                      const Term* src_term, const Term* dst_term, Value src,
                      Value dst, Value& buffer,
                      llvm::StringMap<const void*>& handler_map);
+
+  mlir::Value generateVectorCopyLoop(mlir::Location loc, mlir::OpBuilder& _,
+                                     Value src, Value src_start,
+                                     VectorRegion src_region, Value dst,
+                                     Value dst_start, VectorRegion dst_region,
+                                     Value copy_length, Value outline_buf,
+                                     Value buf);
+
+  mlir::Value transcodeInlineVector(mlir::Location loc, mlir::OpBuilder& _,
+                                    Value src, Value dst, Value copy_length,
+                                    Value buf);
+
+  mlir::Value transcodeOutlineVector(mlir::Location loc, mlir::OpBuilder& _,
+                                     Value src, Value dst, Value copy_length,
+                                     Value buf);
 
   mlir::FuncOp getOrCreateFn(mlir::Location loc, OpBuilder::Listener* listener,
                              llvm::StringRef prefix, const FnKey& key);
@@ -352,11 +380,6 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
       FnKey{from, to, PathAttr::none(ctx), ArrayAttr::get(ctx, {}), buf_type};
   auto func = getOrCreateFn(loc, listener, "xcd", key);
 
-  for (size_t i : {0, 1, 2}) {
-    func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
-                    UnitAttr::get(ctx));
-  }
-
   if (!func.isDeclaration()) {
     return func;
   }
@@ -370,18 +393,15 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
 
   auto transcode_len = std::min(from->length, to->length);
 
-  auto loop_start =
-      _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), 0));
-  auto loop_end = _.create<ConstantOp>(
-      loc, _.getIntegerAttr(_.getIndexType(), transcode_len));
-  auto step = _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), 1));
+  auto loop_start = buildIndex(loc, _, 0);
+  auto loop_end = buildIndex(loc, _, transcode_len);
+  auto step = buildIndex(loc, _, 1);
 
   auto transcode_loop = _.create<scf::ForOp>(loc, loop_start, loop_end, step,
                                              ValueRange{result_buf});
 
   loop_start = loop_end;
-  loop_end =
-      _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), to->length));
+  loop_end = buildIndex(loc, _, to->length);
   auto default_loop =
       _.create<scf::ForOp>(loc, loop_start, loop_end, step, ValueRange{});
 
@@ -395,8 +415,8 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     Value idx = body->getArgument(0);
     result_buf = body->getArgument(1);
 
-    auto src_elem = _.create<IndexOp>(loc, from->elem, src, idx);
-    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+    auto src_elem = _.create<ArrayIndexOp>(loc, from->elem, src, idx);
+    auto dst_elem = _.create<ArrayIndexOp>(loc, to->elem, dst, idx);
 
     result_buf = _.create<TranscodeOp>(
         loc, result_buf.getType(), src_elem, dst_elem, result_buf,
@@ -410,10 +430,266 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     auto* body = default_loop.getBody();
     _.setInsertionPointToStart(body);
     Value idx = body->getArgument(0);
-    auto dst_elem = _.create<IndexOp>(loc, to->elem, dst, idx);
+    auto dst_elem = _.create<ArrayIndexOp>(loc, to->elem, dst, idx);
     _.create<DefaultOp>(loc, dst_elem, ArrayAttr::get(ctx, {}));
     // ForOp::build automatically creates a terminating yield since
     // we have no loop carried variables.
+  }
+
+  cached_fns_.emplace(key, func);
+  return mlir::FuncOp{func};
+}
+
+mlir::Value GeneratePass::generateVectorCopyLoop(
+    mlir::Location loc, mlir::OpBuilder& _, Value src, Value src_start,
+    VectorRegion src_region, Value dst, Value dst_start,
+    VectorRegion dst_region, Value copy_length, Value outline_buf, Value buf) {
+  auto* ctx = _.getContext();
+  auto loop_start = buildIndex(loc, _, 0);
+  auto loop_end = copy_length;
+  auto step = buildIndex(loc, _, 1);
+  auto copy_loop =
+      _.create<scf::ForOp>(loc, loop_start, loop_end, step, ValueRange{buf});
+  auto result_buf = copy_loop.getResult(0);
+  auto ip = _.saveInsertionPoint();
+
+  auto* body = copy_loop.getBody();
+  _.setInsertionPointToEnd(body);
+
+  Value idx = body->getArgument(0);
+  Value loop_buf = body->getArgument(1);
+
+  Value src_idx = _.create<AddIOp>(loc, src_start, idx);
+  Value dst_idx = _.create<AddIOp>(loc, dst_start, idx);
+
+  auto src_elem =
+      _.create<VectorIndexOp>(loc, src.getType().cast<VectorType>()->elem, src,
+                              src_idx, src_region, outline_buf);
+  auto dst_elem =
+      _.create<VectorIndexOp>(loc, dst.getType().cast<VectorType>()->elem, dst,
+                              dst_idx, dst_region, outline_buf);
+
+  loop_buf = _.create<TranscodeOp>(loc, loop_buf.getType(), src_elem, dst_elem,
+                                   loop_buf, PathAttr::none(ctx),
+                                   ArrayAttr::get(ctx, {}));
+  _.create<scf::YieldOp>(loc, loop_buf);
+
+  _.restoreInsertionPoint(ip);
+  return result_buf;
+}
+
+mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
+                                                mlir::OpBuilder& _, Value src,
+                                                Value dst, Value copy_length,
+                                                Value buf) {
+  auto src_type = src.getType().cast<VectorType>();
+  auto dst_type = dst.getType().cast<VectorType>();
+
+  Value is_dst_inline = [&]() -> Value {
+    if (dst_type->min_length == 0) {
+      return buildBool(loc, _, false);
+    } else if (src_type->min_length <= dst_type->min_length) {
+      // copy_length is guaranteed to be <= src_type->min_length because src is
+      // inline and therefore is also <= dst_type->min_length
+      return buildBool(loc, _, true);
+    }
+    return _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
+                            buildIndex(loc, _, dst_type->min_length));
+  }();
+
+  auto zero = buildIndex(loc, _, 0);
+  auto dst_inline_if = _.create<scf::IfOp>(loc, buf.getType(), is_dst_inline,
+                                           /*withElseRegion=*/true);
+  auto ip = _.saveInsertionPoint();
+
+  // If dst is inline
+  {
+    _.setInsertionPointToStart(dst_inline_if.thenBlock());
+    _.create<scf::YieldOp>(
+        loc, generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Inline,
+                                    dst, zero, VectorRegion::Inline,
+                                    copy_length, buf, buf));
+  }
+
+  // If dst is outline
+  {
+    _.setInsertionPointToStart(dst_inline_if.elseBlock());
+    _.create<StoreRefOp>(loc, dst, buf);
+
+    auto ppl_count = buildIndex(loc, _, dst_type->ppl_count);
+    auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
+    auto outline_bytes = _.create<MulIOp>(
+        loc, buildIndex(loc, _, dst_type->headSize().bytes()), outline_count);
+
+    Value result_buf =
+        _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
+    result_buf = generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Inline,
+                                        dst, zero, VectorRegion::Partial,
+                                        ppl_count, buf, result_buf);
+    _.create<scf::YieldOp>(
+        loc, generateVectorCopyLoop(
+                 loc, _, src, ppl_count, VectorRegion::Inline, dst, zero,
+                 VectorRegion::Buffer, outline_count, buf, result_buf));
+  }
+
+  _.restoreInsertionPoint(ip);
+  return dst_inline_if.getResult(0);
+}
+
+mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
+                                                 mlir::OpBuilder& _, Value src,
+                                                 Value dst, Value copy_length,
+                                                 Value buf) {
+  auto src_type = src.getType().cast<VectorType>();
+  auto dst_type = dst.getType().cast<VectorType>();
+
+  Value is_dst_inline = [&]() -> Value {
+    if (dst_type->min_length == 0 ||
+        src_type->min_length >= dst_type->min_length) {
+      // It cannot be inline if there is no inline storage or if the input
+      // vector (which we know to be outline) has a larger inline storage than
+      // the dst vector does
+      return buildBool(loc, _, false);
+    } else if (src_type->max_length >= 0 &&
+               src_type->max_length <= dst_type->min_length) {
+      return buildBool(loc, _, true);
+    } else {
+      return _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
+                              buildIndex(loc, _, dst_type->min_length));
+    }
+  }();
+
+  auto zero = buildIndex(loc, _, 0);
+  auto dst_inline_if = _.create<scf::IfOp>(loc, buf.getType(), is_dst_inline,
+                                           /*withElseRegion=*/true);
+  auto ip = _.saveInsertionPoint();
+
+  {  // dst is inline
+    _.setInsertionPointToStart(dst_inline_if.thenBlock());
+
+    auto ppl_count = buildIndex(loc, _, src_type->ppl_count);
+    auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
+
+    auto result_buf =
+        generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Partial, dst,
+                               zero, VectorRegion::Inline, ppl_count, buf, buf);
+    _.create<scf::YieldOp>(
+        loc, generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Reference,
+                                    dst, ppl_count, VectorRegion::Inline,
+                                    outline_count, buf, result_buf));
+  }
+
+  {  // dst is outline
+    _.setInsertionPointToStart(dst_inline_if.elseBlock());
+    _.create<StoreRefOp>(loc, dst, buf);
+
+    auto src_ppl_count = buildIndex(loc, _, src_type->ppl_count);
+    auto dst_ppl_count = buildIndex(loc, _, dst_type->ppl_count);
+
+    if (src_type->ppl_count <= dst_type->ppl_count) {
+      auto dst_ppl_leftover =
+          buildIndex(loc, _, dst_type->ppl_count - src_type->ppl_count);
+      auto outline_count = _.create<SubIOp>(loc, copy_length, dst_ppl_count);
+      auto outline_bytes = _.create<MulIOp>(
+          loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
+
+      Value result_buf =
+          _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
+      result_buf = generateVectorCopyLoop(
+          loc, _, src, zero, VectorRegion::Partial, dst, zero,
+          VectorRegion::Partial, src_ppl_count, buf, result_buf);
+      result_buf = generateVectorCopyLoop(
+          loc, _, src, zero, VectorRegion::Reference, dst, src_ppl_count,
+          VectorRegion::Partial, dst_ppl_leftover, buf, result_buf);
+      _.create<scf::YieldOp>(
+          loc, generateVectorCopyLoop(
+                   loc, _, src, dst_ppl_leftover, VectorRegion::Reference, dst,
+                   zero, VectorRegion::Buffer, outline_count, buf, result_buf));
+    } else {
+      auto src_ppl_leftover =
+          buildIndex(loc, _, src_type->ppl_count - dst_type->ppl_count);
+      auto dst_outline_count =
+          _.create<SubIOp>(loc, copy_length, dst_ppl_count);
+      auto src_outline_count =
+          _.create<SubIOp>(loc, copy_length, src_ppl_count);
+      auto dst_outline_bytes = _.create<MulIOp>(
+          loc, buildIndex(loc, _, dst_type->elemSize().bytes()),
+          dst_outline_count);
+
+      Value result_buf =
+          _.create<AllocateOp>(loc, buf.getType(), buf, dst_outline_bytes);
+      result_buf = generateVectorCopyLoop(
+          loc, _, src, zero, VectorRegion::Partial, dst, zero,
+          VectorRegion::Partial, dst_ppl_count, buf, result_buf);
+      result_buf = generateVectorCopyLoop(
+          loc, _, src, dst_ppl_count, VectorRegion::Partial, dst, zero,
+          VectorRegion::Buffer, src_ppl_leftover, buf, result_buf);
+      _.create<scf::YieldOp>(
+          loc,
+          generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Reference,
+                                 dst, src_ppl_leftover, VectorRegion::Buffer,
+                                 src_outline_count, buf, result_buf));
+    }
+  }
+
+  _.restoreInsertionPoint(ip);
+  return dst_inline_if.getResult(0);
+}
+
+mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
+    mlir::Location loc, OpBuilder::Listener* listener, VectorType from,
+    VectorType to, mlir::Type buf_type) {
+  auto* ctx = &getContext();
+  auto key =
+      FnKey{from, to, PathAttr::none(ctx), ArrayAttr::get(ctx, {}), buf_type};
+  auto func = getOrCreateFn(loc, listener, "xcd", key);
+
+  if (!func.isDeclaration()) {
+    return func;
+  }
+
+  auto* entry_block = func.addEntryBlock();
+  auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
+  _.setListener(listener);
+
+  Value src = func.getArgument(0), dst = func.getArgument(1),
+        buf = func.getArgument(2);
+
+  auto src_length = _.create<LengthOp>(loc, _.getIndexType(), src);
+  auto copy_length = [&]() -> Value {
+    if (to->max_length < 0 ||
+        (from->max_length >= 0 && from->max_length <= to->max_length)) {
+      return src_length;
+    }
+    auto max = buildIndex(loc, _, to->max_length);
+    auto cond = _.create<CmpIOp>(loc, CmpIPredicate::ule, src_length, max);
+    return _.create<SelectOp>(loc, cond, src_length, max);
+  }();
+
+  _.create<StoreLengthOp>(loc, dst, copy_length);
+
+  auto is_src_inline = [&]() -> Value {
+    if (from->min_length == 0) {
+      return buildBool(loc, _, false);
+    }
+    return _.create<CmpIOp>(loc, CmpIPredicate::ule, src_length,
+                            buildIndex(loc, _, from->min_length));
+  }();
+
+  auto src_inline_if = _.create<scf::IfOp>(loc, buf_type, is_src_inline,
+                                           /*withElseRegion=*/true);
+  _.create<ReturnOp>(loc, src_inline_if.getResult(0));
+
+  {  // src is inline
+    _.setInsertionPointToStart(src_inline_if.thenBlock());
+    _.create<scf::YieldOp>(
+        loc, transcodeInlineVector(loc, _, src, dst, copy_length, buf));
+  }
+
+  {  // src is not inline
+    _.setInsertionPointToStart(src_inline_if.elseBlock());
+    _.create<scf::YieldOp>(
+        loc, transcodeOutlineVector(loc, _, src, dst, copy_length, buf));
   }
 
   cached_fns_.emplace(key, func);
@@ -578,6 +854,10 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     fn = pass->getOrCreateArrayTranscodeFn(
         loc, _.getListener(), src_type.cast<ArrayType>(),
         dst_type.cast<ArrayType>(), op.getResult().getType());
+  } else if (src_type.isa<VectorType>() && dst_type.isa<VectorType>()) {
+    fn = pass->getOrCreateVectorTranscodeFn(
+        loc, _.getListener(), src_type.cast<VectorType>(),
+        dst_type.cast<VectorType>(), op.getResult().getType());
   } else {
     return failure();
   }
@@ -641,8 +921,10 @@ void GeneratePass::runOnOperation() {
     return op.src().getType().isa<IntType>() &&
            op.dst().getType().isa<IntType>();
   });
-  target.addDynamicallyLegalOp<DefaultOp>(
-      [](DefaultOp op) { return op.dst().getType().isa<IntType>(); });
+  target.addDynamicallyLegalOp<DefaultOp>([](DefaultOp op) {
+    return op.dst().getType().isa<IntType>() ||
+           op.dst().getType().isa<VectorType>();
+  });
 
   OwningRewritePatternList patterns(ctx);
   patterns

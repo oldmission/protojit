@@ -439,7 +439,7 @@ struct ArrayType
 // If min_length == max_length, only representation A is possible.
 struct Vector {
   /*** Parsed ***/
-  mlir::Type elem;
+  ValueType elem;
 
   // Never None. 0 implies no inline storage.
   intptr_t min_length;
@@ -482,6 +482,9 @@ struct Vector {
 
   Width size;
   Width headSize() const { return size; }
+  Width elemSize() const {
+    return RoundUp(elem.headSize(), elem.headAlignment());
+  }
 
   // Alignment must be at least as large as the element type's alignment
   // if min_length > 0.
