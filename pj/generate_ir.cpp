@@ -183,14 +183,15 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                                             dst_type.term_offset());
 
     if (dst_type.isa<OutlineVariantType>()) {
-      // TODO: ensure sufficient space if decoding into an outline variant.
-      buffer =
-          _.create<ir::ProjectOp>(loc, buffer.getType(), buffer,
-                                  dst_term->type.cast<ValueType>().headSize());
+      buffer = _.create<ir::AllocateOp>(
+          loc, buffer.getType(), buffer,
+          buildIndex(loc, _,
+                     dst_term->type.cast<ValueType>().headSize().bytes()));
     }
 
-    _.create<ir::TranscodeOp>(loc, buffer.getType(), src_body, dst_body, buffer,
-                              PathAttr::none(ctx), ArrayAttr::get(ctx, {}));
+    buffer = _.create<ir::TranscodeOp>(loc, buffer.getType(), src_body,
+                                       dst_body, buffer, PathAttr::none(ctx),
+                                       ArrayAttr::get(ctx, {}));
   }
 
   _.create<TagOp>(loc, dst,
@@ -229,15 +230,33 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
     from_fields[field.name] = &field;
   }
 
+  // Make sure the field containing the outline variant corresponding to the
+  // tag path (if there is one) gets transcoded first, because its data is
+  // expected to come first in the buffer
+  llvm::SmallVector<const StructField*, 4> to_fields;
+  const StructField* outline_field = nullptr;
+  for (auto& field : to->fields) {
+    if (field.type.isa<OutlineVariantType>() ||
+        (field.type.isa<StructType>() &&
+         field.type.cast<StructType>()->outline_variant)) {
+      outline_field = &field;
+    } else {
+      to_fields.push_back(&field);
+    }
+  }
+  if (outline_field != nullptr) {
+    to_fields.insert(to_fields.begin(), outline_field);
+  }
+
   Value result_buf = func.getArgument(2);
-  for (auto& to_field : to->fields) {
+  for (auto* to_field : to_fields) {
     llvm::SmallVector<mlir::Attribute> field_handlers;
 
     for (auto& attr : handlers) {
       auto handler = attr.cast<DispatchHandlerAttr>();
-      if (!handler.path().startsWith(to_field.name)) continue;
+      if (!handler.path().startsWith(to_field->name)) continue;
       field_handlers.emplace_back(DispatchHandlerAttr::get(
-          ctx, std::make_pair(handler.path().into(to_field.name),
+          ctx, std::make_pair(handler.path().into(to_field->name),
                               handler.address())));
     }
 
@@ -245,8 +264,8 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
 
     // Project out the target field.
     auto dst_field =
-        _.create<ir::ProjectOp>(loc, to_field.type, dst, to_field.offset);
-    if (auto it = from_fields.find(to_field.name); it != from_fields.end()) {
+        _.create<ir::ProjectOp>(loc, to_field->type, dst, to_field->offset);
+    if (auto it = from_fields.find(to_field->name); it != from_fields.end()) {
       auto& from_field = it->second;
       auto src_field = _.create<ir::ProjectOp>(loc, from_field->type, src,
                                                from_field->offset);
@@ -255,7 +274,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
       // the source field into the target.
       result_buf = _.create<ir::TranscodeOp>(
           loc, result_buf.getType(), src_field, dst_field, result_buf,
-          path.into(to_field.name), handlers_attr);
+          path.into(to_field->name), handlers_attr);
     } else {
       // Otherwise fill in the target field with a default value.
       _.create<ir::DefaultOp>(loc, dst_field, handlers_attr);

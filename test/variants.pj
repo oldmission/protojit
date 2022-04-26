@@ -56,3 +56,8 @@ variant EnumB {
   y;
   x;
 }
+
+struct VecVar {
+  vec: uint64[:];
+  var: Var4;
+}

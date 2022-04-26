@@ -198,6 +198,21 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
   // EXPECT_EQ(GenSize<Outer3>(0x400, {"a", "w"}, {"a", "."})(&F), 11);
 }
 
+TEST_F(PJTest, VariantAfterVector) {
+  std::array<uint64_t, 4> values{1, 2, 3, 4};
+  VecVar F{.vec = {&values[0], values.size()},
+           .var = {.value = {.x = 0xff}, .tag = Var4::Kind::x}};
+  VecVar T;
+
+  onMatch<0, VecVar>("var.x", [&](const VecVar& T) {
+    EXPECT_EQ(T.var.tag, Var4::Kind::x);
+    EXPECT_EQ(T.var.value.x, 0xff);
+    EXPECT_EQ(T.vec, F.vec);
+  });
+
+  transcode<VecVar>(&F, &T, "", "var._");
+}
+
 TEST_F(PJTest, EnumTableTest) {
   EnumA F{.tag = EnumA::Kind::x};
   EnumB T{.tag = EnumB::Kind::undef};
