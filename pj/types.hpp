@@ -76,7 +76,7 @@ struct IntType
 
 struct StructField {
   /*** Parsed ***/
-  mlir::Type type;
+  ValueType type;
   StringRef name;
 
   /*** Generated ***/
@@ -97,6 +97,8 @@ struct Struct {
   /*** Generated ***/
   Width size = Width::None();
   Width alignment = Width::None();
+
+  ValueType outline_variant = {};
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }

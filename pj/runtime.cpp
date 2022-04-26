@@ -58,10 +58,11 @@ const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
 
 const PJStructField* PJCreateStructField(const char* name, const void* type,
                                          Bits offset) {
-  const auto* field =
-      new pj::types::StructField{.type = mlir::Type::getFromOpaquePointer(type),
-                                 .name = name,
-                                 .offset = pj::Bits(offset)};
+  const auto* field = new pj::types::StructField{
+      .type =
+          mlir::Type::getFromOpaquePointer(type).cast<pj::types::ValueType>(),
+      .name = name,
+      .offset = pj::Bits(offset)};
   return reinterpret_cast<const PJStructField*>(field);
 }
 

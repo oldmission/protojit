@@ -73,7 +73,8 @@ ValueType plan(PlanningContext& ctx, StructType type,
     }
   }
 
-  if (matches(path) && ctx.outline) {
+  bool contains_outline_variant = matches(path) && ctx.outline;
+  if (contains_outline_variant) {
     auto data = OutlineVariant(ctx.outline);
     data.term_offset += offset - outline_offset_start;
     ctx.outline.setTypeData(data);
@@ -81,8 +82,12 @@ ValueType plan(PlanningContext& ctx, StructType type,
 
   auto planned =
       StructType::get(&ctx.ctx, types::TypeDomain::kWire, type.name());
-  planned.setTypeData(
-      {.fields = fields, .size = offset, .alignment = alignment});
+  planned.setTypeData({.fields = fields,
+                       .size = offset,
+                       .alignment = alignment,
+                       .outline_variant = contains_outline_variant
+                                              ? ctx.outline
+                                              : types::OutlineVariantType{}});
   return planned;
 }
 
