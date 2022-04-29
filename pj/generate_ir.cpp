@@ -555,21 +555,32 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         dst_type.cast<StructType>(), op.path(), op.handlers(),
         op.getResult().getType());
   } else if (src_type.isa<VariantType>() && dst_type.isa<VariantType>()) {
+    auto src_var = src_type.cast<VariantType>(),
+         dst_var = dst_type.cast<VariantType>();
     if (src_type.isEnum() && dst_type.isEnum()) {
-      // Check that tag values are so large that we build an absurd lookup
-      // table.
-      static constexpr size_t kEnumTableExpansionLimit = 4;
+      bool exact_match = src_var.terms().size() == dst_var.terms().size();
       uint64_t max_src_tag = 0;
-      for (auto& term : src_type.cast<VariantType>().terms()) {
-        max_src_tag = std::max(max_src_tag, term.tag);
+      for (size_t i = 0; i < src_var.terms().size(); ++i) {
+        max_src_tag = std::max(max_src_tag, src_var.terms()[i].tag);
+        if (exact_match &&
+            (src_var.terms()[i].name != dst_var.terms()[i].name ||
+             src_var.terms()[i].tag != dst_var.terms()[i].tag)) {
+          exact_match = false;
+        }
       }
-      if (max_src_tag <= kEnumTableExpansionLimit *
+
+      // Check that tag values aren't so large that we build an
+      // absurd lookup table.
+      static constexpr size_t kEnumTableExpansionLimit = 4;
+      if (exact_match ||
+          max_src_tag <= kEnumTableExpansionLimit *
                              src_type.cast<VariantType>().terms().size()) {
         _.create<CopyTagOp>(loc, operands[0], operands[1]);
         _.replaceOp(op, operands[2]);
         return success();
       }
     }
+
     fn = pass->getOrCreateVariantTranscodeFn(
         loc, _.getListener(), src_type.cast<VariantType>(),
         dst_type.cast<VariantType>(), op.path(), op.handlers(),
