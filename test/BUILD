@@ -58,6 +58,7 @@ pj_test(
     name = "test_vectors",
     srcs = ["test_vectors.cpp"],
     protos = ["vectors.pj"],
+    size = "medium",
 )
 
 pj_test(
