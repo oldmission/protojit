@@ -9,15 +9,38 @@
 
 #include "defer.hpp"
 #include "ir.hpp"
-#include "llvm_gen_base.hpp"
+#include "llvm_extra.hpp"
 #include "side_effect_analysis.hpp"
 #include "util.hpp"
 
 namespace pj {
 using namespace mlir;
+using mlir::CallOp;
+
 using namespace mlir::LLVM;
 using namespace ir;
 using namespace types;
+
+#define FOR_EACH_OP_LOWERING(V) \
+  V(CallOp)                     \
+  V(FuncOp)                     \
+  V(InvokeCallbackOp)           \
+  V(DecodeCatchOp)              \
+  V(ProjectOp)                  \
+  V(TranscodeOp)                \
+  V(TagOp)                      \
+  V(MatchOp)                    \
+  V(SetCallbackOp)              \
+  V(DefaultOp)                  \
+  V(UnitOp)                     \
+  V(AllocateOp)                 \
+  V(LengthOp)                   \
+  V(StoreLengthOp)              \
+  V(StoreRefOp)                 \
+  V(ArrayIndexOp)               \
+  V(VectorIndexOp)              \
+  V(CopyTagOp)                  \
+  V(PoisonOp)
 
 namespace {
 struct LLVMGenPass
@@ -158,6 +181,22 @@ struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
   LLVMGenPass* pass;
 };
 
+#define DEFINE_OP_LOWERING(OP)                                               \
+  struct OP##Lowering : public OpConversionPattern<OP> {                     \
+    OP##Lowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,         \
+                 LLVMGenPass* pass)                                          \
+        : OpConversionPattern<OP>(converter, ctx), pass(pass) {}             \
+                                                                             \
+    LogicalResult matchAndRewrite(OP op, ArrayRef<Value> operands,           \
+                                  ConversionPatternRewriter& _) const final; \
+                                                                             \
+    LLVMGenPass* const pass;                                                 \
+  };
+
+FOR_EACH_OP_LOWERING(DEFINE_OP_LOWERING)
+
+#undef DEFINE_OP_LOWERING
+
 std::pair<Value, Value> LLVMGenPass::buildBoundedBufferDestructuring(
     Location loc, ConversionPatternRewriter& _, Value buf) {
   return {
@@ -172,77 +211,56 @@ Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
                              Value buf) {
   if (buf.getType() == boundedBufType()) {
     return buildBoundedBufferDestructuring(loc, _, buf).first;
-  } else {
-    return buf;
   }
+  return buf;
 }
 
-struct ProjectOpLowering : public OpConversionPattern<ProjectOp> {
-  ProjectOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                    LLVMGenPass* pass)
-      : OpConversionPattern<ProjectOp>(converter, ctx), pass(pass) {}
+LogicalResult FuncOpLowering::matchAndRewrite(
+    FuncOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
+  auto loc = op.getLoc();
 
-  LogicalResult matchAndRewrite(ProjectOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
+  _.startRootUpdate(op);
 
-  LLVMGenPass* const pass;
-};
+  if (pass->effectAnalysis()->hasEffects(op)) {
+    // success
+    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
+                      DictionaryAttr::get(ctx));
+    // callback
+    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
+                      DictionaryAttr::get(ctx));
 
-struct FuncOpLowering : public OpConversionPattern<FuncOp> {
-  FuncOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                 LLVMGenPass* pass)
-      : OpConversionPattern<FuncOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(FuncOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final {
-    auto* ctx = _.getContext();
-    auto loc = op.getLoc();
-
-    _.startRootUpdate(op);
-
-    if (pass->effectAnalysis()->hasEffects(op)) {
-      // success
-      op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
-                        DictionaryAttr::get(ctx));
-      // callback
-      op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
-                        DictionaryAttr::get(ctx));
-
-      pass->setEffectDefs(op, op.getArgument(op.getNumArguments() - 2),
-                          op.getArgument(op.getNumArguments() - 1));
-    }
-
-    _.setInsertionPointToStart(&*op.body().begin());
-
-    auto buf_args =
-        pass->effectAnalysis()->flattenedBufferArguments(op.getName());
-
-    size_t arg_delta = 0;
-    for (auto arg : buf_args) {
-      auto arg_pos = arg + arg_delta++;
-      auto old_arg = op.getArgument(arg_pos);
-
-      op.insertArgument(arg_pos + 1, pass->bytePtrType(),
-                        DictionaryAttr::get(ctx));
-      op.setArgAttr(arg_pos + 1, LLVM::LLVMDialect::getNoAliasAttrName(),
-                    UnitAttr::get(ctx));
-
-      op.insertArgument(arg_pos + 2, pass->wordType(),
-                        DictionaryAttr::get(ctx));
-
-      auto ptr = op.getArgument(arg_pos + 1);
-      auto size = op.getArgument(arg_pos + 2);
-
-      old_arg.replaceAllUsesWith(pass->buildBoundedBuf(loc, _, ptr, size));
-      op.eraseArgument(arg_pos);
-    }
-
-    _.finalizeRootUpdate(op);
-    return success();
+    pass->setEffectDefs(op, op.getArgument(op.getNumArguments() - 2),
+                        op.getArgument(op.getNumArguments() - 1));
   }
 
-  LLVMGenPass* const pass;
-};
+  _.setInsertionPointToStart(&*op.body().begin());
+
+  auto buf_args =
+      pass->effectAnalysis()->flattenedBufferArguments(op.getName());
+
+  size_t arg_delta = 0;
+  for (auto arg : buf_args) {
+    auto arg_pos = arg + arg_delta++;
+    auto old_arg = op.getArgument(arg_pos);
+
+    op.insertArgument(arg_pos + 1, pass->bytePtrType(),
+                      DictionaryAttr::get(ctx));
+    op.setArgAttr(arg_pos + 1, LLVM::LLVMDialect::getNoAliasAttrName(),
+                  UnitAttr::get(ctx));
+
+    op.insertArgument(arg_pos + 2, pass->wordType(), DictionaryAttr::get(ctx));
+
+    auto ptr = op.getArgument(arg_pos + 1);
+    auto size = op.getArgument(arg_pos + 2);
+
+    old_arg.replaceAllUsesWith(pass->buildBoundedBuf(loc, _, ptr, size));
+    op.eraseArgument(arg_pos);
+  }
+
+  _.finalizeRootUpdate(op);
+  return success();
+}
 
 LogicalResult ProjectOpLowering::matchAndRewrite(
     ProjectOp op, ArrayRef<Value> operands,
@@ -271,19 +289,6 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
 
   return success();
 }
-
-struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
-  TranscodeOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                      LLVMGenPass* pass)
-      : OpConversionPattern<TranscodeOp>(converter, ctx), pass(pass) {
-    setHasBoundedRewriteRecursion(true);
-  }
-
-  LogicalResult matchAndRewrite(TranscodeOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
 
 LogicalResult TranscodeOpLowering::matchAndRewrite(
     TranscodeOp op, ArrayRef<Value> operands,
@@ -329,17 +334,6 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
   return failure();
 }
 
-struct TagOpLowering : public OpConversionPattern<TagOp> {
-  TagOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                LLVMGenPass* pass)
-      : OpConversionPattern<TagOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(TagOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult TagOpLowering::matchAndRewrite(
     TagOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
@@ -354,17 +348,6 @@ LogicalResult TagOpLowering::matchAndRewrite(
   _.eraseOp(op);
   return success();
 }
-
-struct CopyTagOpLowering : public OpConversionPattern<CopyTagOp> {
-  CopyTagOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                    LLVMGenPass* pass)
-      : OpConversionPattern<CopyTagOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(CopyTagOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
 
 LogicalResult CopyTagOpLowering::matchAndRewrite(
     CopyTagOp op, ArrayRef<Value> operands,
@@ -462,17 +445,6 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
   return success();
 }
 
-struct MatchOpLowering : public OpConversionPattern<MatchOp> {
-  MatchOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                  LLVMGenPass* pass)
-      : OpConversionPattern<MatchOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(MatchOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult MatchOpLowering::matchAndRewrite(
     MatchOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
@@ -518,17 +490,6 @@ LogicalResult MatchOpLowering::matchAndRewrite(
   return success();
 }
 
-struct InvokeCallbackOpLowering : public OpConversionPattern<InvokeCallbackOp> {
-  InvokeCallbackOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                           LLVMGenPass* pass)
-      : OpConversionPattern<InvokeCallbackOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(InvokeCallbackOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
     InvokeCallbackOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -573,28 +534,6 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
-struct DecodeCatchOpLowering : public OpConversionPattern<DecodeCatchOp> {
-  DecodeCatchOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                        LLVMGenPass* pass)
-      : OpConversionPattern<DecodeCatchOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(DecodeCatchOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
-struct SetCallbackOpLowering : public OpConversionPattern<SetCallbackOp> {
-  SetCallbackOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                        LLVMGenPass* pass)
-      : OpConversionPattern<SetCallbackOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(SetCallbackOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult SetCallbackOpLowering::matchAndRewrite(
     SetCallbackOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -608,17 +547,6 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
-struct ArrayIndexOpLowering : public OpConversionPattern<ArrayIndexOp> {
-  ArrayIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                       LLVMGenPass* pass)
-      : OpConversionPattern<ArrayIndexOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(ArrayIndexOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult ArrayIndexOpLowering::matchAndRewrite(
     ArrayIndexOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -631,17 +559,6 @@ LogicalResult ArrayIndexOpLowering::matchAndRewrite(
   _.replaceOp(op, val);
   return success();
 }
-
-struct VectorIndexOpLowering : public OpConversionPattern<VectorIndexOp> {
-  VectorIndexOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                        LLVMGenPass* pass)
-      : OpConversionPattern<VectorIndexOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(VectorIndexOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
 
 LogicalResult VectorIndexOpLowering::matchAndRewrite(
     VectorIndexOp op, ArrayRef<Value> operands,
@@ -691,17 +608,6 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
   return success();
 }
 
-struct AllocateOpLowering : public OpConversionPattern<AllocateOp> {
-  AllocateOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                     LLVMGenPass* pass)
-      : OpConversionPattern<AllocateOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(AllocateOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult AllocateOpLowering::matchAndRewrite(
     AllocateOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -719,17 +625,6 @@ LogicalResult AllocateOpLowering::matchAndRewrite(
   _.replaceOp(op, buf);
   return success();
 }
-
-struct LengthOpLowering : public OpConversionPattern<LengthOp> {
-  LengthOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                   LLVMGenPass* pass)
-      : OpConversionPattern<LengthOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(LengthOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
 
 LogicalResult LengthOpLowering::matchAndRewrite(
     LengthOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
@@ -749,17 +644,6 @@ LogicalResult LengthOpLowering::matchAndRewrite(
   return success();
 }
 
-struct StoreLengthOpLowering : public OpConversionPattern<StoreLengthOp> {
-  StoreLengthOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                        LLVMGenPass* pass)
-      : OpConversionPattern<StoreLengthOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(StoreLengthOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult StoreLengthOpLowering::matchAndRewrite(
     StoreLengthOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -775,17 +659,6 @@ LogicalResult StoreLengthOpLowering::matchAndRewrite(
   _.eraseOp(op);
   return success();
 }
-
-struct StoreRefOpLowering : public OpConversionPattern<StoreRefOp> {
-  StoreRefOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                     LLVMGenPass* pass)
-      : OpConversionPattern<StoreRefOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(StoreRefOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
 
 LogicalResult StoreRefOpLowering::matchAndRewrite(
     StoreRefOp op, ArrayRef<Value> operands,
@@ -858,17 +731,6 @@ LogicalResult DecodeCatchOpLowering::matchAndRewrite(
   return success();
 }
 
-struct CallOpLowering : public OpConversionPattern<mlir::CallOp> {
-  CallOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                 LLVMGenPass* pass)
-      : OpConversionPattern<mlir::CallOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(mlir::CallOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult CallOpLowering::matchAndRewrite(
     mlir::CallOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -910,17 +772,6 @@ LogicalResult CallOpLowering::matchAndRewrite(
   return success();
 }
 
-struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
-  DefaultOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                    LLVMGenPass* pass)
-      : OpConversionPattern<DefaultOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult DefaultOpLowering::matchAndRewrite(
     DefaultOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -935,7 +786,9 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
 
     _.eraseOp(op);
     return success();
-  } else if (auto type = op.dst().getType().dyn_cast<VectorType>()) {
+  }
+
+  if (auto type = op.dst().getType().dyn_cast<VectorType>()) {
     auto zero = pass->buildWordConstant(loc, _, 0);
     _.create<StoreLengthOp>(loc, op.dst(), zero);
 
@@ -947,17 +800,6 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   return failure();
 }
 
-struct UnitOpLowering : public OpConversionPattern<UnitOp> {
-  UnitOpLowering(ProtoJitTypeConverter& converter, MLIRContext* ctx,
-                 LLVMGenPass* pass)
-      : OpConversionPattern<UnitOp>(converter, ctx), pass(pass) {}
-
-  LogicalResult matchAndRewrite(UnitOp op, ArrayRef<Value> operands,
-                                ConversionPatternRewriter& _) const final;
-
-  LLVMGenPass* const pass;
-};
-
 LogicalResult UnitOpLowering::matchAndRewrite(
     UnitOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
@@ -967,26 +809,37 @@ LogicalResult UnitOpLowering::matchAndRewrite(
   return success();
 }
 
+LogicalResult PoisonOpLowering::matchAndRewrite(
+    PoisonOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto width = pass->buildWordConstant(loc, _, op.width().bytes());
+  auto ptr = pass->buildOffsetPtr(loc, _, operands[0], op.offset(), Bytes(1));
+  _.create<LLVM::LifetimeEndOp>(loc, width, ptr);
+  _.eraseOp(op);
+  return success();
+}
+
 void LLVMGenPass::runOnOperation() {
   auto* ctx = &getContext();
 
   effect_analysis_ = &getAnalysis<SideEffectAnalysis>();
 
   ConversionTarget target(*ctx);
+
   target.addLegalDialect<LLVMDialect>();
+  target.addLegalDialect<LLVMExtraDialect>();
+
   target.addLegalOp<ModuleOp>();
 
   OwningRewritePatternList patterns(ctx);
   ProtoJitTypeConverter type_converter(ctx, this);
   populateStdToLLVMConversionPatterns(type_converter, patterns);
   populateLoopToStdConversionPatterns(patterns);
-  patterns.add<CallOpLowering, FuncOpLowering, InvokeCallbackOpLowering,
-               DecodeCatchOpLowering, ProjectOpLowering, TranscodeOpLowering,
-               TagOpLowering, MatchOpLowering, SetCallbackOpLowering,
-               DefaultOpLowering, UnitOpLowering, AllocateOpLowering,
-               LengthOpLowering, StoreLengthOpLowering, StoreRefOpLowering,
-               ArrayIndexOpLowering, VectorIndexOpLowering, CopyTagOpLowering>(
-      type_converter, ctx, this);
+
+#define REGISTER_OP_LOWERING(V) \
+  patterns.add<V##Lowering>(type_converter, ctx, this);
+  FOR_EACH_OP_LOWERING(REGISTER_OP_LOWERING)
+#undef REGISTER_OP_LOWERING
 
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {

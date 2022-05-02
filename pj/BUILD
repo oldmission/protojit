@@ -40,16 +40,40 @@ gentbl_cc_library(
     ],
 )
 
+gentbl_cc_library(
+    name = "LLVMExtraIncGen",
+    strip_include_prefix = "",
+    tbl_outs = [
+        (
+            ["-gen-op-decls"],
+            "llvm_extra.hpp.inc",
+        ),
+        (
+            ["-gen-op-defs"],
+            "llvm_extra.cpp.inc",
+        ),
+        (
+            ["-gen-llvmir-conversions"],
+            "llvm_extra_conversions.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "llvm_extra.td",
+    deps = [
+        "@llvm-project//mlir:LLVMOpsTdFiles",
+    ],
+)
+
 cc_library(
     name = "compiler",
     srcs = [
         "context.cpp",
+        "copy_coalescing.cpp",
         "gdb.cpp",
         "generate_ir.cpp",
         "ir.cpp",
-        "ir.cpp.inc",
-        "enums.cpp.inc",
         "lib.cpp",
+        "llvm_extra.cpp",
         "llvm_gen2.cpp",
         "portal.cpp",
         "scope.cpp",
@@ -60,11 +84,16 @@ cc_library(
         "arch.hpp",
         "context.hpp",
         "defer.hpp",
+        "enums.cpp.inc",
+        "enums.hpp.inc",
         "exceptions.hpp",
+        "ir.cpp.inc",
         "ir.hpp",
         "ir.hpp.inc",
-        "enums.hpp.inc",
-        "llvm_gen_base.hpp",
+        "llvm_extra.cpp.inc",
+        "llvm_extra.hpp",
+        "llvm_extra.hpp.inc",
+        "llvm_extra_conversions.cpp.inc",
         "passes.hpp",
         "portal.hpp",
         "portal_impl.hpp",

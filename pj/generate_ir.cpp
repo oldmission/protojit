@@ -281,6 +281,19 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
     }
   }
 
+  // Add poisons for padding space in the destination.
+  std::sort(to_fields.begin(), to_fields.end(),
+            [](auto& l, auto& r) { return l->offset < r->offset; });
+
+  for (intptr_t i = 0; i < to_fields.size(); ++i) {
+    auto start = to_fields[i]->offset + to_fields[i]->type.headSize();
+    auto end =
+        i + 1 < to_fields.size() ? to_fields[i + 1]->offset : to.headSize();
+    if (end > start) {
+      _.create<PoisonOp>(loc, dst, start, end - start);
+    }
+  }
+
   _.create<ReturnOp>(loc, result_buf);
 
   cached_fns_.emplace(key, func);

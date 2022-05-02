@@ -8,6 +8,7 @@
 #include <llvm/Support/Host.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 #include <llvm/Support/TargetRegistry.h>
+#include <llvm/Transforms/Scalar.h>
 
 #include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -29,6 +30,7 @@
 #include <cstring>
 
 #include "ir.hpp"
+#include "llvm_extra.hpp"
 #include "passes.hpp"
 #include "portal.hpp"
 #include "portal_impl.hpp"
@@ -40,6 +42,7 @@ ProtoJitContext::ProtoJitContext()
     : builder_(&ctx_),
       module_(mlir::ModuleOp::create(builder_.getUnknownLoc())) {
   ctx_.getOrLoadDialect<pj::ir::ProtoJitDialect>();
+  ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
 
@@ -176,7 +179,12 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
       module_->dump());
 
   std::unique_ptr<llvm::LLVMContext> llvm_context(new llvm::LLVMContext());
-  mlir::registerLLVMDialectTranslation(*module_->getContext());
+
+  DialectRegistry registry;
+  mlir::registerLLVMDialectTranslation(registry);
+  mlir::registerLLVMExtraDialectTranslation(registry);
+  module_->getContext()->appendDialectRegistry(registry);
+
   auto llvm_module = mlir::translateModuleToLLVMIR(*module_, *llvm_context);
   if (!llvm_module) {
     throw InternalError("Failed to emit LLVM IR");
@@ -186,7 +194,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
 
   auto opt_pipeline = mlir::makeOptimizingTransformer(
       /*optLevel=*/3, /*sizeLevel=*/0,
-      /*targetMachine=*/nullptr);
+      /*targetMachine=*/machine.get());
 
   if (auto err = opt_pipeline(llvm_module.get())) {
     std::string msg;
@@ -197,7 +205,27 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
 
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
-                      "After LLVM optimization:\n"
+                      "After LLVM optimization (preliminary):\n"
+                      "==================================================\n";
+      llvm::errs() << *llvm_module << "\n");
+
+  {
+    llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
+    funcPM.doInitialization();
+    auto layout = machine->createDataLayout();
+    funcPM.add(llvm::createCopyCoalescingPass(*machine));
+    funcPM.add(llvm::createCFGSimplificationPass());
+    funcPM.add(llvm::createEarlyCSEPass());
+    funcPM.add(llvm::createAggressiveDCEPass());
+    for (auto& func : *llvm_module.get()) {
+      funcPM.run(func);
+    }
+    funcPM.doFinalization();
+  }
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After LLVM optimization (custom):\n"
                       "==================================================\n";
       llvm::errs() << *llvm_module << "\n");
 
