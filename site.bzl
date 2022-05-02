@@ -2,7 +2,7 @@
 
 load("@rules_cc//cc:defs.bzl", "cc_test")
 
-def pj_test(name, protos, srcs, proto_deps = []):
+def pj_test(name, protos, srcs, proto_deps = [], size="small"):
     for proto in protos:
         native.genrule(
             name = name + "_" + proto,
@@ -16,5 +16,5 @@ def pj_test(name, protos, srcs, proto_deps = []):
         name = name,
         srcs = srcs + [proto + ".hpp" for proto in protos],
         deps = ["test_base"],
-        size = "small",
+        size = size,
     )

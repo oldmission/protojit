@@ -15,8 +15,9 @@
 #include "exceptions.hpp"
 #include "types.hpp"
 
-#define GET_OP_CLASSES
 #include "pj/enums.hpp.inc"
+
+#define GET_OP_CLASSES
 #include "pj/ir.hpp.inc"
 
 namespace pj {
