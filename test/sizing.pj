@@ -1,0 +1,8 @@
+struct A {
+  v1: uint64[8:16];
+  v2: char8[2:10];
+}
+
+struct B {
+  v3: A[1:10];
+}

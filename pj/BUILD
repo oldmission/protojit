@@ -78,6 +78,8 @@ cc_library(
         "portal.cpp",
         "scope.cpp",
         "side_effect_analysis.cpp",
+        "sizing.cpp",
+        "types.cpp",
         "type_support.cpp",
     ],
     hdrs = [

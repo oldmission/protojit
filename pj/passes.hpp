@@ -14,6 +14,7 @@ class DataLayout;
 
 namespace pj {
 std::unique_ptr<mlir::Pass> createIRGenPass();
+std::unique_ptr<mlir::Pass> createGenSizeFunctionsPass();
 std::unique_ptr<mlir::Pass> createLLVMGenPass(const llvm::TargetMachine*);
 }  // namespace pj
 

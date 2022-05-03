@@ -36,6 +36,10 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
   let results = (outs BufferType);
 }
 
+def TranscodePrimitiveOp : ProtoJit_Op<"transcodeprim"> {
+  let arguments = (ins ValueType:$src, ValueType:$dst);
+}
+
 def AllocateOp : ProtoJit_Op<"allocate"> {
   let arguments = (ins BufferType:$buf, Index:$len);
   let results = (outs BufferType);
@@ -62,12 +66,11 @@ def DefaultOp : ProtoJit_Op<"default"> {
   );
 }
 
-// Calculate the size that the given value of the provided memory type will
-// occupy in the destination type. 'src' or 'dst' may be memory or wire types
-// or a protocol.
-def SizeOp : ProtoJit_Op<"size"> {
-  let arguments = (ins AnyType:$src, AnyType:$dst);
-  let results = (outs Index);
+// Calculates the size of the memory allocated within the region.
+def SizeOp : ProtoJit_Op<"size", [SingleBlockImplicitTerminator<"::pj::ir::YieldOp">]> {
+  let arguments = (ins BoolAttr:$round_up);
+  let results = (outs Index:$size);
+  let regions = (region SizedRegion<1>:$body);
 }
 
 // Extract a reference to some component of a value from a fixed offset.
@@ -183,8 +186,8 @@ def DecodeCatchOp : ProtoJit_Op<"catch", [SingleBlockImplicitTerminator<"::pj::i
   let regions = (region SizedRegion<1>:$body);
 }
 
-// Terminate execution inside a DecodeCatchOp, and make it return the
-// provided value. Must be the last operation in a DecodeCatchOp's body.
+// Yields values and terminates execution within DecodeCatchOp and SizeOp. Must
+// be the last operation in each parent op's body.
 def YieldOp : ProtoJit_Op<"yield", [Terminator]> {
   let arguments = (ins AnyType:$result);
 }
@@ -215,7 +218,10 @@ def DecodeFunctionOp : ProtoJit_Op<"decodefunc"> {
 
 def SizeFunctionOp : ProtoJit_Op<"sizefunc"> {
   let arguments = (
-    ins StrAttr:$name, TypeAttr:$src, OptionalAttr<PathAttr>:$src_path,
-    TypeAttr:$dst
+    ins StrAttr:$name,
+    TypeAttr:$src,
+    TypeAttr:$dst,
+    PathAttr:$src_path,
+    BoolAttr:$round_up
   );
 }

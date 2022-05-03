@@ -79,6 +79,10 @@ void PJAddDecodeFunction(PJContext* ctx, const char* name,
                          const PJProtocol* protocol, const void* dest,
                          uintptr_t num_handlers, const PJHandler* handlers[]);
 
+void PJAddSizeFunction(PJContext* ctx, const char* name, const void* src,
+                       const PJProtocol* protocol, const char* src_path,
+                       bool round_up);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
