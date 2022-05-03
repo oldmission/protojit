@@ -60,8 +60,8 @@ ProtoJitContext::ProtoJitContext()
 ProtoJitContext::~ProtoJitContext() {}
 
 void ProtoJitContext::addEncodeFunction(std::string_view name, mlir::Type src,
-                                        llvm::StringRef src_path,
-                                        types::ProtocolType protocol) {
+                                        types::ProtocolType protocol,
+                                        llvm::StringRef src_path) {
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
   module_->push_back(builder_.create<EncodeFunctionOp>(
@@ -85,15 +85,12 @@ void ProtoJitContext::addDecodeFunction(
 }
 
 void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
-                                      llvm::Optional<llvm::StringRef> src_path,
-                                      mlir::Type dst) {
+                                      types::ProtocolType protocol,
+                                      llvm::StringRef src_path) {
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
   module_->push_back(builder_.create<SizeFunctionOp>(
-      loc, name, src,
-      src_path ? types::PathAttr::fromString(&ctx_, *src_path)
-               : types::PathAttr{},
-      dst));
+      loc, name, src, types::PathAttr::fromString(&ctx_, src_path), protocol));
 }
 
 #define DEBUG_TYPE "pj.compile"
@@ -147,6 +144,19 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
                       "==================================================\n";
       module_->dump());
 
+  mlir::PassManager pj_size(&ctx_);
+  pj_size.addPass(pj::createGenSizeFunctionsPass());
+
+  if (mlir::failed(pj_size.run(*module_))) {
+    throw InternalError("Error generating PJ size functions.");
+  }
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After PJ size function generation:\n"
+                      "==================================================\n";
+      module_->dump());
+
   mlir::PassManager pjpm(&ctx_);
   pjpm.addPass(mlir::createLowerToCFGPass());
   pjpm.addPass(mlir::createCanonicalizerPass());
@@ -166,7 +176,6 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
   // Lower to LLVM IR
   mlir::PassManager pm(&ctx_);
   pm.addPass(pj::createLLVMGenPass(machine.get()));
-  pm.addPass(mlir::createCanonicalizerPass());
 
   if (mlir::failed(pm.run(*module_))) {
     throw InternalError("Error lowering to LLVM.");

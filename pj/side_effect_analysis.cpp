@@ -32,7 +32,8 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
       return;
     }
 
-    if (isa<DecodeCatchOp>(op->getParentOp())) {
+    if (isa<DecodeCatchOp>(op->getParentOp()) ||
+        isa<SizeOp>(op->getParentOp())) {
       // Effect doesn't propagate.
     } else {
       assert(isa<FuncOp>(op->getParentOp()));

@@ -653,6 +653,16 @@ struct ProtocolType
 //
 // A BoundedBuffer carries a size so accesses may be bounds-checked.
 
+// A fake Buffer type for size functions.
+struct DummyBufferType
+    : public mlir::Type::TypeBase<DummyBufferType, mlir::Type,
+                                  mlir::TypeStorage> {
+  using Base::Base;
+  using Base::get;
+
+  void print(llvm::raw_ostream& os) const { os << "dbuf"; }
+};
+
 struct RawBufferType : public mlir::Type::TypeBase<RawBufferType, mlir::Type,
                                                    mlir::TypeStorage> {
   using Base::Base;

@@ -103,6 +103,25 @@ class PJGenericTest
     return size == 1024 ? nullptr : std::move(dec_buffer);
   }
 
+  template <typename Src, typename Dest = Src, typename Proto = void,
+            typename X, typename Y = void>
+  uintptr_t get_size(const X* from, const std::string& src_path = "",
+                     const std::string& tag_path = "") {
+    const PJProtocol* protocol;
+    if constexpr (std::is_same_v<Proto, void>) {
+      protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
+    } else {
+      protocol = planProtocol<Proto>(ctx);
+    }
+
+    addSizeFunction<Src>(ctx, "size", protocol, no_src_path ? "" : src_path);
+
+    const auto portal = compile(ctx);
+    const auto size = portal->ResolveTarget<uintptr_t (*)(const X*)>("size");
+
+    return size(from);
+  }
+
   std::vector<std::pair<std::string, const void*>> branches;
   std::vector<std::function<void(const void*)>> handlers;
   std::set<std::string> waiting_matches;

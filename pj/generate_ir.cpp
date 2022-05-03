@@ -1,8 +1,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <llvm/ADT/SmallSet.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
+#include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/Pass/Pass.h>
 
 #include "defer.hpp"
@@ -161,8 +163,12 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
 
   auto func = _.create<mlir::FuncOp>(loc, name, fntype);
 
-  for (size_t i = 0; i < func.getNumArguments(); ++i) {
+  for (size_t i = 0; i < 2; ++i) {
     func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(&getContext()));
+  }
+  if (!key.buf_type.isa<DummyBufferType>()) {
+    func.setArgAttr(2, LLVM::LLVMDialect::getNoAliasAttrName(),
                     UnitAttr::get(&getContext()));
   }
 
@@ -241,7 +247,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
          field.type.cast<StructType>()->outline_variant)) {
       outline_field = &field;
     } else {
-      to_fields.push_back(&field);
+      to_fields.emplace_back(&field);
     }
   }
   if (outline_field != nullptr) {
@@ -836,6 +842,54 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
   return success();
 }
 
+struct SizeFunctionLowering : public OpConversionPattern<SizeFunctionOp> {
+  using OpConversionPattern<SizeFunctionOp>::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(SizeFunctionOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+};
+
+LogicalResult SizeFunctionLowering::matchAndRewrite(
+    SizeFunctionOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  _.eraseOp(op);
+
+  auto loc = op.getLoc();
+  auto* ctx = _.getContext();
+
+  const auto& proto = op.dst().cast<ProtocolType>();
+
+  // Create a function with the given name taking a pointer to the source type.
+  // The function contains a single SizeOp.
+  auto func = mlir::FuncOp::create(
+      loc, op.name(), _.getFunctionType({op.src()}, _.getIndexType()));
+
+  mlir::ModuleOp module{op.getOperation()->getParentOp()};
+  module.push_back(func);
+  auto* entry_block = func.addEntryBlock();
+  _.setInsertionPointToStart(entry_block);
+
+  // Create a SizeOp to compute the size from TranscodeOps
+  auto size = _.create<SizeOp>(loc, _.getIndexType(), proto);
+  _.create<ReturnOp>(loc, ValueRange{size});
+
+  auto* body = new Block();
+  body->addArgument(DummyBufferType::get(ctx));
+  size.body().push_back(body);
+
+  _.setInsertionPointToStart(body);
+
+  Value buf = body->getArgument(0);
+  auto dst = _.create<ir::UnitOp>(loc, proto->head);
+
+  buf =
+      _.create<TranscodeOp>(loc, DummyBufferType::get(ctx), func.getArgument(0),
+                            dst, buf, op.src_path(), ArrayAttr::get(ctx, {}));
+  _.create<YieldOp>(loc, buf);
+
+  return success();
+}
+
 struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
   TranscodeOpLowering(MLIRContext* ctx, GeneratePass* pass)
       : OpConversionPattern<TranscodeOp>(ctx), pass(pass) {
@@ -854,6 +908,12 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
   auto src_type = op.src().getType().cast<ValueType>();
   auto dst_type = op.dst().getType().cast<ValueType>();
+
+  if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
+    _.create<TranscodeIntOp>(loc, operands[0], operands[1]);
+    _.replaceOp(op, operands[2]);
+    return success();
+  }
 
   FuncOp fn;
 
@@ -902,7 +962,7 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
   } else {
-    return failure();
+    assert(false);
   }
 
   auto call = _.create<mlir::CallOp>(loc, fn, operands);
@@ -950,20 +1010,15 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   return success();
 }
 
-}  // namespace
-
 void GeneratePass::runOnOperation() {
   auto* ctx = &getContext();
 
   ConversionTarget target(*ctx);
   target
       .addLegalDialect<StandardOpsDialect, scf::SCFDialect, ProtoJitDialect>();
-  target.addLegalOp<FuncOp>();
-  target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp>();
-  target.addDynamicallyLegalOp<TranscodeOp>([](TranscodeOp op) {
-    return op.src().getType().isa<IntType>() &&
-           op.dst().getType().isa<IntType>();
-  });
+  target.addLegalOp<ModuleOp, FuncOp>();
+  target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp,
+                      TranscodeOp>();
   target.addDynamicallyLegalOp<DefaultOp>([](DefaultOp op) {
     return op.dst().getType().isa<IntType>() ||
            op.dst().getType().isa<VectorType>();
@@ -972,17 +1027,128 @@ void GeneratePass::runOnOperation() {
   OwningRewritePatternList patterns(ctx);
   patterns
       .insert<EncodeFunctionLowering, DecodeFunctionLowering,
-              DefaultOpLowering>(ctx)
+              SizeFunctionLowering, DefaultOpLowering>(ctx)
       .insert<TranscodeOpLowering>(ctx, this);
 
-  if (failed(applyPartialConversion(getOperation(), target,
-                                    std::move(patterns)))) {
+  if (failed(
+          applyFullConversion(getOperation(), target, std::move(patterns)))) {
     signalPassFailure();
   }
 }
 
+struct GenSizeFunctionsPass
+    : public PassWrapper<GenSizeFunctionsPass, OperationPass<ModuleOp>> {
+  void getDependentDialects(DialectRegistry& registry) const override {
+    registry.insert<ir::ProtoJitDialect>();
+  }
+  void runOnOperation() final;
+
+  mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
+
+ private:
+  FuncOp findFunction(llvm::StringRef name);
+
+  FuncOp findOrCreateAllocationOnlyFn(llvm::StringRef name);
+
+  // Removes all operations not relevant for sizing.
+  void removeNonAllocationInsts(Region& region);
+};
+
+FuncOp GenSizeFunctionsPass::findFunction(llvm::StringRef name) {
+  FuncOp func;
+  module().walk([&](FuncOp op) {
+    if (op.sym_name() == name) {
+      func = op;
+      return;
+    }
+  });
+  return func;
+}
+
+FuncOp GenSizeFunctionsPass::findOrCreateAllocationOnlyFn(
+    llvm::StringRef orig_name) {
+  std::string name = orig_name.str() + "_size";
+
+  if (auto func = findFunction(name)) {
+    return func;
+  }
+
+  auto orig = findFunction(orig_name);
+  assert(orig);
+
+  auto func = orig.clone();
+  func.sym_nameAttr(StringAttr::get(&getContext(), name));
+
+  auto _ = mlir::OpBuilder::atBlockBegin(&*func.begin());
+  auto dst = _.create<UnitOp>(_.getUnknownLoc(), orig.getArgument(1).getType());
+  func.getArgument(1).replaceAllUsesWith(dst);
+  func.eraseArgument(1);
+
+  _.setInsertionPointToStart(module().getBody());
+  _.insert(func);
+
+  removeNonAllocationInsts(func.body());
+
+  return func;
+}
+
+void GenSizeFunctionsPass::removeNonAllocationInsts(Region& region) {
+  region.walk([&](CallOp call) {
+    auto loc = call.getLoc();
+    auto func = findOrCreateAllocationOnlyFn(call.callee());
+
+    auto _ = mlir::OpBuilder{call};
+    auto new_call = _.create<mlir::CallOp>(
+        loc, func, ValueRange{call.operands()[0], call.operands()[2]});
+
+    call.replaceAllUsesWith(ValueRange{new_call.getResult(0)});
+    call.erase();
+  });
+
+  // Use a mark and sweep algorithm to remove any instructions that do not
+  // directly feed into any of the final buffer return statements. The intention
+  // is to keep only AllocateOps and the control flow that determines which of
+  // them are executed.
+  llvm::SmallVector<Operation*, 8> worklist;
+  llvm::SmallSet<Operation*, 16> marked;
+  region.walk([&](Operation* op) {
+    if (isa<ReturnOp>(op) || isa<MatchOp>(op) || isa<YieldOp>(op) ||
+        isa<scf::YieldOp>(op)) {
+      worklist.emplace_back(op);
+    }
+  });
+
+  while (!worklist.empty()) {
+    auto op = worklist.pop_back_val();
+    marked.insert(op);
+
+    for (auto operand : op->getOperands()) {
+      if (auto defining_op = operand.getDefiningOp()) {
+        worklist.emplace_back(defining_op);
+      }
+    }
+  }
+
+  region.walk([&](Operation* op) {
+    if (!marked.contains(op)) {
+      op->dropAllDefinedValueUses();
+      op->erase();
+    }
+  });
+}
+
+void GenSizeFunctionsPass::runOnOperation() {
+  module().walk([&](SizeOp op) { removeNonAllocationInsts(op.body()); });
+}
+
+}  // namespace
+
 std::unique_ptr<Pass> createIRGenPass() {
   return std::make_unique<GeneratePass>();
+}
+
+std::unique_ptr<Pass> createGenSizeFunctionsPass() {
+  return std::make_unique<GenSizeFunctionsPass>();
 }
 
 }  // namespace pj

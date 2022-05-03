@@ -17,6 +17,12 @@ pj_test(
 )
 
 pj_test(
+    name = "test_size",
+    srcs = ["test_size.cpp"],
+    protos = ["size.pj"],
+)
+
+pj_test(
     name = "test_structs",
     srcs = ["test_structs.cpp"],
     protos = ["structs.pj"],

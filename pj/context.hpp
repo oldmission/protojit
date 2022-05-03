@@ -18,8 +18,8 @@ struct ProtoJitContext {
   ~ProtoJitContext();
 
   void addEncodeFunction(std::string_view name, mlir::Type src,
-                         llvm::StringRef src_path,
-                         types::ProtocolType protocol);
+                         types::ProtocolType protocol,
+                         llvm::StringRef src_path);
 
   void addDecodeFunction(
       std::string_view name, types::ProtocolType protocol, mlir::Type dst,
@@ -27,8 +27,7 @@ struct ProtoJitContext {
 
   // Exactly one of 'src' or 'dst' must be a protocol.
   void addSizeFunction(std::string_view name, mlir::Type src,
-                       llvm::Optional<llvm::StringRef> src_path,
-                       mlir::Type protocol);
+                       types::ProtocolType protocol, llvm::StringRef src_path);
 
   std::unique_ptr<Portal> compile();
 

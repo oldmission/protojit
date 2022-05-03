@@ -198,7 +198,7 @@ void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,
   auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
   auto src = mlir::Type::getFromOpaquePointer(src_);
   auto protocol = ConvertProtocol(protocol_);
-  ctx->addEncodeFunction(name, src, src_path, protocol);
+  ctx->addEncodeFunction(name, src, protocol, src_path);
 }
 
 void PJAddDecodeFunction(PJContext* ctx_, const char* name,
@@ -215,4 +215,12 @@ void PJAddDecodeFunction(PJContext* ctx_, const char* name,
   }
 
   ctx->addDecodeFunction(name, protocol, dest, handlers);
+}
+
+void PJAddSizeFunction(PJContext* ctx_, const char* name, const void* src_,
+                       const PJProtocol* protocol_, const char* src_path) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  auto src = mlir::Type::getFromOpaquePointer(src_);
+  auto protocol = ConvertProtocol(protocol_);
+  ctx->addSizeFunction(name, src, protocol, src_path);
 }

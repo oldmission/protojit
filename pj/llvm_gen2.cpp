@@ -27,7 +27,7 @@ using namespace types;
   V(InvokeCallbackOp)           \
   V(DecodeCatchOp)              \
   V(ProjectOp)                  \
-  V(TranscodeOp)                \
+  V(TranscodeIntOp)             \
   V(TagOp)                      \
   V(MatchOp)                    \
   V(SetCallbackOp)              \
@@ -40,7 +40,8 @@ using namespace types;
   V(ArrayIndexOp)               \
   V(VectorIndexOp)              \
   V(CopyTagOp)                  \
-  V(PoisonOp)
+  V(PoisonOp)                   \
+  V(SizeOp)
 
 namespace {
 struct LLVMGenPass
@@ -112,6 +113,10 @@ struct LLVMGenPass
     return bounded_buf_type_;
   }
 
+  mlir::Type rawBufType() { return bytePtrType(); }
+
+  mlir::Type dummyBufType() { return wordType(); }
+
   Value buildOffsetPtr(Location loc, ConversionPatternRewriter& _, Value src,
                        Value offset, Width width) {
     auto ptr = _.create<GEPOp>(loc, bytePtrType(), src, offset);
@@ -146,12 +151,13 @@ struct LLVMGenPass
 
   LLVMGenPass(const llvm::TargetMachine* machine) : machine_(machine) {}
 
+  ModuleOp module() { return ModuleOp{getOperation()}; }
+
   LLVM::GlobalOp buildGlobalConstant(Location loc,
                                      OpBuilder::Listener* listener,
                                      mlir::Type type, mlir::Attribute value) {
     auto name = "#const_" + std::to_string(const_suffix_++);
-    ModuleOp mod{getOperation()};
-    auto _ = mlir::OpBuilder::atBlockBegin(mod.getBody());
+    auto _ = mlir::OpBuilder::atBlockBegin(module().getBody());
     _.setListener(listener);
     return _.create<LLVM::GlobalOp>(loc, type, /*isConstant=*/false,
                                     LLVM::Linkage::Private, name, value);
@@ -172,10 +178,11 @@ struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
   ProtoJitTypeConverter(mlir::MLIRContext* ctx, LLVMGenPass* pass)
       : mlir::LLVMTypeConverter(ctx), pass(pass) {
     addConversion([=](ValueType type) { return pass->bytePtrType(); });
-    addConversion([=](RawBufferType type) { return pass->bytePtrType(); });
     addConversion([=](UserStateType type) { return pass->bytePtrType(); });
     addConversion(
         [=](BoundedBufferType type) { return pass->boundedBufType(); });
+    addConversion([=](RawBufferType type) { return pass->rawBufType(); });
+    addConversion([=](DummyBufferType type) { return pass->dummyBufType(); });
   }
 
   LLVMGenPass* pass;
@@ -211,8 +218,12 @@ Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
                              Value buf) {
   if (buf.getType() == boundedBufType()) {
     return buildBoundedBufferDestructuring(loc, _, buf).first;
+  } else if (buf.getType() == rawBufType()) {
+    return buf;
+  } else if (buf.getType() == dummyBufType()) {
+    return _.create<LLVM::NullOp>(loc, bytePtrType());
   }
-  return buf;
+  UNREACHABLE();
 }
 
 LogicalResult FuncOpLowering::matchAndRewrite(
@@ -290,8 +301,8 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
   return success();
 }
 
-LogicalResult TranscodeOpLowering::matchAndRewrite(
-    TranscodeOp op, ArrayRef<Value> operands,
+LogicalResult TranscodeIntOpLowering::matchAndRewrite(
+    TranscodeIntOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto src_type = op.src().getType().cast<ValueType>();
@@ -326,7 +337,7 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
 
     _.create<StoreOp>(op.getLoc(), val, dst_ptr, dst->alignment.bytes());
 
-    _.replaceOp(op, operands[2]);
+    _.eraseOp(op);
     return success();
   }
 
@@ -619,8 +630,12 @@ LogicalResult AllocateOpLowering::matchAndRewrite(
     ptr = _.create<GEPOp>(loc, pass->bytePtrType(), ptr, operands[1]);
     size = _.create<SubOp>(loc, size, operands[1]);
     buf = pass->buildBoundedBuf(loc, _, ptr, size);
-  } else {
+  } else if (buf.getType() == pass->rawBufType()) {
     buf = _.create<GEPOp>(loc, pass->bytePtrType(), buf, operands[1]);
+  } else if (buf.getType() == pass->dummyBufType()) {
+    buf = _.create<AddOp>(loc, pass->wordType(), buf, operands[1]);
+  } else {
+    UNREACHABLE();
   }
   _.replaceOp(op, buf);
   return success();
@@ -707,9 +722,9 @@ LogicalResult DecodeCatchOpLowering::matchAndRewrite(
 
   // Replace uses of the op with the YieldOp value.
   auto* yield_op = &op.body().front().back();
-  assert(YieldOp::classof(yield_op));
+  assert(isa<YieldOp>(yield_op));
 
-  auto yield_val = YieldOp{yield_op}.result();
+  auto yield_val = cast<YieldOp>(yield_op).result();
 
   _.replaceOp(op, yield_val);
   _.eraseOp(yield_op);
@@ -816,6 +831,44 @@ LogicalResult PoisonOpLowering::matchAndRewrite(
   auto ptr = pass->buildOffsetPtr(loc, _, operands[0], op.offset(), Bytes(1));
   _.create<LLVM::LifetimeEndOp>(loc, width, ptr);
   _.eraseOp(op);
+  return success();
+}
+
+LogicalResult SizeOpLowering::matchAndRewrite(
+    SizeOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+
+  // Get the result buffer from the SizeOp body
+  auto* yield_op = &op.body().front().back();
+  assert(isa<YieldOp>(yield_op));
+
+  auto yield_val = cast<YieldOp>(yield_op).result();
+  _.eraseOp(yield_op);
+
+  // Inline the body
+  auto* start = _.getInsertionBlock();
+  auto* body_entry = &op.body().front();
+  auto* continuation = _.splitBlock(start, _.getInsertionPoint());
+  _.inlineRegionBefore(op.body(), continuation);
+
+  {
+    _.setInsertionPointToEnd(start);
+    auto zero = pass->buildWordConstant(loc, _, 0);
+    _.create<mlir::BranchOp>(loc, body_entry, ValueRange{zero});
+  }
+
+  _.setInsertionPointToEnd(body_entry);
+  _.create<mlir::BranchOp>(loc, continuation, ValueRange{});
+
+  {
+    _.setInsertionPointToStart(continuation);
+    auto allocated_size = yield_val;
+    auto head_size = pass->buildWordConstant(
+        loc, _, op.dst().cast<ValueType>().headSize().bytes());
+    _.replaceOp(op,
+                ValueRange{_.create<AddOp>(loc, head_size, allocated_size)});
+  }
+
   return success();
 }
 

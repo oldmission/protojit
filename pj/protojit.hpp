@@ -70,6 +70,13 @@ void addDecodeFunction(
                       handlers.empty() ? nullptr : &handlers_arr[0]);
 }
 
+template <typename Src>
+void addSizeFunction(PJContext* ctx, const std::string& name,
+                     const PJProtocol* protocol, const std::string& src_path) {
+  PJAddSizeFunction(ctx, name.c_str(), gen::BuildPJType<Src>::build(ctx),
+                    protocol, src_path.c_str());
+}
+
 std::unique_ptr<Portal> compile(PJContext* ctx);
 
 #if 0
