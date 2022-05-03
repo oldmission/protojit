@@ -20,10 +20,12 @@ void ProtoJitDialect::printType(Type type, DialectAsmPrinter& p) const {
     p << "userstate";
   } else if (type.isa<ValueType>()) {
     type.cast<ValueType>().print(p.getStream());
-  } else if (type.isa<RawBufferType>()) {
-    type.cast<RawBufferType>().print(p.getStream());
   } else if (type.isa<BoundedBufferType>()) {
     type.cast<BoundedBufferType>().print(p.getStream());
+  } else if (type.isa<RawBufferType>()) {
+    type.cast<RawBufferType>().print(p.getStream());
+  } else if (type.isa<DummyBufferType>()) {
+    type.cast<DummyBufferType>().print(p.getStream());
   } else {
     UNREACHABLE();
   }
@@ -50,7 +52,7 @@ ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
 
   addTypes<UserStateType, IntType, StructType, InlineVariantType,
            OutlineVariantType, ArrayType, VectorType, AnyType, ProtocolType,
-           RawBufferType, BoundedBufferType>();
+           BoundedBufferType, RawBufferType, DummyBufferType>();
 
   addOperations<
 #define GET_OP_LIST

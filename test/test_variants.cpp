@@ -17,8 +17,9 @@ TEST_P(PJVariantTest, VariantSame) {
     EXPECT_EQ(T.tag, Var1::Kind::x);
   });
 
-  transcode<Var1>(&F, &T, "x", "_");
+  auto [_, enc_size] = transcode<Var1>(&F, &T, "x", "_");
 
+  EXPECT_EQ(enc_size, 9);
   EXPECT_EQ(F.value.x, 42);
 }
 
@@ -54,10 +55,6 @@ TEST_P(PJVariantTest, VariantAddCaseBig) {
   transcode<Var1, Var3>(&F, &T, "x", "_");
 
   EXPECT_EQ(F.value.x, 42);
-
-  // TODO: GenSize does not yet exist
-  // Ensure the tag is added -- message size shouldn't include BigStruct.
-  // EXPECT_EQ((GenSize<Var1, Var1>(0x1000, {"x"}, {"."})(&F)), 9);
 }
 
 TEST_P(PJVariantTest, VariantMissingHandler) {
@@ -91,10 +88,9 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
     EXPECT_EQ(T.value.x, 42);
   });
 
-  transcode<Var3, Var4>(&F, &T, "x", ".");
+  auto [_, enc_size] = transcode<Var3, Var4>(&F, &T, "x", ".");
 
-  // TODO: GenSize does not yet exist
-  // EXPECT_EQ((GenSize<Var3, Var4>(0x1000, {"x"}, {"."})(&F)), 9);
+  EXPECT_EQ(enc_size, no_tag ? 65 : 9);
 }
 
 TEST_F(PJTest, VariantAddTagField) {
@@ -111,8 +107,9 @@ TEST_P(PJVariantTest, VariantRemoveTagField) {
   Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
   Outer2 T{.z = 0};
 
-  transcode<Outer, Outer2>(&F, &T, "v.undef", "v._");
+  auto [_, enc_size] = transcode<Outer, Outer2>(&F, &T, "v.undef", "v._");
 
+  EXPECT_EQ(enc_size, no_tag ? 10 : 2);
   EXPECT_EQ(T.z, 0xab);
 }
 
@@ -126,16 +123,10 @@ TEST_P(PJVariantTest, VariantSameNestedPath) {
     EXPECT_EQ(T.z, 0xab);
   });
 
-  transcode<Outer>(&F, &T, "v.x", "v._");
-}
+  auto [_, enc_size] = transcode<Outer>(&F, &T, "v.x", "v._");
 
-// TODO: GenSize does not yet exist
-#if 0
-TEST_F(PJTest, VariantNestedTagSize) {
-  BigOuter F{.v = Var3{.value = {.x = 42}, .tag = Var3::Kind::x}};
-  EXPECT_EQ(GenSize<BigOuter>(0x400, {"v", "x"}, {"v", "."})(&F), 9);
+  EXPECT_EQ(enc_size, 10);
 }
-#endif
 
 TEST_F(PJTest, VariantDispatchDefault) {
   Outer2 F{.z = 0xab};
@@ -192,33 +183,36 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
     EXPECT_EQ(T.b.value.x, 0x22222222);
   });
 
-  transcode<Outer3>(&F, &T, "a.w", "a._");
+  auto [_, enc_size] = transcode<Outer3>(&F, &T, "a.w", "a._");
 
-  // TODO: GenSize does not yet exist
-  // EXPECT_EQ(GenSize<Outer3>(0x400, {"a", "w"}, {"a", "."})(&F), 11);
+  EXPECT_EQ(enc_size, no_tag ? 18 : 11);
 }
 
-TEST_F(PJTest, VariantAfterVector) {
+TEST_P(PJVariantTest, VariantAfterVector) {
   std::array<uint64_t, 4> values{1, 2, 3, 4};
   VecVar F{.vec = {&values[0], values.size()},
-           .var = {.value = {.x = 0xff}, .tag = Var4::Kind::x}};
+           .var = {.value = {.w = 42}, .tag = Var4::Kind::w}};
   VecVar T;
 
-  onMatch<0, VecVar>("var.x", [&](const VecVar& T) {
-    EXPECT_EQ(T.var.tag, Var4::Kind::x);
-    EXPECT_EQ(T.var.value.x, 0xff);
+  onMatch<0, VecVar>("var.w", [&](const VecVar& T) {
+    EXPECT_EQ(T.var.tag, Var4::Kind::w);
+    EXPECT_EQ(T.var.value.w, 42);
     EXPECT_EQ(T.vec, F.vec);
   });
 
-  transcode<VecVar>(&F, &T, "", "var._");
+  auto [_, enc_size] = transcode<VecVar>(&F, &T, "var.w", "var._");
+
+  // Vector has 8 length bytes, 8 ref bytes, and 4*8 data bytes
+  EXPECT_EQ(enc_size, (no_tag ? 9 : 2) + 48);
 }
 
 TEST_F(PJTest, EnumTableTest) {
   EnumA F{.tag = EnumA::Kind::x};
   EnumB T{.tag = EnumB::Kind::undef};
 
-  transcode<EnumA, EnumB>(&F, &T);
+  auto [_, enc_size] = transcode<EnumA, EnumB>(&F, &T);
 
+  EXPECT_EQ(enc_size, 1);
   EXPECT_EQ(T.tag, EnumB::Kind::x);
 }
 

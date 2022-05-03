@@ -82,12 +82,8 @@ ValueType plan(PlanningContext& ctx, StructType type,
 
   auto planned =
       StructType::get(&ctx.ctx, types::TypeDomain::kWire, type.name());
-  planned.setTypeData({.fields = fields,
-                       .size = offset,
-                       .alignment = alignment,
-                       .outline_variant = contains_outline_variant
-                                              ? ctx.outline
-                                              : types::OutlineVariantType{}});
+  planned.setTypeData(
+      {.fields = fields, .size = offset, .alignment = alignment});
   return planned;
 }
 

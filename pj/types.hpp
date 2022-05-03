@@ -31,6 +31,7 @@ struct Int {
 
   Width headSize() const { return width; }
   Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const { return true; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Int& I) {
@@ -98,29 +99,16 @@ struct Struct {
   Width size = Width::None();
   Width alignment = Width::None();
 
+  // Set during internment.
+  bool has_max_size = false;
   ValueType outline_variant = {};
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const { return has_max_size; }
 };
 
-inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
-                          const Struct& key) {
-  auto fields = reinterpret_cast<StructField*>(allocator.allocate(
-      sizeof(StructField) * key.fields.size(), alignof(StructField)));
-
-  for (uintptr_t i = 0; i < key.fields.size(); ++i) {
-    fields[i] = StructField{
-        .type = key.fields[i].type,
-        .name = allocator.copyInto(key.fields[i].name),
-        .offset = key.fields[i].offset,
-    };
-  }
-
-  return Struct{.fields = {&fields[0], key.fields.size()},
-                .size = key.size,
-                .alignment = key.alignment};
-}
+Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key);
 
 struct StructType
     : public mlir::Type::TypeBase<
@@ -166,6 +154,11 @@ struct InlineVariant {
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const {
+    // TODO: implement logic to determine if it can have a max size and update
+    // SizeOp lowering accordingly.
+    return false;
+  }
 
   // Set during internment.
   bool is_enum = false;
@@ -190,6 +183,11 @@ struct OutlineVariant {
 
   Width headSize() const { return tag_width; }
   Width headAlignment() const { return tag_alignment; }
+  bool hasMaxSize() const {
+    // TODO: implement logic to determine if it can have a max size and update
+    // SizeOp lowering accordingly.
+    return false;
+  }
 };
 
 template <typename V>
@@ -352,6 +350,9 @@ struct Array {
   // as the element type's alignment
   Width alignment;
 
+  // Set during internment.
+  bool has_max_size = false;
+
   bool operator==(const Array& ary) const {
     return elem == ary.elem && length == ary.length &&
            elem_size == ary.elem_size && alignment == ary.alignment;
@@ -359,6 +360,7 @@ struct Array {
 
   Width headSize() const { return elem_size * length; }
   Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const { return has_max_size; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
@@ -385,7 +387,8 @@ inline ::llvm::hash_code hash_value(const Array& ary) {
                             hash_value(ary.alignment));
 }
 
-inline Array type_intern(mlir::TypeStorageAllocator& alloc, const Array& ary) {
+inline Array type_intern(mlir::TypeStorageAllocator& alloc, Array ary) {
+  ary.has_max_size = ary.elem.hasMaxSize();
   return ary;
 }
 
@@ -497,6 +500,10 @@ struct Vector {
   // May be None if min_length == max_length.
   Width outlined_payload_alignment;
 
+  // Set during internment.
+  bool has_max_size = false;
+  bool hasMaxSize() const { return has_max_size; }
+
   bool operator==(const Vector& V) const {
     return elem == V.elem && min_length == V.min_length &&
            wire_min_length == V.wire_min_length && max_length == V.max_length &&
@@ -531,8 +538,8 @@ inline ::llvm::hash_code hash_value(const Vector& V) {
       hash_value(V.outlined_payload_alignment));
 }
 
-inline Vector type_intern(mlir::TypeStorageAllocator& allocator,
-                          const Vector& V) {
+inline Vector type_intern(mlir::TypeStorageAllocator& allocator, Vector V) {
+  V.has_max_size = (V.max_length >= 0) ? V.elem.hasMaxSize() : false;
   return V;
 }
 
@@ -583,6 +590,7 @@ struct Any {
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const { return false; }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Any& A) {
@@ -618,6 +626,7 @@ struct Protocol {
   bool operator==(const Protocol& P) const { return head == P.head; }
   Width headSize() const { return head.headSize(); }
   Width headAlignment() const { return head.headAlignment(); }
+  bool hasMaxSize() const { return head.hasMaxSize(); }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
@@ -652,6 +661,16 @@ struct ProtocolType
 // deserialization.
 //
 // A BoundedBuffer carries a size so accesses may be bounds-checked.
+
+// A fake Buffer type for size functions.
+struct DummyBufferType
+    : public mlir::Type::TypeBase<DummyBufferType, mlir::Type,
+                                  mlir::TypeStorage> {
+  using Base::Base;
+  using Base::get;
+
+  void print(llvm::raw_ostream& os) const { os << "dbuf"; }
+};
 
 struct RawBufferType : public mlir::Type::TypeBase<RawBufferType, mlir::Type,
                                                    mlir::TypeStorage> {

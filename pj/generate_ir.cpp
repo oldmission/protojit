@@ -3,6 +3,7 @@
 
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
+#include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/Pass/Pass.h>
 
 #include "defer.hpp"
@@ -142,6 +143,8 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
     printAttrForFunctionName(os, key.handlers);
     if (key.buf_type.isa<BoundedBufferType>()) {
       os << "_checked";
+    } else if (key.buf_type.isa<DummyBufferType>()) {
+      os << "_size";
     }
 
     // Types don't always print all the details involved in their uniquing.
@@ -161,8 +164,12 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
 
   auto func = _.create<mlir::FuncOp>(loc, name, fntype);
 
-  for (size_t i = 0; i < func.getNumArguments(); ++i) {
+  for (size_t i = 0; i < 2; ++i) {
     func.setArgAttr(i, LLVM::LLVMDialect::getNoAliasAttrName(),
+                    UnitAttr::get(&getContext()));
+  }
+  if (!key.buf_type.isa<DummyBufferType>()) {
+    func.setArgAttr(2, LLVM::LLVMDialect::getNoAliasAttrName(),
                     UnitAttr::get(&getContext()));
   }
 
@@ -241,7 +248,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
          field.type.cast<StructType>()->outline_variant)) {
       outline_field = &field;
     } else {
-      to_fields.push_back(&field);
+      to_fields.emplace_back(&field);
     }
   }
   if (outline_field != nullptr) {
@@ -836,6 +843,56 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
   return success();
 }
 
+struct SizeFunctionLowering : public OpConversionPattern<SizeFunctionOp> {
+  using OpConversionPattern<SizeFunctionOp>::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(SizeFunctionOp op, ArrayRef<Value> operands,
+                                ConversionPatternRewriter& _) const final;
+};
+
+LogicalResult SizeFunctionLowering::matchAndRewrite(
+    SizeFunctionOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  _.eraseOp(op);
+
+  auto loc = op.getLoc();
+  auto* ctx = _.getContext();
+
+  const auto& proto = op.dst().cast<ProtocolType>();
+
+  // Create a function with the given name taking a pointer to the source type.
+  // The function contains a single SizeOp.
+  auto func = mlir::FuncOp::create(
+      loc, op.name(), _.getFunctionType({op.src()}, _.getIndexType()));
+
+  mlir::ModuleOp module{op.getOperation()->getParentOp()};
+  module.push_back(func);
+  auto* entry_block = func.addEntryBlock();
+  _.setInsertionPointToStart(entry_block);
+
+  // Create a SizeOp to compute the size from TranscodeOps
+  auto size = _.create<SizeOp>(loc, _.getIndexType(), op.round_up());
+  auto head_size = _.create<ConstantOp>(
+      loc, _.getIntegerAttr(_.getIndexType(), proto->headSize().bytes()));
+  _.create<ReturnOp>(loc, ValueRange{_.create<AddIOp>(loc, size, head_size)});
+
+  auto* body = new Block();
+  body->addArgument(DummyBufferType::get(ctx));
+  size.body().push_back(body);
+
+  _.setInsertionPointToStart(body);
+
+  Value buf = body->getArgument(0);
+  auto dst = _.create<ir::UnitOp>(loc, proto->head);
+
+  buf =
+      _.create<TranscodeOp>(loc, DummyBufferType::get(ctx), func.getArgument(0),
+                            dst, buf, op.src_path(), ArrayAttr::get(ctx, {}));
+  _.create<YieldOp>(loc, buf);
+
+  return success();
+}
+
 struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
   TranscodeOpLowering(MLIRContext* ctx, GeneratePass* pass)
       : OpConversionPattern<TranscodeOp>(ctx), pass(pass) {
@@ -854,6 +911,12 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
   auto src_type = op.src().getType().cast<ValueType>();
   auto dst_type = op.dst().getType().cast<ValueType>();
+
+  if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
+    _.create<TranscodePrimitiveOp>(loc, operands[0], operands[1]);
+    _.replaceOp(op, operands[2]);
+    return success();
+  }
 
   FuncOp fn;
 
@@ -950,20 +1013,15 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   return success();
 }
 
-}  // namespace
-
 void GeneratePass::runOnOperation() {
   auto* ctx = &getContext();
 
   ConversionTarget target(*ctx);
   target
       .addLegalDialect<StandardOpsDialect, scf::SCFDialect, ProtoJitDialect>();
-  target.addLegalOp<FuncOp>();
-  target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp>();
-  target.addDynamicallyLegalOp<TranscodeOp>([](TranscodeOp op) {
-    return op.src().getType().isa<IntType>() &&
-           op.dst().getType().isa<IntType>();
-  });
+  target.addLegalOp<ModuleOp, FuncOp>();
+  target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp,
+                      TranscodeOp>();
   target.addDynamicallyLegalOp<DefaultOp>([](DefaultOp op) {
     return op.dst().getType().isa<IntType>() ||
            op.dst().getType().isa<VectorType>();
@@ -972,14 +1030,16 @@ void GeneratePass::runOnOperation() {
   OwningRewritePatternList patterns(ctx);
   patterns
       .insert<EncodeFunctionLowering, DecodeFunctionLowering,
-              DefaultOpLowering>(ctx)
+              SizeFunctionLowering, DefaultOpLowering>(ctx)
       .insert<TranscodeOpLowering>(ctx, this);
 
-  if (failed(applyPartialConversion(getOperation(), target,
-                                    std::move(patterns)))) {
+  if (failed(
+          applyFullConversion(getOperation(), target, std::move(patterns)))) {
     signalPassFailure();
   }
 }
+
+}  // namespace
 
 std::unique_ptr<Pass> createIRGenPass() {
   return std::make_unique<GeneratePass>();

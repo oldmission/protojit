@@ -46,6 +46,7 @@ struct ValueTypeStorage : public mlir::TypeStorage {
   virtual void print(llvm::raw_ostream& os) const = 0;
   virtual Width headSize() const = 0;
   virtual Width headAlignment() const = 0;
+  virtual bool hasMaxSize() const = 0;
 };
 
 // Base class for all PJ types that represent values; i.e., everything except
@@ -72,6 +73,14 @@ struct ValueType : public mlir::Type {
 
   Width headAlignment() const {
     return static_cast<const ValueTypeStorage*>(impl)->headAlignment();
+  }
+
+  // Indicates whether the size taken up by an instance of this type as well as
+  // all of its subelements is guaranteed to be bounded. For example,
+  // char8[8:][4:8] would return false, because the inner vector is potentially
+  // unbounded in total size, but char8[8:256][4] would return true.
+  bool hasMaxSize() const {
+    return static_cast<const ValueTypeStorage*>(impl)->hasMaxSize();
   }
 
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
@@ -110,6 +119,7 @@ struct StructuralTypeStorage : public ValueTypeStorage {
   void print(llvm::raw_ostream& os) const override { os << key; }
   Width headSize() const override { return key.headSize(); }
   Width headAlignment() const override { return key.headAlignment(); }
+  bool hasMaxSize() const override { return key.hasMaxSize(); }
 
   KeyTy key;
 };
@@ -178,6 +188,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
 
   Width headSize() const override { return type_data_.headSize(); }
   Width headAlignment() const override { return type_data_.headAlignment(); }
+  bool hasMaxSize() const override { return type_data_.hasMaxSize(); }
 
   mlir::LogicalResult mutate(mlir::TypeStorageAllocator& allocator,
                              const T& type_data) {

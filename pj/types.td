@@ -12,9 +12,13 @@ def BoundedBufferType :
 def RawBufferType :
     Type<CPred<"$_self.isa<::pj::types::RawBufferType>()">, "rbuf">;
 
+def DummyBufferType :
+    Type<CPred<"$_self.isa<::pj::types::DummyBufferType>()">, "dbuf">;
+
 def BufferType :
     Type<CPred<"$_self.isa<::pj::types::RawBufferType>() ||"
-               "$_self.isa<::pj::types::BoundedBufferType>()">, "buf">;
+               "$_self.isa<::pj::types::BoundedBufferType>() ||"
+               "$_self.isa<::pj::types::DummyBufferType>()">, "buf">;
 
 def ValueType :
     Type<CPred<"$_self.isa<::pj::types::ValueType>()">, "value">;

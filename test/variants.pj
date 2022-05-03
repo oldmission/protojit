@@ -36,10 +36,6 @@ struct Outer3 {
   b: Var4;
 }
 
-struct BigOuter {
-  v: Var3;
-}
-
 struct NestedOuter {
   p: Outer3;
   z: uint8;
