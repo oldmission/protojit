@@ -144,6 +144,8 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
     printAttrForFunctionName(os, key.handlers);
     if (key.buf_type.isa<BoundedBufferType>()) {
       os << "_checked";
+    } else if (key.buf_type.isa<DummyBufferType>()) {
+      os << "_size";
     }
 
     // Types don't always print all the details involved in their uniquing.
@@ -1052,6 +1054,8 @@ struct GenSizeFunctionsPass
 
   // Removes all operations not relevant for sizing.
   void removeNonAllocationInsts(Region& region);
+
+  std::unordered_map<std::string, FuncOp> converted_fns_;
 };
 
 FuncOp GenSizeFunctionsPass::findFunction(llvm::StringRef name) {
@@ -1066,14 +1070,13 @@ FuncOp GenSizeFunctionsPass::findFunction(llvm::StringRef name) {
 }
 
 FuncOp GenSizeFunctionsPass::findOrCreateAllocationOnlyFn(
-    llvm::StringRef orig_name) {
-  std::string name = orig_name.str() + "_size";
-
-  if (auto func = findFunction(name)) {
-    return func;
+    llvm::StringRef name) {
+  auto it = converted_fns_.find(name.str());
+  if (it != converted_fns_.end()) {
+    return it->second;
   }
 
-  auto orig = findFunction(orig_name);
+  auto orig = findFunction(name);
   assert(orig);
 
   auto func = orig.clone();
@@ -1089,6 +1092,8 @@ FuncOp GenSizeFunctionsPass::findOrCreateAllocationOnlyFn(
 
   removeNonAllocationInsts(func.body());
 
+  converted_fns_.try_emplace(name.str(), func);
+  orig.erase();
   return func;
 }
 

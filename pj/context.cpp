@@ -90,7 +90,7 @@ void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
   module_->push_back(builder_.create<SizeFunctionOp>(
-      loc, name, src, types::PathAttr::fromString(&ctx_, src_path), protocol));
+      loc, name, src, protocol, types::PathAttr::fromString(&ctx_, src_path)));
 }
 
 #define DEBUG_TYPE "pj.compile"

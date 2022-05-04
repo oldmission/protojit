@@ -216,6 +216,6 @@ def DecodeFunctionOp : ProtoJit_Op<"decodefunc"> {
 
 def SizeFunctionOp : ProtoJit_Op<"sizefunc"> {
   let arguments = (
-    ins StrAttr:$name, TypeAttr:$src, PathAttr:$src_path, TypeAttr:$dst
+    ins StrAttr:$name, TypeAttr:$src, TypeAttr:$dst, PathAttr:$src_path
   );
 }

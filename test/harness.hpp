@@ -69,9 +69,9 @@ class PJGenericTest
 
   template <typename Src, typename Dest = Src, typename Proto = void,
             typename X, typename Y = void>
-  std::unique_ptr<char[]> transcode(const X* from, Y* to_msg = nullptr,
-                                    const std::string& src_path = "",
-                                    const std::string& tag_path = "") {
+  std::pair<std::unique_ptr<char[]>, uintptr_t> transcode(
+      const X* from, Y* to_msg = nullptr, const std::string& src_path = "",
+      const std::string& tag_path = "") {
     const PJProtocol* protocol;
     if constexpr (std::is_same_v<Proto, void>) {
       protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
@@ -82,44 +82,39 @@ class PJGenericTest
     addEncodeFunction<Src>(ctx, "encode", protocol,
                            no_src_path ? "" : src_path);
     addDecodeFunction<Dest>(ctx, "decode", protocol, branches);
+    addSizeFunction<Src>(ctx, "size", protocol, no_src_path ? "" : src_path);
 
     const auto portal = compile(ctx);
 
-    const auto encode =
+    const auto size_fn = portal->ResolveTarget<uintptr_t (*)(const X*)>("size");
+    const auto encode_fn =
         portal->ResolveTarget<void (*)(const X*, char*)>("encode");
-
-    const auto decode =
+    const auto decode_fn =
         portal->ResolveTarget<std::pair<const char*, uintptr_t> (*)(
             const char*, char*, std::pair<char*, uintptr_t>, const void*)>(
             "decode");
 
-    std::array<char, 1024> enc_buffer;
-    auto dec_buffer = std::make_unique<char[]>(1024);
+    const uintptr_t size = size_fn(from);
 
-    encode(from, enc_buffer.data());
-    auto [_, size] = decode(enc_buffer.data(), reinterpret_cast<char*>(to_msg),
-                            std::make_pair(dec_buffer.get(), 1024), &handlers);
+    std::unique_ptr<char[]> dec_buffer;
+    if (to_msg != nullptr) {
+      // TODO: retry with larger decode buffer size if needed
+      const uintptr_t dec_size = 1024;
+      auto enc_buffer = std::make_unique<char[]>(size);
+      dec_buffer = std::make_unique<char[]>(dec_size);
 
-    return size == 1024 ? nullptr : std::move(dec_buffer);
-  }
+      encode_fn(from, enc_buffer.get());
 
-  template <typename Src, typename Dest = Src, typename Proto = void,
-            typename X, typename Y = void>
-  uintptr_t get_size(const X* from, const std::string& src_path = "",
-                     const std::string& tag_path = "") {
-    const PJProtocol* protocol;
-    if constexpr (std::is_same_v<Proto, void>) {
-      protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
-    } else {
-      protocol = planProtocol<Proto>(ctx);
+      auto [_, remaining_size] =
+          decode_fn(enc_buffer.get(), reinterpret_cast<char*>(to_msg),
+                    std::make_pair(dec_buffer.get(), dec_size), &handlers);
+
+      if (remaining_size == dec_size) {
+        dec_buffer = nullptr;
+      }
     }
 
-    addSizeFunction<Src>(ctx, "size", protocol, no_src_path ? "" : src_path);
-
-    const auto portal = compile(ctx);
-    const auto size = portal->ResolveTarget<uintptr_t (*)(const X*)>("size");
-
-    return size(from);
+    return std::make_pair(std::move(dec_buffer), size);
   }
 
   std::vector<std::pair<std::string, const void*>> branches;
