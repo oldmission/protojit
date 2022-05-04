@@ -94,6 +94,7 @@ cc_library(
         "llvm_extra.hpp",
         "llvm_extra.hpp.inc",
         "llvm_extra_conversions.cpp.inc",
+        "params.hpp",
         "passes.hpp",
         "portal.hpp",
         "portal_impl.hpp",

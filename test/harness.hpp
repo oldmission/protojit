@@ -71,7 +71,7 @@ class PJGenericTest
             typename X, typename Y = void>
   std::pair<std::unique_ptr<char[]>, uintptr_t> transcode(
       const X* from, Y* to_msg = nullptr, const std::string& src_path = "",
-      const std::string& tag_path = "") {
+      const std::string& tag_path = "", const CompilationParams& params = {}) {
     const PJProtocol* protocol;
     if constexpr (std::is_same_v<Proto, void>) {
       protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
@@ -84,7 +84,7 @@ class PJGenericTest
     addDecodeFunction<Dest>(ctx, "decode", protocol, branches);
     addSizeFunction<Src>(ctx, "size", protocol, no_src_path ? "" : src_path);
 
-    const auto portal = compile(ctx);
+    const auto portal = compile(ctx, params);
 
     const auto size_fn = portal->ResolveTarget<uintptr_t (*)(const X*)>("size");
     const auto encode_fn =

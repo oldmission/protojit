@@ -34,6 +34,6 @@ struct CollectionA {
 }
 
 struct CollectionB {
-  owners: char8[:12][3:];
+  owners: char8[:12][3:10];
   items: ItemB[5:];
 }

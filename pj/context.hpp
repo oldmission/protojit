@@ -6,6 +6,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 
+#include "params.hpp"
 #include "passes.hpp"
 #include "portal.hpp"
 #include "types.hpp"
@@ -29,7 +30,7 @@ struct ProtoJitContext {
   void addSizeFunction(std::string_view name, mlir::Type src,
                        types::ProtocolType protocol, llvm::StringRef src_path);
 
-  std::unique_ptr<Portal> compile();
+  std::unique_ptr<Portal> compile(const CompilationParams& params);
 
   pj::types::ValueType unitType() const { return unit_type_; }
 

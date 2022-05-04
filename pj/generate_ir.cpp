@@ -1040,22 +1040,26 @@ void GeneratePass::runOnOperation() {
 
 struct GenSizeFunctionsPass
     : public PassWrapper<GenSizeFunctionsPass, OperationPass<ModuleOp>> {
+  GenSizeFunctionsPass(bool round_up_size) : round_up_size_(round_up_size) {}
+
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<ir::ProtoJitDialect>();
   }
   void runOnOperation() final;
 
+ private:
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
- private:
   FuncOp findFunction(llvm::StringRef name);
 
-  FuncOp findOrCreateAllocationOnlyFn(llvm::StringRef name);
+  FuncOp findOrCreateConvertedFn(llvm::StringRef name);
 
-  // Removes all operations not relevant for sizing.
-  void removeNonAllocationInsts(Region& region);
+  // Removes all operations not relevant for sizing and rounds up length
+  // calculations when possible.
+  void convertRegion(Region& region);
 
   std::unordered_map<std::string, FuncOp> converted_fns_;
+  bool round_up_size_;
 };
 
 FuncOp GenSizeFunctionsPass::findFunction(llvm::StringRef name) {
@@ -1069,8 +1073,7 @@ FuncOp GenSizeFunctionsPass::findFunction(llvm::StringRef name) {
   return func;
 }
 
-FuncOp GenSizeFunctionsPass::findOrCreateAllocationOnlyFn(
-    llvm::StringRef name) {
+FuncOp GenSizeFunctionsPass::findOrCreateConvertedFn(llvm::StringRef name) {
   auto it = converted_fns_.find(name.str());
   if (it != converted_fns_.end()) {
     return it->second;
@@ -1090,24 +1093,47 @@ FuncOp GenSizeFunctionsPass::findOrCreateAllocationOnlyFn(
   _.setInsertionPointToStart(module().getBody());
   _.insert(func);
 
-  removeNonAllocationInsts(func.body());
+  convertRegion(func.body());
 
   converted_fns_.try_emplace(name.str(), func);
   orig.erase();
   return func;
 }
 
-void GenSizeFunctionsPass::removeNonAllocationInsts(Region& region) {
-  region.walk([&](CallOp call) {
-    auto loc = call.getLoc();
-    auto func = findOrCreateAllocationOnlyFn(call.callee());
+void GenSizeFunctionsPass::convertRegion(Region& region) {
+  region.walk([&](Operation* op) {
+    if (auto call = dyn_cast<CallOp>(op)) {
+      auto loc = call.getLoc();
+      auto func = findOrCreateConvertedFn(call.callee());
 
-    auto _ = mlir::OpBuilder{call};
-    auto new_call = _.create<mlir::CallOp>(
-        loc, func, ValueRange{call.operands()[0], call.operands()[2]});
+      auto _ = mlir::OpBuilder{call};
+      auto new_call = _.create<mlir::CallOp>(
+          loc, func, ValueRange{call.operands()[0], call.operands()[2]});
 
-    call.replaceAllUsesWith(ValueRange{new_call.getResult(0)});
-    call.erase();
+      call.replaceAllUsesWith(ValueRange{new_call.getResult(0)});
+      call.erase();
+      return;
+    }
+
+    if (round_up_size_) {
+      // Round up vector lengths that have a maximum size to constants. This
+      // does extend loops potentially past the range of the vector, but since
+      // the elements also have a maximum size, their AllocateOps will also have
+      // been switched to use constant lengths.
+      if (auto len = dyn_cast<LengthOp>(op)) {
+        auto vec = len.vec().getType().cast<VectorType>();
+        if (vec.hasMaxSize()) {
+          auto _ = mlir::OpBuilder{len};
+          auto max = _.create<ConstantOp>(
+              len.getLoc(),
+              _.getIntegerAttr(_.getIndexType(), vec->max_length));
+
+          len.replaceAllUsesWith(max.getResult());
+          len.erase();
+        }
+        return;
+      }
+    }
   });
 
   // Use a mark and sweep algorithm to remove any instructions that do not
@@ -1143,7 +1169,7 @@ void GenSizeFunctionsPass::removeNonAllocationInsts(Region& region) {
 }
 
 void GenSizeFunctionsPass::runOnOperation() {
-  module().walk([&](SizeOp op) { removeNonAllocationInsts(op.body()); });
+  module().walk([&](SizeOp op) { convertRegion(op.body()); });
 }
 
 }  // namespace
@@ -1152,8 +1178,8 @@ std::unique_ptr<Pass> createIRGenPass() {
   return std::make_unique<GeneratePass>();
 }
 
-std::unique_ptr<Pass> createGenSizeFunctionsPass() {
-  return std::make_unique<GenSizeFunctionsPass>();
+std::unique_ptr<Pass> createGenSizeFunctionsPass(bool round_up_size) {
+  return std::make_unique<GenSizeFunctionsPass>(round_up_size);
 }
 
 }  // namespace pj

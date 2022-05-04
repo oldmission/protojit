@@ -76,5 +76,21 @@ bool ValueType::isEnum() const {
   return false;
 }
 
+bool ValueType::hasMaxSize() const {
+  if (isa<IntType>()) {
+    return true;
+  } else if (isa<VariantType>()) {
+    return false;
+  } else if (auto str_this = dyn_cast<StructType>()) {
+    return str_this->has_max_size;
+  } else if (auto arr_this = dyn_cast<ArrayType>()) {
+    return arr_this->has_max_size;
+  } else if (auto vec_this = dyn_cast<VectorType>()) {
+    return vec_this->has_max_size;
+  }
+  // New types must update this function
+  UNREACHABLE();
+}
+
 }  // namespace types
 }  // namespace pj

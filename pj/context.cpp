@@ -124,7 +124,8 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
   return machine;
 }
 
-std::unique_ptr<Portal> ProtoJitContext::compile() {
+std::unique_ptr<Portal> ProtoJitContext::compile(
+    const CompilationParams& params) {
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
                       "Before compilation:\n"
@@ -145,7 +146,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
       module_->dump());
 
   mlir::PassManager pj_size(&ctx_);
-  pj_size.addPass(pj::createGenSizeFunctionsPass());
+  pj_size.addPass(pj::createGenSizeFunctionsPass(params.round_up_size));
 
   if (mlir::failed(pj_size.run(*module_))) {
     throw InternalError("Error generating PJ size functions.");

@@ -6,6 +6,7 @@
 
 #include "arch.hpp"
 #include "exceptions.hpp"
+#include "params.hpp"
 #include "portal.hpp"
 #include "runtime.h"
 
@@ -77,7 +78,8 @@ void addSizeFunction(PJContext* ctx, const std::string& name,
                     protocol, src_path.c_str());
 }
 
-std::unique_ptr<Portal> compile(PJContext* ctx);
+std::unique_ptr<Portal> compile(PJContext* ctx,
+                                const CompilationParams& params = {});
 
 #if 0
 const Protocol* Negotiate(PJContext* scope, const ProtoSpec* recv,

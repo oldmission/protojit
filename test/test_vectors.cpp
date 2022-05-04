@@ -171,12 +171,12 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
   //   ItemB.name = char8[12:]: length (8), inline data (12) = 20
   //   ItemB: name (20), price (4), quantity (4) = 28
   //   char8[:12]: length (1), ref (8) = 9
-  //   owners: length (8) + inline data (3*9) = 35
+  //   owners: length (1) + inline data (3*9) = 28
   //   items: length (8) + inline data (5*28) = 148
-  // So the total head size is: 35 + 148 = 183
+  // So the total head size is: 28 + 148 = 176
   // The only data that exceeds any inline data is the owner names, which add up
   // to 15 bytes total
-  EXPECT_EQ(enc_size, 183 + 15);
+  EXPECT_EQ(enc_size, 191);
   EXPECT_EQ(a.items.size(), b.items.size());
   for (size_t i = 0; i < b.items.size(); ++i) {
     EXPECT_EQ(a.items[i].name, b.items[i].name);

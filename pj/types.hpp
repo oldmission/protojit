@@ -102,6 +102,9 @@ struct Struct {
 
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
+
+  // Set during internment.
+  bool has_max_size = false;
 };
 
 inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
@@ -109,7 +112,9 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
   auto fields = reinterpret_cast<StructField*>(allocator.allocate(
       sizeof(StructField) * key.fields.size(), alignof(StructField)));
 
+  bool has_max_size = true;
   for (uintptr_t i = 0; i < key.fields.size(); ++i) {
+    has_max_size = has_max_size && key.fields[i].type.hasMaxSize();
     fields[i] = StructField{
         .type = key.fields[i].type,
         .name = allocator.copyInto(key.fields[i].name),
@@ -119,7 +124,8 @@ inline Struct type_intern(mlir::TypeStorageAllocator& allocator,
 
   return Struct{.fields = {&fields[0], key.fields.size()},
                 .size = key.size,
-                .alignment = key.alignment};
+                .alignment = key.alignment,
+                .has_max_size = has_max_size};
 }
 
 struct StructType
@@ -359,6 +365,8 @@ struct Array {
 
   Width headSize() const { return elem_size * length; }
   Width headAlignment() const { return alignment; }
+
+  bool has_max_size = false;
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
@@ -385,7 +393,8 @@ inline ::llvm::hash_code hash_value(const Array& ary) {
                             hash_value(ary.alignment));
 }
 
-inline Array type_intern(mlir::TypeStorageAllocator& alloc, const Array& ary) {
+inline Array type_intern(mlir::TypeStorageAllocator& alloc, Array ary) {
+  ary.has_max_size = ary.elem.hasMaxSize();
   return ary;
 }
 
@@ -497,6 +506,9 @@ struct Vector {
   // May be None if min_length == max_length.
   Width outlined_payload_alignment;
 
+  // Set during internment.
+  bool has_max_size = false;
+
   bool operator==(const Vector& V) const {
     return elem == V.elem && min_length == V.min_length &&
            wire_min_length == V.wire_min_length && max_length == V.max_length &&
@@ -531,8 +543,8 @@ inline ::llvm::hash_code hash_value(const Vector& V) {
       hash_value(V.outlined_payload_alignment));
 }
 
-inline Vector type_intern(mlir::TypeStorageAllocator& allocator,
-                          const Vector& V) {
+inline Vector type_intern(mlir::TypeStorageAllocator& allocator, Vector V) {
+  V.has_max_size = (V.max_length >= 0) ? V.elem.hasMaxSize() : false;
   return V;
 }
 

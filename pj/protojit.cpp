@@ -18,8 +18,9 @@ void freeContext(PJContext* ctx) {
   delete reinterpret_cast<ProtoJitContext*>(ctx);
 }
 
-std::unique_ptr<Portal> compile(PJContext* ctx) {
-  return reinterpret_cast<ProtoJitContext*>(ctx)->compile();
+std::unique_ptr<Portal> compile(PJContext* ctx,
+                                const CompilationParams& params) {
+  return reinterpret_cast<ProtoJitContext*>(ctx)->compile(params);
 }
 
 }  // namespace pj

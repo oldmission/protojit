@@ -66,6 +66,10 @@ struct ValueType : public mlir::Type {
 
   bool isEnum() const;
 
+  // Indicates whether the size taken up by an instance of this type as well as
+  // all of its subelements is guaranteed to be bounded.
+  bool hasMaxSize() const;
+
   Width headSize() const {
     return static_cast<const ValueTypeStorage*>(impl)->headSize();
   }
