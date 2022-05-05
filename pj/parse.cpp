@@ -56,7 +56,7 @@ struct ParseState {
 
   // Populated after parsing TagPathDecl.
   // Cleared after parsing ProtoDecl.
-  std::optional<types::PathAttr> tag_path;
+  types::PathAttr tag_path;
 
   SourceId space;
 
@@ -525,7 +525,7 @@ END_ACTION()
 struct TagPath : seq<star<seq<identifier, tok<'.'>>>, tok<'_'>> {};
 
 BEGIN_ACTION(TagPath) {
-  assert(!__ tag_path.has_value());
+  assert(__ tag_path.empty());
   __ tag_path = types::PathAttr::fromString(
       &__ ctx.ctx_,
       {in.begin(), static_cast<size_t>(std::distance(in.begin(), in.end()))});
@@ -550,9 +550,9 @@ BEGIN_ACTION(ProtoDecl) {
   auto head = __ resolveType(in, head_name);
 
   // Validate that the tag path points to a variant via struct fields
-  if (__ tag_path.has_value()) {
+  if (!__ tag_path.empty()) {
     mlir::Type cur = head;
-    auto path = __ tag_path->getValue();
+    const auto& path = __ tag_path.getValue();
     for (uintptr_t i = 0; i < path.size() - 1; ++i) {
       const std::string& term = path[i].str();
 
@@ -591,7 +591,7 @@ BEGIN_ACTION(ProtoDecl) {
       .tag_path = __ tag_path,
   });
 
-  __ tag_path = std::nullopt;
+  __ tag_path = types::PathAttr::none(&__ ctx.ctx_);
 }
 END_ACTION()
 
@@ -620,6 +620,7 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
+      .tag_path = types::PathAttr::none(&scope.ctx.ctx_),
   };
   file_input in(path);
   parse<ParseFile, ParseAction>(in, &state);

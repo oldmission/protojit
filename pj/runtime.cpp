@@ -181,10 +181,7 @@ const PJProtocol* PJPlanProtocol(PJContext* ctx_, const void* head_,
   auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
   auto head = mlir::Type::getFromOpaquePointer(head_);
 
-  std::optional<pj::types::PathAttr> tag_path = std::nullopt;
-  if (std::strlen(tag_path_) > 0) {
-    tag_path = pj::types::PathAttr::fromString(&ctx->ctx_, tag_path_);
-  }
+  auto tag_path = pj::types::PathAttr::fromString(&ctx->ctx_, tag_path_);
 
   auto protocol_type = pj::types::ProtocolType::get(
       &ctx->ctx_,

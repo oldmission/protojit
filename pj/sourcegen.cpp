@@ -458,8 +458,8 @@ void generateTypedef(const ParsedProtoFile::Decl& decl, std::ostream& output) {
 }
 
 void generateProtocol(const SourceId& name, mlir::Type head,
-                      const std::optional<types::PathAttr>& tag_path,
-                      std::ostream& output, std::ostream& back) {
+                      types::PathAttr tag_path, std::ostream& output,
+                      std::ostream& back) {
   generateNamespaceBegin(name, output);
   output << "struct " << std::string_view(name.back()) << ";\n";
   generateNamespaceEnd(name, output);
@@ -473,12 +473,8 @@ void generateProtocol(const SourceId& name, mlir::Type head,
        << "using Head = ";
   generateTypeRef(head, back);
   back << ";\n";
-  back << "static std::string tag() { return \"";
-  if (tag_path.has_value()) {
-    back << tag_path->toString() << "\"; }\n";
-  } else {
-    back << "\"; }\n";
-  }
+  back << "static std::string tag() { return \"" << tag_path.toString()
+       << "\"; }\n";
   back << "};\n}  // namespace gen\n\n";
   back << "\n}  // namespace pj\n\n";
 }

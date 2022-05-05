@@ -287,6 +287,8 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   Span<llvm::StringRef> getValue() const { return getImpl()->key; }
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 
+  bool empty() const { return getValue().size() == 0; }
+
   bool startsWith(llvm::StringRef prefix) const {
     auto& path = getImpl()->key;
     if (path.size() == 0) return false;
