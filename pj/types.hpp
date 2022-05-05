@@ -170,9 +170,6 @@ struct InlineVariant {
 // the tag. The body is found at a fixed offset from the head.
 //
 // This representation may only be used on the wire.
-//
-// TODO(kapil.kanwar): ensure fixed offset variant is the first field which
-// accesses external storage.
 struct OutlineVariant {
   Span<Term> terms = {};
 

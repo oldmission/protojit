@@ -122,7 +122,7 @@ cc_library(
 cc_library(
     name = "runtime",
     srcs = [
-        "plan2.cpp",
+        "plan.cpp",
         "protojit.cpp",
         "runtime.cpp",
     ],
@@ -340,7 +340,7 @@ cc_binary(
         "protogen.hpp",
         "sourcegen.cpp",
         "validate.hpp",
-        "validate2.cpp",
+        "validate.cpp",
     ],
     linkopts = [
         "-lstdc++fs",
