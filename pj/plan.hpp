@@ -12,6 +12,6 @@
 namespace pj {
 
 types::ValueType plan(mlir::MLIRContext& ctx, mlir::Type type,
-                      std::optional<types::PathAttr> path);
+                      types::PathAttr path);
 
 }  // namespace pj

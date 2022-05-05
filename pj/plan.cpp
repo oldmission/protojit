@@ -28,30 +28,15 @@ auto dispatch(mlir::Type type, CB&& cb) {
   }
 }
 
-std::optional<PathAttr> into(std::optional<PathAttr> path,
-                             llvm::StringRef prefix) {
-  if (!path.has_value()) {
-    return std::nullopt;
-  }
-  return path.value().into(prefix);
-}
+ValueType plan(PlanningContext& ctx, mlir::Type type, PathAttr path);
 
-bool matches(std::optional<PathAttr> path) {
-  return path.has_value() && path.value().getValue().size() > 0;
-}
-
-ValueType plan(PlanningContext& ctx, mlir::Type type,
-               std::optional<PathAttr> path);
-
-ValueType plan(PlanningContext& ctx, IntType type,
-               std::optional<PathAttr> path) {
+ValueType plan(PlanningContext& ctx, IntType type, PathAttr path) {
   return IntType::get(
       &ctx.ctx,
       Int{.width = type->width, .alignment = Bytes(1), .sign = type->sign});
 }
 
-ValueType plan(PlanningContext& ctx, StructType type,
-               std::optional<PathAttr> path) {
+ValueType plan(PlanningContext& ctx, StructType type, PathAttr path) {
   Width offset = Bytes(0);
   Width alignment = Bytes(1);
 
@@ -60,20 +45,20 @@ ValueType plan(PlanningContext& ctx, StructType type,
 
   std::vector<StructField> fields;
   for (const StructField& f : type->fields) {
-    auto el = plan(ctx, f.type, into(path, f.name));
+    auto el = plan(ctx, f.type, path.into(f.name));
     offset = RoundUp(offset, el.headAlignment());
     fields.emplace_back(
         StructField{.type = el, .name = f.name, .offset = offset});
     offset += el.headSize();
     alignment = std::max(alignment, el.headAlignment());
 
-    if (matches(path) && ctx.outline && !outline_reached) {
+    if (!path.empty() && ctx.outline && !outline_reached) {
       outline_reached = true;
       outline_offset_start = offset;
     }
   }
 
-  bool contains_outline_variant = matches(path) && ctx.outline;
+  bool contains_outline_variant = !path.empty() && ctx.outline;
   if (contains_outline_variant) {
     auto data = OutlineVariant(ctx.outline);
     data.term_offset += offset - outline_offset_start;
@@ -87,8 +72,7 @@ ValueType plan(PlanningContext& ctx, StructType type,
   return planned;
 }
 
-ValueType plan(PlanningContext& ctx, InlineVariantType type,
-               std::optional<PathAttr> path) {
+ValueType plan(PlanningContext& ctx, InlineVariantType type, PathAttr path) {
   Width term_size = Bytes(0);
   Width term_align = Bytes(1);
 
@@ -96,7 +80,7 @@ ValueType plan(PlanningContext& ctx, InlineVariantType type,
   for (const Term& term : type->terms) {
     // Outlining variants within variants is not supported, so path is not
     // passed through
-    auto planned = plan(ctx, term.type, std::nullopt);
+    auto planned = plan(ctx, term.type, PathAttr::none(&ctx.ctx));
     term_size = std::max(term_size, planned.headSize());
     term_align = RoundUp(term_align, planned.headAlignment());
     terms.push_back({.name = term.name, .type = planned, .tag = term.tag});
@@ -105,7 +89,7 @@ ValueType plan(PlanningContext& ctx, InlineVariantType type,
   const Width tag_width = compute_tag_width(InlineVariant(type));
   const Width tag_align = Bytes(1);
 
-  bool outline = matches(path);
+  bool outline = !path.empty();
   if (outline) {
     // Modify the name so that the final identifier starts with a ^ to
     // disambiguate it from the InlineVariant. For example, A::B::C becomes
@@ -145,9 +129,8 @@ ValueType plan(PlanningContext& ctx, InlineVariantType type,
   }
 }
 
-ValueType plan(PlanningContext& ctx, ArrayType type,
-               std::optional<PathAttr> path) {
-  auto elem = plan(ctx, type->elem, std::nullopt);
+ValueType plan(PlanningContext& ctx, ArrayType type, PathAttr path) {
+  auto elem = plan(ctx, type->elem, PathAttr::none(&ctx.ctx));
   return ArrayType::get(
       &ctx.ctx,
       Array{.elem = elem,
@@ -156,9 +139,8 @@ ValueType plan(PlanningContext& ctx, ArrayType type,
             .alignment = elem.headAlignment()});
 }
 
-ValueType plan(PlanningContext& ctx, VectorType type,
-               std::optional<PathAttr> path) {
-  auto elem = plan(ctx, type->elem, std::nullopt);
+ValueType plan(PlanningContext& ctx, VectorType type, PathAttr path) {
+  auto elem = plan(ctx, type->elem, PathAttr::none(&ctx.ctx));
   const Width el_align = elem.headAlignment();
   assert(el_align.bytes() > 0);
   const Width el_size = RoundUp(elem.headSize(), el_align);
@@ -215,13 +197,11 @@ ValueType plan(PlanningContext& ctx, VectorType type,
                        .outlined_payload_alignment = el_align});
 }
 
-ValueType plan(PlanningContext& ctx, mlir::Type type,
-               std::optional<PathAttr> path) {
+ValueType plan(PlanningContext& ctx, mlir::Type type, PathAttr path) {
   return dispatch(type, [&ctx, path](auto t) { return plan(ctx, t, path); });
 }
 
-ValueType plan(mlir::MLIRContext& mlir_ctx, mlir::Type type,
-               std::optional<PathAttr> path) {
+ValueType plan(mlir::MLIRContext& mlir_ctx, mlir::Type type, PathAttr path) {
   PlanningContext ctx{.ctx = mlir_ctx, .outline = OutlineVariantType{}};
 
   auto planned =
