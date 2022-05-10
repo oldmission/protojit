@@ -302,55 +302,61 @@ struct CopySet {
 
     for (; it != pieces.end(); ++it) {
       // Combine this piece into the prior one if they are exactly adjacent.
-      if (piece->load_start + piece->len == (*it)->load_start &&
+      if (piece->is_poison == (*it)->is_poison &&
+          piece->load_start + piece->len == (*it)->load_start &&
           piece->store_start + piece->len == (*it)->store_start) {
         piece->len += (*it)->len;
         continue;
       }
 
-      if (!llvm::isPowerOf2_64(piece->len) &&
-          piece->len < target.max_promotion_size) {
-        // If we can't combine them, try to extend the size of this piece to a
-        // power of two. This requires:
-        //
-        // (a) we can ensure the trailing memory on the store side will be
-        //     overwritten next.
-        // (b) we can ensure the trailing memory on the load side is valid to
-        //     read from, even if that read would entail reading arbitrary data.
-        auto new_len = llvm::NextPowerOf2(piece->len);
-        auto poison_len = new_len - piece->len;
+      auto try_extend_piece = [&]() {
+        if (!llvm::isPowerOf2_64(piece->len) &&
+            piece->len < target.max_promotion_size) {
+          // If we can't combine them, try to extend the size of this piece to a
+          // power of two. This requires:
+          //
+          // (a) we can ensure the trailing memory on the store side will be
+          //     overwritten next.
+          // (b) we can ensure the trailing memory on the load side is valid to
+          //     read from, even if that read would entail reading arbitrary
+          //     data.
+          auto new_len = llvm::NextPowerOf2(piece->len);
+          auto poison_len = new_len - piece->len;
 
-        // (a)
-        auto end = piece->store_start + piece->len;
-        for (auto* j = it; j != pieces.end() && poison_len > 0; ++j) {
-          if ((*j)->store_start > end) {
-            break;
+          // (a)
+          auto end = piece->store_start + piece->len;
+          for (auto* j = it; j != pieces.end() && poison_len > 0; ++j) {
+            if ((*j)->store_start > end) {
+              break;
+            }
+            end += (*j)->len;
+            poison_len -= std::min(poison_len, (*j)->len);
           }
-          end += (*j)->len;
-          poison_len -= std::min(poison_len, (*j)->len);
+
+          if (poison_len > 0) {
+            return;
+          }
+
+          auto load_end = new_len + piece->load_start;
+          auto pos = piece->load_start + piece->len;
+
+          // (b)
+          for (auto l = load_starts.lower_bound(piece->load_start);
+               l != load_starts.end() && pos < load_end; ++l) {
+            auto [_, next] = *l;
+            if (next->load_start >= pos + target.min_page_size) break;
+            pos = next->load_start + next->len;
+          }
+
+          if (pos < load_end) {
+            return;
+          }
+
+          piece->len = new_len;
         }
+      };
 
-        if (poison_len > 0) {
-          continue;
-        }
-
-        auto load_end = new_len + piece->load_start;
-        auto pos = piece->load_start + piece->len;
-
-        // (b)
-        for (auto l = load_starts.lower_bound(piece->load_start);
-             l != load_starts.end() && pos < load_end; ++l) {
-          auto [_, next] = *l;
-          if (next->load_start >= pos + target.min_page_size) break;
-          pos = next->load_start + next->len;
-        }
-
-        if (pos < load_end) {
-          continue;
-        }
-
-        piece->len = new_len;
-      }
+      try_extend_piece();
 
       piece->generate(pos, src_def, dst_def);
       piece = *it;
