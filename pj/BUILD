@@ -122,14 +122,20 @@ cc_library(
 cc_library(
     name = "runtime",
     srcs = [
+        "convert_internal.cpp",
         "plan.cpp",
         "protojit.cpp",
         "runtime.cpp",
+        "variant_outlining.cpp",
+        "wire_layout.cpp",
     ],
     hdrs = [
+        "convert_internal.hpp",
         "plan.hpp",
         "protojit.hpp",
         "runtime.h",
+        "variant_outlining.hpp",
+        "wire_layout.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [

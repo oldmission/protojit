@@ -10,6 +10,16 @@ namespace types {
 
 using llvm::StringRef;
 
+#define FOR_EACH_VALUE_TYPE(V)       \
+  V(::pj::types::IntType)            \
+  V(::pj::types::StructType)         \
+  V(::pj::types::InlineVariantType)  \
+  V(::pj::types::OutlineVariantType) \
+  V(::pj::types::ArrayType)          \
+  V(::pj::types::VectorType)         \
+  V(::pj::types::AnyType)            \
+  V(::pj::types::ProtocolType)
+
 struct Int {
   /*** Parsed ***/
   Width width;
@@ -179,7 +189,14 @@ struct OutlineVariant {
   Width term_alignment = Width::None();
 
   Width headSize() const { return tag_width; }
-  Width headAlignment() const { return tag_alignment; }
+
+  Width headAlignment() const {
+    // Since the term is located at a fixed offset from the start of the
+    // message, the message itself must be aligned to at least the alignment
+    // demanded by the term.
+    return std::max(tag_alignment, term_alignment);
+  }
+
   bool hasMaxSize() const {
     // TODO: implement logic to determine if it can have a max size and update
     // SizeOp lowering accordingly.
@@ -226,18 +243,6 @@ inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
   return internVariant(allocator, type_data);
 }
 
-template <typename Variant>
-Width compute_tag_width(const Variant& v) {
-  Width w = pj::Bytes(1);
-  if (v.terms.size() > 0) {
-    auto max_tag = std::max_element(
-        v.terms.begin(), v.terms.end(),
-        [](const Term& a, const Term& b) { return a.tag < b.tag; });
-    w = Bytes(RoundUpToPowerOfTwo(std::ceil(std::log2(max_tag->tag + 1) / 8)));
-  }
-  return w;
-}
-
 struct VariantType : public NominalType {
   using NominalType::NominalType;
 
@@ -250,6 +255,17 @@ struct VariantType : public NominalType {
   Width tag_offset() const;
   Width term_offset() const;
 };
+
+inline Width compute_tag_width(VariantType v) {
+  Width w = pj::Bytes(1);
+  if (v.terms().size() > 0) {
+    auto max_tag = std::max_element(
+        v.terms().begin(), v.terms().end(),
+        [](const Term& a, const Term& b) { return a.tag < b.tag; });
+    w = Bytes(RoundUpToPowerOfTwo(std::ceil(std::log2(max_tag->tag + 1) / 8)));
+  }
+  return w;
+}
 
 struct InlineVariantType
     : public mlir::Type::TypeBase<
@@ -618,9 +634,13 @@ struct AnyType
 };
 
 struct Protocol {
+  /*** Generated ***/
   ValueType head;
+  Width buffer_offset = Bytes(0);
 
-  bool operator==(const Protocol& P) const { return head == P.head; }
+  bool operator==(const Protocol& P) const {
+    return head == P.head && buffer_offset == P.buffer_offset;
+  }
   Width headSize() const { return head.headSize(); }
   Width headAlignment() const { return head.headAlignment(); }
   bool hasMaxSize() const { return head.hasMaxSize(); }

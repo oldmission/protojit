@@ -88,7 +88,7 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
     EXPECT_EQ(T.value.x, 42);
   });
 
-  auto [_, enc_size] = transcode<Var3, Var4>(&F, &T, "x", ".");
+  auto [_, enc_size] = transcode<Var3, Var4>(&F, &T, "x", "_");
 
   EXPECT_EQ(enc_size, no_tag ? 65 : 9);
 }

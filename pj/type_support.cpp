@@ -5,14 +5,14 @@ namespace pj {
 namespace types {
 
 bool ValueType::classof(mlir::Type val) {
-  return val.getTypeID() == IntType::getTypeID() ||
-         val.getTypeID() == StructType::getTypeID() ||
-         val.getTypeID() == InlineVariantType::getTypeID() ||
-         val.getTypeID() == OutlineVariantType::getTypeID() ||
-         val.getTypeID() == ArrayType::getTypeID() ||
-         val.getTypeID() == VectorType::getTypeID() ||
-         val.getTypeID() == AnyType::getTypeID() ||
-         val.getTypeID() == ProtocolType::getTypeID();
+#define CHECK_TYPE_ID(TYPE) \
+  if (val.getTypeID() == TYPE::getTypeID()) return true;
+
+  FOR_EACH_VALUE_TYPE(CHECK_TYPE_ID);
+
+#undef CHECK_TYPE_ID
+
+  return false;
 }
 
 void PathAttr::print(llvm::raw_ostream& os) const {
