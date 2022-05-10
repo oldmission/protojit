@@ -773,7 +773,7 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
 
   auto dst_buf =
       _.create<ir::ProjectOp>(loc, RawBufferType::get(ctx), func.getArgument(1),
-                              proto->head.headSize());
+                              proto->head.headSize() + proto->buffer_offset);
 
   _.create<TranscodeOp>(loc, RawBufferType::get(ctx), func.getArgument(0), dst,
                         dst_buf, op.src_path(), ArrayAttr::get(ctx, {}));

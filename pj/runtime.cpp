@@ -183,11 +183,8 @@ const PJProtocol* PJPlanProtocol(PJContext* ctx_, const void* head_,
 
   auto tag_path = pj::types::PathAttr::fromString(&ctx->ctx_, tag_path_);
 
-  auto protocol_type = pj::types::ProtocolType::get(
-      &ctx->ctx_,
-      pj::types::Protocol{.head = pj::plan(ctx->ctx_, head, tag_path)});
   return reinterpret_cast<const PJProtocol*>(
-      protocol_type.getAsOpaquePointer());
+      pj::plan_protocol(ctx->ctx_, head, tag_path).getAsOpaquePointer());
 }
 
 void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,

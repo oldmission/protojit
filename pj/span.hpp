@@ -21,11 +21,13 @@ struct Span : public llvm::ArrayRef<T> {
 
 template <typename T>
 struct SpanConverter {
+  SpanConverter() {}
+
   template <typename Array, typename Convert = pj::Identity>
   SpanConverter(const Array& arr, uintptr_t size, Convert&& convert = {}) {
-    storage.reserve(size);
+    storage_.reserve(size);
     for (uintptr_t i = 0; i < size; ++i) {
-      storage.push_back(convert(arr[i]));
+      storage_.push_back(convert(arr[i]));
     }
   }
 
@@ -33,10 +35,14 @@ struct SpanConverter {
   SpanConverter(const Array& arr, Convert&& convert = {})
       : SpanConverter(arr, arr.size(), std::forward<Convert>(convert)) {}
 
-  Span<T> get() { return Span<T>{&storage[0], storage.size()}; }
+  SpanConverter(const SpanConverter& o) : storage_{o.storage_} {}
+
+  std::vector<T>& storage() { return storage_; }
+
+  Span<T> get() { return Span<T>{&storage_[0], storage_.size()}; }
 
  private:
-  std::vector<T> storage;
+  std::vector<T> storage_;
 };
 
 }  // namespace pj

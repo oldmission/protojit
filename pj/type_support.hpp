@@ -138,7 +138,7 @@ struct StructuralTypeBase : public ValueType {
   }
 };
 
-enum class TypeDomain { kHost, kWire };
+enum class TypeDomain { kHost, kWire, kInternal };
 
 struct NominalTypeStorageBase : public ValueTypeStorage {
   virtual ~NominalTypeStorageBase() {}
@@ -179,6 +179,8 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
       case TypeDomain::kWire:
         os << "wire";
         break;
+      case TypeDomain::kInternal:
+        os << "internal";
     }
 
     for (auto p : name_) {
@@ -229,6 +231,8 @@ struct NominalTypeBase : public Base {
   operator const D&() const { return storage()->type_data_; }
 
   const D* operator->() const { return &storage()->type_data_; }
+
+  const D& getTypeData() const { return storage()->type_data_; }
 
   void setTypeData(const D& type_data) {
     (void)static_cast<T*>(this)->mutate(type_data);

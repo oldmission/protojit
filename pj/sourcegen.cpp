@@ -262,9 +262,8 @@ void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
   } else {
     output << "enum class Kind : ";
   }
-  pj::Width tag_width =
-      generateIntTypeRef(compute_tag_width(types::InlineVariant(type)),
-                         types::Int::Sign::kUnsigned, output);
+  pj::Width tag_width = generateIntTypeRef(compute_tag_width(type),
+                                           types::Int::Sign::kUnsigned, output);
   output << " {\n";
   output << "undef = " << 0 << ",\n";
   for (auto& term : type->terms) {
