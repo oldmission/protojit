@@ -1,0 +1,13 @@
+struct Second {
+  name: char64[9:256];
+}
+
+struct First {
+  x: Second;
+}
+
+variant A {
+  f: First;
+}
+
+protocol AProto : A @_;

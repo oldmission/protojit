@@ -69,6 +69,12 @@ pj_test(
 )
 
 pj_test(
+    name = "test_hoisting",
+    srcs = ["test_hoisting.cpp"],
+    protos = ["hoisting.pj"],
+)
+
+pj_test(
     name = "test_protocols",
     srcs = ["test_protocols.cpp"],
     protos = ["protocols.pj", "protocols2.pj"],

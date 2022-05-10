@@ -8,10 +8,10 @@
 #include "span.hpp"
 #include "util.hpp"
 #include "variant_outlining.hpp"
+#include "vector_hoisting.hpp"
 #include "wire_layout.hpp"
 
 namespace pj {
-
 using namespace types;
 
 void TypePass::replaceStructField(StructType type, intptr_t index,
@@ -78,6 +78,15 @@ ProtocolType plan_protocol(mlir::MLIRContext& ctx, mlir::Type type,
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
                       "After variant outlining:\n"
+                      "==================================================\n";
+      proto.head.printTree(llvm::errs()));
+
+  VectorHoisting hoisting{ctx};
+  hoisting.run(proto);
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After vector hoisting:\n"
                       "==================================================\n";
       proto.head.printTree(llvm::errs()));
 

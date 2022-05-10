@@ -37,9 +37,36 @@ Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key) {
   return s;
 }
 
+std::string TermAttribute::toString() const {
+  std::ostringstream sstr;
+  switch (kind) {
+    case kVectorSplit: {
+      const auto& data = value.vector_split;
+      sstr << "VECTOR_SPLIT "
+           << (data.type == VectorSplit::kInline ? "inline, " : "outline, ")
+           << data.inline_length << ", " << data.path.toString();
+    } break;
+    default:
+      UNREACHABLE();
+  }
+  return sstr.str();
+}
+
 std::string Term::toString() const {
   std::ostringstream sstr;
   sstr << std::string_view(name) << " = " << tag;
+  if (attributes.size() > 0) {
+    sstr << " [";
+    bool first = true;
+    for (const TermAttribute& attr : attributes) {
+      if (!first) {
+        first = false;
+        sstr << " | ";
+      }
+      sstr << attr.toString();
+    }
+    sstr << "]";
+  }
   return sstr.str();
 }
 

@@ -86,9 +86,16 @@ struct GeneratePass
     return _.create<ConstantOp>(loc, _.getBoolAttr(value));
   }
 
+  Value projectPath(mlir::OpBuilder& _, mlir::Location loc, Value base,
+                    PathAttr path_attr);
+
+  Value generateTermCondition(mlir::OpBuilder& _, mlir::Location loc, Value src,
+                              Span<TermAttribute> dst_attributes);
+
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                      VariantType src_type, VariantType dst_type,
-                     const Term* src_term, const Term* dst_term, Value src,
+                     const Term* src_term,
+                     llvm::SmallVector<const Term*, 1> dst_terms, Value src,
                      Value dst, Value& buffer,
                      llvm::StringMap<const void*>& handler_map);
 
@@ -176,36 +183,109 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
   return func;
 }
 
+Value GeneratePass::projectPath(mlir::OpBuilder& _, mlir::Location loc,
+                                Value base, PathAttr path_attr) {
+  auto path = path_attr.getValue();
+  if (path.size() == 1) {
+    return base;
+  }
+  // If there are remaining fields in path, it must be a struct type.
+  auto type = base.getType().cast<StructType>();
+  auto it =
+      std::find_if(type->fields.begin(), type->fields.end(),
+                   [&](const StructField& f) { return f.name == path[0]; });
+  assert(it != type->fields.end());
+  auto body = _.create<ProjectOp>(loc, it->type, base, it->offset);
+  return projectPath(_, loc, body, path_attr.narrow());
+}
+
+Value GeneratePass::generateTermCondition(mlir::OpBuilder& _,
+                                          mlir::Location loc, Value src,
+                                          Span<TermAttribute> dst_attributes) {
+  auto cond = buildBool(loc, _, true);
+  for (const TermAttribute& attr : dst_attributes) {
+    Value cur_cond;
+    switch (attr.kind) {
+      case TermAttribute::kVectorSplit: {
+        const auto& vs = attr.value.vector_split;
+        auto vec = projectPath(_, loc, src, vs.path);
+        auto length = _.create<LengthOp>(loc, _.getIndexType(), vec);
+        cur_cond = _.create<CmpIOp>(
+            loc,
+            vs.type == TermAttribute::VectorSplit::kInline ? CmpIPredicate::ule
+                                                           : CmpIPredicate::ugt,
+            length, buildIndex(loc, _, vs.inline_length));
+      } break;
+      default:
+        UNREACHABLE();
+    }
+    cond = _.create<AndOp>(loc, cond, cur_cond);
+  }
+  return cond;
+}
+
 void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                                  VariantType src_type, VariantType dst_type,
-                                 const Term* src_term, const Term* dst_term,
+                                 const Term* src_term,
+                                 llvm::SmallVector<const Term*, 1> dst_terms,
                                  Value src, Value dst, Value& buffer,
                                  llvm::StringMap<const void*>& handler_map) {
   auto* ctx = _.getContext();
 
-  if (dst_term != nullptr) {
+  if (!dst_terms.empty()) {
     auto src_body = _.create<ir::ProjectOp>(loc, src_term->type, src,
                                             src_type.term_offset());
-    auto dst_body = _.create<ir::ProjectOp>(loc, dst_term->type, dst,
+
+    mlir::OpBuilder::InsertPoint ip;
+    Value start_buf = buffer;
+    for (uintptr_t i = 0; i < dst_terms.size(); ++i) {
+      const Term* dst_term = dst_terms[i];
+      auto cond = generateTermCondition(_, loc, src_body, dst_term->attributes);
+      auto if_op = _.create<scf::IfOp>(loc, start_buf.getType(), cond,
+                                       /*withElseRegion=*/true);
+      if (i == 0) {
+        buffer = if_op.getResult(0);
+        ip = _.saveInsertionPoint();
+      } else {
+        _.create<scf::YieldOp>(loc, if_op.getResult(0));
+      }
+
+      {  // Fill in the body with the transcode to this specific dst term.
+        _.setInsertionPointToStart(if_op.thenBlock());
+        _.create<TagOp>(loc, dst, dst_term->tag);
+
+        auto dst_body = _.create<ProjectOp>(loc, dst_term->type, dst,
                                             dst_type.term_offset());
 
-    if (dst_type.isa<OutlineVariantType>()) {
-      buffer = _.create<ir::AllocateOp>(
-          loc, buffer.getType(), buffer,
-          buildIndex(loc, _,
-                     dst_term->type.cast<ValueType>().headSize().bytes()));
+        auto cur_buf = start_buf;
+        if (dst_type.isa<OutlineVariantType>()) {
+          cur_buf = _.create<AllocateOp>(
+              loc, cur_buf.getType(), cur_buf,
+              buildIndex(loc, _,
+                         dst_term->type.cast<ValueType>().headSize().bytes()));
+        }
+        cur_buf = _.create<TranscodeOp>(loc, cur_buf.getType(), src_body,
+                                        dst_body, cur_buf, PathAttr::none(ctx),
+                                        ArrayAttr::get(ctx, {}));
+        _.create<scf::YieldOp>(loc, cur_buf);
+      }
+
+      _.setInsertionPointToStart(if_op.elseBlock());
     }
 
-    buffer = _.create<ir::TranscodeOp>(loc, buffer.getType(), src_body,
-                                       dst_body, buffer, PathAttr::none(ctx),
-                                       ArrayAttr::get(ctx, {}));
+    // The insertion point is inside the final else block.
+    _.create<scf::YieldOp>(loc, start_buf);
+    // TODO: add a debug assert that this else block is never reached
+
+    _.restoreInsertionPoint(ip);
+  } else {
+    _.create<TagOp>(loc, dst, VariantType::kUndefTag);
   }
 
-  _.create<TagOp>(loc, dst,
-                  dst_term == nullptr ? VariantType::kUndefTag : dst_term->tag);
-
-  if (auto it = handler_map.find(dst_term ? dst_term->name : "undef");
+  if (auto it =
+          handler_map.find(dst_terms.empty() ? "undef" : dst_terms[0]->name);
       it != handler_map.end()) {
+    assert(dst_terms.size() <= 1);
     _.create<SetCallbackOp>(
         loc, mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
                                     reinterpret_cast<int64_t>(it->second)));
@@ -325,9 +405,10 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
   auto src = func.getArgument(0);
   auto dst = func.getArgument(1);
 
-  llvm::StringMap<const Term*> dst_terms;
+  llvm::StringMap<llvm::SmallVector<const Term*, 1>> dst_terms;
   for (auto& term : dst_type.terms()) {
-    dst_terms.insert({term.name.str(), &term});
+    auto [it, _] = dst_terms.try_emplace(term.name);
+    it->second.emplace_back(&term);
   }
 
   llvm::StringMap<const void*> handler_map;
@@ -355,7 +436,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
       transcodeTerm(_, loc, src_type, dst_type, src_term, it->second, src, dst,
                     result_buf, handler_map);
     } else {
-      transcodeTerm(_, loc, src_type, dst_type, src_term, nullptr, src, dst,
+      transcodeTerm(_, loc, src_type, dst_type, src_term, {}, src, dst,
                     result_buf, handler_map);
     }
 
@@ -370,7 +451,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
       _.setInsertionPointToStart(default_block);
       Value result_buf = func.getArgument(2);
 
-      transcodeTerm(_, loc, src_type, dst_type, nullptr, nullptr, src, dst,
+      transcodeTerm(_, loc, src_type, dst_type, nullptr, {}, src, dst,
                     result_buf, handler_map);
 
       _.create<ReturnOp>(loc, result_buf);
@@ -386,7 +467,7 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
         transcodeTerm(_, loc, src_type, dst_type, &src_term, it->second, src,
                       dst, result_buf, handler_map);
       } else {
-        transcodeTerm(_, loc, src_type, dst_type, &src_term, nullptr, src, dst,
+        transcodeTerm(_, loc, src_type, dst_type, &src_term, {}, src, dst,
                       result_buf, handler_map);
       }
 
@@ -710,6 +791,8 @@ mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
   auto is_src_inline = [&]() -> Value {
     if (from->min_length == 0) {
       return buildBool(loc, _, false);
+    } else if (from->min_length == from->max_length) {
+      return buildBool(loc, _, true);
     }
     return _.create<CmpIOp>(loc, CmpIPredicate::ule, src_length,
                             buildIndex(loc, _, from->min_length));
