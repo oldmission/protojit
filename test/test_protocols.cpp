@@ -10,8 +10,9 @@ TEST_P(PJVariantTest, ProtocolSame) {
   using namespace v1;
 
   Adoption F = {
-      .animal = {.specifics = {.value = {.dog = {.breed = DogBreed::BEAGLE}},
-                               .tag = Specifics::Kind::dog},
+      .animal = {.specifics =
+                     {.value = {.dog = {.breed = std::array{DogBreed::BEAGLE}}},
+                      .tag = Specifics::Kind::dog},
                  .age = 8,
                  .weight = 40,
                  .gender = 0},

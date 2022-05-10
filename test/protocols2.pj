@@ -9,10 +9,14 @@ enum DogBreed {
   BEAGLE;
   BULLDOG;
   POODLE;
+  PUG;
+  HUSKY;
+  POMERANIAN;
 }
 
 struct Dog {
-  breed: DogBreed;
+  // Multiple breeds indicates a mix.
+  breed: DogBreed[1:];
 }
 
 enum CatPersonality {
