@@ -127,6 +127,7 @@ cc_library(
         "protojit.cpp",
         "runtime.cpp",
         "variant_outlining.cpp",
+        "vector_hoisting.cpp",
         "wire_layout.cpp",
     ],
     hdrs = [
@@ -135,6 +136,7 @@ cc_library(
         "protojit.hpp",
         "runtime.h",
         "variant_outlining.hpp",
+        "vector_hoisting.hpp",
         "wire_layout.hpp",
     ],
     linkopts = ["-lstdc++"],

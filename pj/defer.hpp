@@ -43,6 +43,9 @@ struct Defer {
 #define DEFER_UNNAMED_EXPANDER(CODE, CTR) DEFER_UNNAMED_INNER(CODE, CTR)
 #define DEFER_NAMED_EXPANDER(CODE, CTR, STRUCT_NAME) \
   DEFER_COUNTER(CODE, CTR, STRUCT_NAME)
+#define DEFER_DESTRUCTION_INNER(CODE, CTR) \
+  [[maybe_unused]] const auto& deferred_destruction_##CTR = CODE;
+#define DEFER_DESTRUCTION_EXPANDER(CODE, CTR) DEFER_DESTRUCTION_INNER(CODE, CTR)
 
 // Helper macros which are the targets of the variadic macro dispatch below.
 // DEFER_UNNAMED is called for anonymous Defer declarations, whereas DEFER_NAMED
@@ -84,6 +87,10 @@ struct Defer {
 // captured variables or <code>'s context itself.
 #define DEFER(...) \
   DEFER_ARGS_DISPATCHER(__VA_ARGS__, DEFER_NAMED, DEFER_UNNAMED)(__VA_ARGS__)
+
+// DEFER_DESTRUCTION(<code>) will evaluate <code> and store the result as a
+// const reference which will live until the end of the block scope.
+#define DEFER_DESTRUCTION(CODE) DEFER_DESTRUCTION_EXPANDER(CODE, __COUNTER__)
 
 }  // namespace pj
 

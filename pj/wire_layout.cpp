@@ -103,7 +103,7 @@ ValueType WireLayout::visit(VectorType type) {
   Width length_size = Bytes(8);
   if (type->max_length >= 0) {
     length_size = Bytes(RoundUpToPowerOfTwo(
-        DivideUp<intptr_t>(llvm::Log2_64_Ceil(type->max_length), kByte)));
+        DivideUp<intptr_t>(llvm::Log2_64_Ceil(type->max_length + 1), kByte)));
     assert(length_size.bytes() <= 8);
   }
 

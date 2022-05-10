@@ -83,7 +83,7 @@ PathAttr PathAttr::fromString(mlir::MLIRContext* ctx,
     return get(ctx, llvm::ArrayRef<llvm::StringRef>{});
   }
 
-  llvm::SmallVector<llvm::StringRef, 2> vec;
+  llvm::SmallVector<llvm::StringRef, 4> vec;
   for (size_t pos = 0; pos < src_path.size();) {
     auto end = src_path.find('.', pos + 1);
     if (end == src_path.npos) end = src_path.size();
@@ -104,6 +104,13 @@ std::string PathAttr::toString() const {
     sstr << std::string_view(piece);
   }
   return sstr.str();
+}
+
+PathAttr PathAttr::expand(llvm::StringRef prefix) const {
+  llvm::SmallVector<llvm::StringRef, 4> vec;
+  vec.push_back(prefix);
+  vec.append(getValue().begin(), getValue().end());
+  return get(getContext(), vec);
 }
 
 bool NominalType::classof(mlir::Type val) {

@@ -16,7 +16,10 @@ namespace pj {
 #ifndef NDEBUG
 #define ASSERT(X) assert(X)
 #else
-#define ASSERT(X) if (false) { (void)(X); }
+#define ASSERT(X) \
+  if (false) {    \
+    (void)(X);    \
+  }
 #endif
 
 template <typename T>
@@ -52,6 +55,15 @@ struct Identity {
     return std::forward<T>(t);
   }
 };
+
+// Convenience template for visiting variants from cppreference.com
+template <class... Ts>
+struct overloaded : Ts... {
+  using Ts::operator()...;
+};
+
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 // Copied from compiler-rt
 

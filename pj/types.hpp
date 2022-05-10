@@ -1,6 +1,7 @@
 #pragma once
 
 #include <sstream>
+#include <variant>
 
 #include "arch.hpp"
 #include "span.hpp"
@@ -144,14 +145,52 @@ struct StructType
   friend struct NominalTypeBase<NominalType, Struct, StructType>;
 };
 
+struct TermAttribute {
+  // All attribute values must have field is_default. When an unknown attribute
+  // is decoded from a counterparty, it gets decoded as a variant with term
+  // kUndef and value Undef.
+
+  struct Undef {
+    bool is_default;  // Whether this term should be used as the default.
+
+    bool operator==(const Undef& other) const {
+      return is_default == other.is_default;
+    }
+  };
+
+  struct VectorSplit {
+    enum Type { kInline, kOutline } type;
+    intptr_t inline_length;
+    PathAttr path;  // Relative path from term type to the vector.
+    bool is_default;
+
+    bool operator==(const VectorSplit& other) const {
+      return type == other.type && inline_length == other.inline_length &&
+             path == other.path;
+    }
+  };
+
+  std::variant<Undef, VectorSplit> value;
+
+  bool operator==(const TermAttribute& other) const {
+    return value == other.value;
+  }
+
+  std::string toString() const;
+};
+
 struct Term {
   /*** Parsed ***/
   StringRef name;
   ValueType type;
   uint64_t tag;  // Must be >0. 0 is reserved for UNDEF.
 
+  /*** Generated ***/
+  Span<TermAttribute> attributes;
+
   bool operator==(const Term& other) const {
-    return name == other.name && type == other.type && tag == other.tag;
+    return name == other.name && type == other.type && tag == other.tag &&
+           attributes == other.attributes;
   }
 
   bool operator<(const Term& other) const { return name < other.name; }
@@ -258,6 +297,8 @@ inline V internVariant(mlir::TypeStorageAllocator& allocator,
         .name = allocator.copyInto(type_data.terms[i].name),
         .type = type_data.terms[i].type,
         .tag = type_data.terms[i].tag,
+        .attributes = Span<TermAttribute>{allocator.copyInto(
+            type_data.terms[i].attributes)},
     };
     if (is_enum && !type_data.terms[i].type.isUnit()) {
       is_enum = false;

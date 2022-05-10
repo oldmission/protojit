@@ -1,0 +1,35 @@
+struct FirstInner {
+  name: char64[8:256];
+}
+
+struct First {
+  x: FirstInner;
+}
+
+struct SecondInner {
+  name: char64[4:];
+}
+
+struct Second {
+  x: SecondInner;
+}
+
+struct Third {
+  x: FirstInner;
+  y: SecondInner;
+}
+
+variant A {
+  f: First;
+}
+
+variant B {
+  f: First;
+  s: Second;
+}
+
+variant C {
+  f: First;
+  s: Second;
+  t: Third;
+}
