@@ -1,6 +1,8 @@
 #include "context.hpp"
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Analysis/TargetLibraryInfo.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/LegacyPassManager.h>
 #include <llvm/MC/MCContext.h>
 #include <llvm/MC/MCSymbol.h>
@@ -8,6 +10,8 @@
 #include <llvm/Support/Host.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 #include <llvm/Support/TargetRegistry.h>
+#include <llvm/Transforms/IPO.h>
+#include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Transforms/Scalar.h>
 
 #include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
@@ -34,6 +38,8 @@
 #include "passes.hpp"
 #include "portal.hpp"
 #include "portal_impl.hpp"
+
+#define DISABLE_LIBC
 
 namespace pj {
 using namespace ir;
@@ -202,15 +208,42 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
 
   mlir::ExecutionEngine::setupTargetTriple(llvm_module.get());
 
-  auto opt_pipeline = mlir::makeOptimizingTransformer(
-      /*optLevel=*/3, /*sizeLevel=*/0,
-      /*targetMachine=*/machine.get());
+  {
+    // See mlir/lib/ExecutionEngine/OptUtils.cpp's populatePassManagers for the
+    // origin of the following choices.
+    llvm::legacy::PassManager modulePM;
+    llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
 
-  if (auto err = opt_pipeline(llvm_module.get())) {
-    std::string msg;
-    llvm::raw_string_ostream str(msg);
-    str << "Failed to optimize LLVM IR " << err << "\n";
-    throw InternalError(std::move(msg));
+    modulePM.add(llvm::createTargetTransformInfoWrapperPass(
+        machine.get()->getTargetIRAnalysis()));
+    funcPM.add(llvm::createTargetTransformInfoWrapperPass(
+        machine.get()->getTargetIRAnalysis()));
+
+    llvm::PassManagerBuilder builder;
+    builder.OptLevel = 3;
+    builder.Inliner = llvm::createFunctionInliningPass(
+        /*optLevel=*/3, /*sizeLevel=*/0, /*DisableInlineHotCallSite=*/false);
+    builder.LoopVectorize = true;
+    builder.SLPVectorize = true;
+
+#ifdef DISABLE_LIBC
+    // Set TargetLibraryInfoWrapperPass to assume that no library functions are
+    // available.
+    auto TLII = new llvm::TargetLibraryInfoImpl{
+        llvm::Triple{llvm_module->getTargetTriple()}};
+    TLII->disableAllFunctions();
+    builder.LibraryInfo = TLII;
+#endif
+
+    builder.populateModulePassManager(modulePM);
+    builder.populateFunctionPassManager(funcPM);
+
+    funcPM.doInitialization();
+    for (auto& func : *llvm_module) {
+      funcPM.run(func);
+    }
+    funcPM.doFinalization();
+    modulePM.run(*llvm_module);
   }
 
   LLVM_DEBUG(
@@ -222,12 +255,11 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
   {
     llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
     funcPM.doInitialization();
-    auto layout = machine->createDataLayout();
     funcPM.add(llvm::createCopyCoalescingPass(*machine));
     funcPM.add(llvm::createCFGSimplificationPass());
     funcPM.add(llvm::createEarlyCSEPass());
     funcPM.add(llvm::createAggressiveDCEPass());
-    for (auto& func : *llvm_module.get()) {
+    for (auto& func : *llvm_module) {
       funcPM.run(func);
     }
     funcPM.doFinalization();
@@ -280,6 +312,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
     return std::move(jit.get());
   }();
 
+#ifndef DISABLE_LIBC
   llvm::orc::SymbolMap symbols;
   symbols.try_emplace(jit->mangleAndIntern("memcpy"),
                       llvm::JITEvaluatedSymbol::fromPointer(&memcpy));
@@ -287,6 +320,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
           jit->getMainJITDylib().define(llvm::orc::absoluteSymbols(symbols))) {
     abort();
   }
+#endif
 
   if (auto err = jit->addIRModule(llvm::orc::ThreadSafeModule(
           std::move(llvm_module), std::move(llvm_context)))) {
