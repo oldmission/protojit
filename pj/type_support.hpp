@@ -333,12 +333,16 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
     return path[0] == prefix;
   }
 
+  PathAttr narrow() const { return get(getContext(), getImpl()->key.slice(1)); }
+
   PathAttr into(llvm::StringRef prefix) const {
     if (startsWith(prefix)) {
-      return get(getContext(), getImpl()->key.slice(1));
+      return narrow();
     }
     return none(getContext());
   }
+
+  PathAttr expand(llvm::StringRef prefix) const;
 };
 
 }  // namespace types
