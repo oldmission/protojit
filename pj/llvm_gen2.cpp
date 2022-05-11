@@ -1,6 +1,7 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
@@ -325,7 +326,7 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
 
     // Zero, sign extend, or truncate if necessary.
     if (src->width < dst->width) {
-      if (src->sign == Int::Sign::kSigned) {
+      if (src->sign == Sign::kSigned) {
         val = _.create<SExtOp>(loc, dst.toMLIR(), val);
       } else {
         val = _.create<ZExtOp>(loc, dst.toMLIR(), val);
@@ -593,7 +594,7 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
                                           type->ref_size);
       auto ref = _.create<LoadOp>(loc, ref_ptr);
 
-      if (type->reference_mode == Vector::kOffset) {
+      if (type->reference_mode == ReferenceMode::kOffset) {
         // TODO: bounds check on the offset
         start = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
                                 ValueRange{ref});
@@ -683,7 +684,7 @@ LogicalResult StoreRefOpLowering::matchAndRewrite(
   auto ref_ptr = pass->buildOffsetPtr(loc, _, operands[0], type->ref_offset,
                                       type->ref_size);
 
-  if (type->reference_mode == Vector::kPointer) {
+  if (type->reference_mode == ReferenceMode::kPointer) {
     assert(type->ref_size == pass->wordSize());
     _.create<StoreOp>(loc, buf_as_int, ref_ptr);
   } else {

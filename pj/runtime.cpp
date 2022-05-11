@@ -9,11 +9,10 @@
 #include <cstring>
 #include <vector>
 
-pj::types::Vector::ReferenceMode ConvertReferenceMode(
-    PJReferenceMode reference_mode) {
+pj::ReferenceMode ConvertReferenceMode(PJReferenceMode reference_mode) {
   return (reference_mode == PJ_REFERENCE_MODE_POINTER)
-             ? pj::types::Vector::kPointer
-             : pj::types::Vector::kOffset;
+             ? pj::ReferenceMode::kPointer
+             : pj::ReferenceMode::kOffset;
 }
 
 pj::types::TypeDomain ConvertTypeDomain(PJTypeDomain type_domain) {
@@ -21,16 +20,16 @@ pj::types::TypeDomain ConvertTypeDomain(PJTypeDomain type_domain) {
                                               : pj::types::TypeDomain::kWire;
 }
 
-pj::types::Int::Sign ConvertSign(PJSign sign) {
+pj::Sign ConvertSign(PJSign sign) {
   switch (sign) {
     case PJ_SIGN_SIGNED:
-      return pj::types::Int::kSigned;
+      return pj::Sign::kSigned;
     case PJ_SIGN_UNSIGNED:
-      return pj::types::Int::kUnsigned;
+      return pj::Sign::kUnsigned;
     case PJ_SIGN_SIGNLESS:
-      return pj::types::Int::kSignless;
+      return pj::Sign::kSignless;
     default:
-      return pj::types::Int::kSignless;
+      return pj::Sign::kSignless;
   }
 }
 
@@ -130,16 +129,18 @@ const PJInlineVariantType* PJCreateInlineVariantType(
 }
 
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
-                                     intptr_t length, Bits elem_size,
+                                     uint64_t length, Bits elem_size,
                                      Bits alignment) {
   auto elem =
       mlir::Type::getFromOpaquePointer(type).cast<pj::types::ValueType>();
   auto array_type = pj::types::ArrayType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
-      pj::types::Array{.elem = elem,
-                       .length = length,
-                       .elem_size = pj::Bits(elem_size),
-                       .alignment = pj::Bits(alignment)});
+      pj::types::Array{
+          .elem = elem,
+          .length = length,
+          .elem_size = pj::Bits(elem_size),
+          .alignment = pj::Bits(alignment),
+      });
   return reinterpret_cast<const PJArrayType*>(array_type.getAsOpaquePointer());
 }
 

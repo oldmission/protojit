@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/BlockAndValueMapping.h>
@@ -8,6 +9,7 @@
 
 #include "defer.hpp"
 #include "ir.hpp"
+#include "reflect.hpp"
 #include "util.hpp"
 
 namespace pj {
@@ -964,7 +966,20 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     fn = pass->getOrCreateVectorTranscodeFn(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
-  } else {
+  } else if (dst_type.isa<AnyType>()) {
+    // SAMIR_TODO2:
+    // - generate host/reflect-side type
+    // - transcode into that type
+    // - create any to bottle it up
+    auto reflected_type = reflect::reflectableTypeFor(dst_type);
+    auto reflected_dst =
+        _.create<ProjectOp>(loc, reflected_type, operands[2], Bytes(0));
+    Value result_buf = _.create<AllocateOp>(loc, operands[2],
+                                            reflected_type.headSize().bytes());
+    result_buf = _.create<TranscodeOp>(loc, operands[0], operands[1],
+                                       result_buf, PathAttr{}, ArrayAttr{});
+    _.create<ReflectOp>(loc, reflected_dst, operands[1]);
+    _.replaceOp(op, result_buf);
     return failure();
   }
 

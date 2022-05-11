@@ -30,11 +30,7 @@ struct Int {
   Width alignment;
 
   /*** Parsed ***/
-  enum Sign {
-    kSigned,    // implies sign-extension is used for conversion
-    kUnsigned,  // implies zero-extension is used for conversion
-    kSignless,  // implies conversion between different sizes is meaningless
-  } sign;
+  Sign sign;
 
   bool operator==(const Int& other) const {
     return width == other.width && sign == other.sign &&
@@ -51,13 +47,13 @@ struct Int {
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Int& I) {
   switch (I.sign) {
-    case Int::kSigned:
+    case Sign::kSigned:
       os << "i";
       break;
-    case Int::kUnsigned:
+    case Sign::kUnsigned:
       os << "u";
       break;
-    case Int::kSignless:
+    case Sign::kSignless:
       os << "c";
       break;
   }
@@ -70,7 +66,9 @@ inline ::llvm::hash_code hash_value(const Int& I) {
                             hash_value(I.alignment));
 }
 
-inline Int type_intern(mlir::TypeStorageAllocator& allocator, const Int& I) {
+inline Int type_intern(__attribute__((unused))
+                       mlir::TypeStorageAllocator& allocator,
+                       const Int& I) {
   return I;
 }
 
@@ -80,7 +78,7 @@ struct IntType
   using Base::Base;
   using Base::get;
 
-  using Sign = Int::Sign;
+  void print(llvm::raw_ostream& os) const;
 
   mlir::Type toMLIR() const {
     return mlir::IntegerType::get(getContext(), getImpl()->key.width.bits(),
@@ -390,7 +388,7 @@ inline bool VariantType::classof(mlir::Type val) {
 struct Array {
   /*** Parsed ***/
   ValueType elem;
-  intptr_t length;
+  uint64_t length;
 
   /*** Generated ***/
   // elem_size may be larger than the size of the inner element type
@@ -502,14 +500,14 @@ struct Vector {
   ValueType elem;
 
   // Never None. 0 implies no inline storage.
-  intptr_t min_length;
+  int64_t min_length;
 
   // May be None. May not be 0.
-  intptr_t max_length;
+  int64_t max_length;
 
   /*** Generated ***/
   // The min_length specified by the user for the wire type.
-  intptr_t wire_min_length;
+  int64_t wire_min_length;
 
   // Partial payload length -- number of elements stored inline, when the total
   // number of elements exceeds min_length. Never None, also never guaranteed to
@@ -524,10 +522,7 @@ struct Vector {
   Width ref_offset;
   Width ref_size;
 
-  enum ReferenceMode {
-    kPointer,
-    kOffset,
-  } reference_mode;
+  ReferenceMode reference_mode;
 
   // Both may be None iff min_length == 0.
   Width inline_payload_offset;
@@ -658,12 +653,6 @@ struct Any {
   Width type_ref_width;
   Width type_ref_offset;
 
-  Width tag_width;
-  Width tag_offset;
-
-  Width version_width;
-  Width version_offset;
-
   Width size;
   Width alignment;
 
@@ -671,10 +660,7 @@ struct Any {
     return data_ref_width == other.data_ref_width &&
            data_ref_offset == other.data_ref_offset &&
            type_ref_width == other.type_ref_width &&
-           type_ref_offset == other.type_ref_offset &&
-           tag_width == other.tag_width && tag_offset == other.tag_offset &&
-           version_width == other.version_width &&
-           version_offset == other.version_offset && size == other.size &&
+           type_ref_offset == other.type_ref_offset && size == other.size &&
            alignment == other.alignment;
   }
 
@@ -695,8 +681,6 @@ inline ::llvm::hash_code hash_value(const Any& A) {
   return llvm::hash_combine(
       hash_value(A.data_ref_width), hash_value(A.data_ref_offset),
       hash_value(A.type_ref_width), hash_value(A.type_ref_offset),
-      hash_value(A.tag_width), hash_value(A.tag_offset),
-      hash_value(A.version_width), hash_value(A.version_offset),
       hash_value(A.size), hash_value(A.alignment));
 }
 

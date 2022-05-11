@@ -1,5 +1,6 @@
 load("@rules_cc//examples:experimental_cc_shared_library.bzl", "cc_shared_library")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//:site.bzl", "pj_lib")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -65,21 +66,11 @@ gentbl_cc_library(
 )
 
 cc_library(
-    name = "compiler",
+    name = "core",
     srcs = [
-        "context.cpp",
-        "copy_coalescing.cpp",
-        "gdb.cpp",
-        "generate_ir.cpp",
+        "context_base.cpp",
         "ir.cpp",
-        "lib.cpp",
-        "llvm_extra.cpp",
-        "llvm_gen2.cpp",
-        "portal.cpp",
-        "scope.cpp",
-        "side_effect_analysis.cpp",
-        "sizing.cpp",
-        "types.cpp",
+        "ir.cpp.inc",
         "type_support.cpp",
     ],
     hdrs = [
@@ -89,9 +80,76 @@ cc_library(
         "enums.cpp.inc",
         "enums.hpp.inc",
         "exceptions.hpp",
-        "ir.cpp.inc",
         "ir.hpp",
         "ir.hpp.inc",
+        "protojit.hpp",
+        "runtime.h",
+        "span.hpp",
+        "type_support.hpp",
+        "types.hpp",
+        "util.hpp",
+    ],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:StandardOps",
+        "@llvm-project//mlir:Transforms",
+    ],
+)
+
+cc_binary(
+    name = "pjc",
+    srcs = [
+        "parse.cpp",
+        "pjc.cpp",
+        "protogen.hpp",
+        "sourcegen.cpp",
+        "validate.hpp",
+        "validate.cpp",
+    ],
+    linkopts = [
+        "-lstdc++fs",
+    ],
+    deps = [
+        ":core",
+        "@pegtl//:headers",
+    ],
+)
+
+pj_lib(
+    name = "reflect_pj",
+    protos = ["reflect.pj"],
+)
+
+cc_library(
+    name = "reflect",
+    srcs = ["reflect.cpp"],
+    hdrs = [
+        "reflect.hpp",
+        "reflect.pj.hpp",
+    ],
+    linkopts = ["-lstdc++fs"],
+    deps = [":core"],
+)
+
+cc_library(
+    name = "compiler",
+    srcs = [
+        "context.cpp",
+        "copy_coalescing.cpp",
+        "gdb.cpp",
+        "generate_ir.cpp",
+        "lib.cpp",
+        "llvm_extra.cpp",
+        "llvm_gen2.cpp",
+        "portal.cpp",
+        "scope.cpp",
+        "side_effect_analysis.cpp",
+        "sizing.cpp",
+        "type_support.cpp",
+        "types.cpp",
+    ],
+    hdrs = [
         "llvm_extra.cpp.inc",
         "llvm_extra.hpp",
         "llvm_extra.hpp.inc",
@@ -102,12 +160,11 @@ cc_library(
         "scope.hpp",
         "side_effect_analysis.hpp",
         "span.hpp",
-        "type_support.hpp",
-        "types.hpp",
-        "util.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [
+        "core",
+        "reflect",
         "@llvm-project//mlir:ExecutionEngine",
         "@llvm-project//mlir:ExecutionEngineUtils",
         "@llvm-project//mlir:LLVMDialect",
@@ -148,7 +205,9 @@ cc_shared_library(
     roots = [":runtime"],
     # Yes... all transitive dependencies have to be listed here :(
     static_deps = [
+        ":core",
         ":compiler",
+        ":reflect",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
         "@llvm-project//llvm:AggressiveInstCombine",
@@ -335,24 +394,5 @@ cc_shared_library(
         "@llvm-project//mlir:X86VectorConversionIncGen",
         "@llvm-project//mlir:X86VectorIncGen",
         "@llvm-project//mlir:X86VectorToLLVMIRTranslation",
-    ],
-)
-
-cc_binary(
-    name = "pjc",
-    srcs = [
-        "parse.cpp",
-        "pjc.cpp",
-        "protogen.hpp",
-        "sourcegen.cpp",
-        "validate.hpp",
-        "validate.cpp",
-    ],
-    linkopts = [
-        "-lstdc++fs",
-    ],
-    deps = [
-        ":compiler",
-        "@pegtl//:headers",
     ],
 )

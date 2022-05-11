@@ -16,7 +16,10 @@ namespace pj {
 #ifndef NDEBUG
 #define ASSERT(X) assert(X)
 #else
-#define ASSERT(X) if (false) { (void)(X); }
+#define ASSERT(X) \
+  if (false) {    \
+    (void)(X);    \
+  }
 #endif
 
 template <typename T>

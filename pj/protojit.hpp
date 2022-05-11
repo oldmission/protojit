@@ -6,10 +6,11 @@
 
 #include "arch.hpp"
 #include "exceptions.hpp"
-#include "portal.hpp"
 #include "runtime.h"
 
 namespace pj {
+
+class Portal;
 
 namespace gen {
 
@@ -80,11 +81,6 @@ void addSizeFunction(PJContext* ctx, const std::string& name,
 
 std::unique_ptr<Portal> compile(PJContext* ctx);
 
-#if 0
-const Protocol* Negotiate(PJContext* scope, const ProtoSpec* recv,
-                          const ProtoSpec* send, NegotiateOptions opts);
-#endif
-
 template <typename T, size_t MinLength, intptr_t MaxLength>
 class ArrayView {
  public:
@@ -103,6 +99,8 @@ class ArrayView {
 
   ArrayView() : length(0) {}
 
+// SAMIR_TODO2: do we need to keep this?
+#if 0
   ArrayView& operator=(const ArrayView& o) {
     length = o.length;
     outline = o.outline;
@@ -111,13 +109,13 @@ class ArrayView {
     }
     return *this;
   }
+#endif
 
   const T& operator[](uintptr_t i) const {
     if (length <= MinLength) {
       return storage[i];
-    } else {
-      return reinterpret_cast<const T*>(outline)[i];
     }
+    return reinterpret_cast<const T*>(outline)[i];
   }
 
   template <typename U>
@@ -128,17 +126,15 @@ class ArrayView {
   const T* begin() const {
     if (length <= MinLength) {
       return storage.begin();
-    } else {
-      return reinterpret_cast<const T*>(outline);
     }
+    return reinterpret_cast<const T*>(outline);
   }
 
   const T* end() const {
     if (length <= MinLength) {
       return storage.begin() + length;
-    } else {
-      return reinterpret_cast<const T*>(outline) + length;
     }
+    return reinterpret_cast<const T*>(outline) + length;
   }
 
   uint64_t size() const { return length; }
@@ -164,11 +160,14 @@ class ArrayView<T, 0, MaxLength> {
 
   ArrayView() : length(0) {}
 
+// SAMIR_TODO2: do we need to keep this?
+#if 0
   ArrayView& operator=(const ArrayView& o) {
     length = o.length;
     outline = o.outline;
     return *this;
   }
+#endif
 
   const T& operator[](uintptr_t i) const {
     return reinterpret_cast<const T*>(outline)[i];

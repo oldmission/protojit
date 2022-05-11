@@ -57,7 +57,7 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     Bits alignment);
 
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
-                                     intptr_t length, Bits elem_size,
+                                     uint64_t length, Bits elem_size,
                                      Bits alignment);
 
 const PJVectorType* PJCreateVectorType(
