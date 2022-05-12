@@ -4,6 +4,53 @@
 namespace pj {
 namespace types {
 
+std::string printIndent(llvm::raw_ostream& os, llvm::StringRef indent,
+                        bool is_last) {
+  os << indent;
+  auto child_indent = indent.str();
+  if (is_last) {
+    os << " └─";
+    child_indent += "   ";
+  } else {
+    os << " ├─";
+    child_indent += " │ ";
+  }
+  return child_indent;
+}
+
+void ValueType::printTree(llvm::raw_ostream& os, llvm::StringRef name,
+                          llvm::StringRef indent, bool is_last) const {
+  auto child_indent = printIndent(os, indent, is_last);
+
+  os << name << " (";
+  if (isa<NominalType>()) {
+    if (isa<StructType>()) {
+      os << "Struct ";
+    } else if (isa<InlineVariantType>()) {
+      os << "InlineVariant ";
+    } else if (isa<OutlineVariantType>()) {
+      os << "OutlineVariant ";
+    } else {
+      UNREACHABLE();
+    }
+  }
+  print(os);
+  os << ")\n";
+
+  const auto& children_ = children();
+
+  if (hasDetails()) {
+    printIndent(os, child_indent, children_.empty());
+    printDetails(os);
+    os << "\n";
+  }
+
+  for (auto it = children_.begin(); it != children_.end(); ++it) {
+    it->first.cast<ValueType>().printTree(os, it->second, child_indent,
+                                          std::next(it) == children_.end());
+  }
+}
+
 bool ValueType::classof(mlir::Type val) {
 #define CHECK_TYPE_ID(TYPE) \
   if (val.getTypeID() == TYPE::getTypeID()) return true;

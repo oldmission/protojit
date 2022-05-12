@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sstream>
+
 #include "arch.hpp"
 #include "span.hpp"
 #include "type_support.hpp"
@@ -42,6 +44,9 @@ struct Int {
   Width headSize() const { return width; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return true; }
+  ChildVector children() const { return {}; }
+  bool hasDetails() const { return false; }
+  void printDetails(llvm::raw_ostream& os) const {}
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Int& I) {
@@ -76,8 +81,6 @@ struct IntType
   using Base::get;
 
   using Sign = Int::Sign;
-
-  void print(llvm::raw_ostream& os) const;
 
   mlir::Type toMLIR() const {
     return mlir::IntegerType::get(getContext(), getImpl()->key.width.bits(),
@@ -116,6 +119,17 @@ struct Struct {
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return has_max_size; }
+  ChildVector children() const {
+    ChildVector children;
+    for (const StructField& f : fields) {
+      children.push_back(std::make_pair(f.type, f.name.str()));
+    }
+    return children;
+  }
+  bool hasDetails() const { return size == Bytes(0); }
+  void printDetails(llvm::raw_ostream& os) const {
+    os << "size: " << size.bits() << ", alignment: " << alignment.bits();
+  }
 };
 
 Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key);
@@ -141,6 +155,8 @@ struct Term {
   }
 
   bool operator<(const Term& other) const { return name < other.name; }
+
+  std::string toString() const;
 };
 
 // Variants can have two representations.
@@ -168,6 +184,19 @@ struct InlineVariant {
     // TODO: implement logic to determine if it can have a max size and update
     // SizeOp lowering accordingly.
     return false;
+  }
+  ChildVector children() const {
+    ChildVector children;
+    for (const Term& t : terms) {
+      children.push_back(std::make_pair(t.type, t.toString()));
+    }
+    return children;
+  }
+  bool hasDetails() const { return true; }
+  void printDetails(llvm::raw_ostream& os) const {
+    os << "term: <term>[" << term_size.bits() << "] @ " << term_offset.bits();
+    os << ", tag: u" << tag_width.bits() << " @ " << tag_offset.bits();
+    os << ", size: " << size.bits() << ", alignment: " << alignment.bits();
   }
 
   // Set during internment.
@@ -201,6 +230,19 @@ struct OutlineVariant {
     // TODO: implement logic to determine if it can have a max size and update
     // SizeOp lowering accordingly.
     return false;
+  }
+  ChildVector children() const {
+    ChildVector children;
+    for (const Term& t : terms) {
+      children.push_back(std::make_pair(t.type, t.toString()));
+    }
+    return children;
+  }
+  bool hasDetails() const { return true; }
+  void printDetails(llvm::raw_ostream& os) const {
+    os << "term: <term>/" << term_alignment.bits() << " @ "
+       << term_offset.bits();
+    os << ", tag: u" << tag_width.bits() << "/" << tag_alignment.bits();
   }
 };
 
@@ -276,8 +318,6 @@ struct InlineVariantType
   using Base::classof;
   using Base::get;
 
-  void print(llvm::raw_ostream& os) const;
-
   Span<Term> terms() const { return (*this)->terms; }
 
   friend struct NominalTypeBase<VariantType, InlineVariant, InlineVariantType>;
@@ -291,8 +331,6 @@ struct OutlineVariantType
   using Base::Base;
   using Base::classof;
   using Base::get;
-
-  void print(llvm::raw_ostream& os) const;
 
   Span<Term> terms() const { return (*this)->terms; }
 
@@ -374,11 +412,17 @@ struct Array {
   Width headSize() const { return elem_size * length; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return has_max_size; }
+  ChildVector children() const {
+    ChildVector children;
+    children.push_back(std::make_pair(elem, "elem"));
+    return children;
+  }
+  bool hasDetails() const { return false; }
+  void printDetails(llvm::raw_ostream& os) const {}
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Array& A) {
-  A.elem.print(os);
-  os << "[" << A.length;
+  os << A.elem << "[" << A.length;
 
   if (A.elem_size != A.elem.headSize()) {
     os << "|" << A.elem_size;
@@ -411,8 +455,6 @@ struct ArrayType
                                   StructuralTypeStorage<Array>> {
   using Base::Base;
   using Base::get;
-
-  void print(llvm::raw_ostream& os) const;
 };
 
 // Vectors are variable-length sequences of values.
@@ -516,6 +558,32 @@ struct Vector {
   // Set during internment.
   bool has_max_size = false;
   bool hasMaxSize() const { return has_max_size; }
+  ChildVector children() const {
+    ChildVector children;
+    children.push_back(std::make_pair(elem, "elem"));
+    return children;
+  }
+  bool hasDetails() const { return true; }
+  void printDetails(llvm::raw_ostream& os) const {
+    os << "length: u" << length_size.bits() << " @ " << length_offset.bits();
+    if (max_length < 0 || (max_length >= 0 && max_length > min_length)) {
+      os << ", ref: u" << ref_size.bits() << " @ " << ref_offset.bits();
+      if (ppl_count > 0) {
+        os << ", ppl: " << elem << "[" << ppl_count;
+        if (elemSize() != elem.headSize()) {
+          os << "|" << elemSize().bits();
+        }
+        os << "] @ " << partial_payload_offset.bits();
+      }
+    }
+    if (min_length > 0) {
+      os << ", inline: " << elem << "[" << min_length;
+      if (elemSize() != elem.headSize()) {
+        os << "|" << elemSize().bits();
+      }
+      os << "] @ " << inline_payload_offset.bits();
+    }
+  }
 
   bool operator==(const Vector& V) const {
     return elem == V.elem && min_length == V.min_length &&
@@ -533,8 +601,19 @@ struct Vector {
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Vector& V) {
-  return os << V.elem << "[" << V.min_length << "/" << V.wire_min_length << ":"
-            << V.max_length << "|...]";
+  os << V.elem << "[" << V.wire_min_length << ":" << V.max_length;
+
+  if (V.elemSize() != V.elem.headSize()) {
+    os << "|" << V.elemSize();
+  }
+
+  os << "]";
+
+  if (V.alignment != V.elem.headAlignment()) {
+    os << "/" << V.alignment;
+  }
+
+  return os;
 }
 
 inline ::llvm::hash_code hash_value(const Vector& V) {
@@ -562,8 +641,6 @@ struct VectorType
                                   StructuralTypeStorage<Vector>> {
   using Base::Base;
   using Base::get;
-
-  void print(llvm::raw_ostream& os) const;
 };
 
 // Any is a type which cannot be encoded, only decoded.
@@ -604,6 +681,9 @@ struct Any {
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return false; }
+  ChildVector children() const { return {}; }
+  bool hasDetails() const { return true; }
+  void printDetails(llvm::raw_ostream& os) const {}
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Any& A) {
@@ -629,8 +709,6 @@ struct AnyType
                                   StructuralTypeStorage<Any>> {
   using Base::Base;
   using Base::get;
-
-  void print(llvm::raw_ostream& os) const;
 };
 
 struct Protocol {
@@ -644,6 +722,9 @@ struct Protocol {
   Width headSize() const { return head.headSize(); }
   Width headAlignment() const { return head.headAlignment(); }
   bool hasMaxSize() const { return head.hasMaxSize(); }
+  ChildVector children() const { return head.children(); }
+  bool hasDetails() const { return head.hasDetails(); }
+  void printDetails(llvm::raw_ostream& os) const { head.printDetails(os); }
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os,
@@ -669,8 +750,6 @@ struct ProtocolType
                                   StructuralTypeStorage<Protocol>> {
   using Base::Base;
   using Base::get;
-
-  void print(llvm::raw_ostream& os) const;
 };
 
 // A value of Buffer type represents a pointer to some mutable byte buffer.

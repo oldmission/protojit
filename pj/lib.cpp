@@ -22,7 +22,10 @@ void init() {
       std::vector<const char*> types_p;
       while (getline(str, type, ',')) {
         types.push_back(type);
-        types_p.push_back(types.back().c_str());
+      }
+
+      for (const std::string& type : types) {
+        types_p.push_back(type.c_str());
       }
 
       if (types.size() > 0) {

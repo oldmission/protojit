@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include "types.hpp"
 #include "util.hpp"
 
@@ -33,6 +35,12 @@ Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key) {
 
   s.fields = {&fields[0], key.fields.size()};
   return s;
+}
+
+std::string Term::toString() const {
+  std::ostringstream sstr;
+  sstr << std::string_view(name) << " = " << tag;
+  return sstr.str();
 }
 
 }  // namespace types
