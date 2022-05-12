@@ -1,5 +1,7 @@
 #include <unordered_set>
 
+#include <llvm/Support/Debug.h>
+
 #include "convert_internal.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
@@ -54,19 +56,42 @@ void TypePass::replaceVariantTerm(VariantType type, intptr_t index,
   }
 }
 
+#define DEBUG_TYPE "pj.plan"
+
 ProtocolType plan_protocol(mlir::MLIRContext& ctx, mlir::Type type,
                            PathAttr path) {
   auto proto =
       Protocol{.head = type.cast<ValueType>(), .buffer_offset = Bytes(0)};
 
+  ConvertInternal conv_internal{ctx};
+  conv_internal.run(proto);
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "Before planning:\n"
+                      "==================================================\n";
+      proto.head.printTree(llvm::errs()));
+
   VariantOutlining outlining{ctx, path};
   outlining.run(proto);
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After variant outlining:\n"
+                      "==================================================\n";
+      proto.head.printTree(llvm::errs()));
 
   WireLayout layout{ctx};
   layout.run(proto);
 
   OutlineVariantOffsetGeneration offset;
   offset.run(proto);
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After wire layout and outline variant offset gen:\n"
+                      "==================================================\n";
+      proto.head.printTree(llvm::errs()));
 
   return ProtocolType::get(&ctx, proto);
 }

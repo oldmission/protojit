@@ -9,6 +9,7 @@
 #include <mlir/IR/Types.h>
 
 #include <functional>
+#include <iterator>
 
 #include "arch.hpp"
 #include "span.hpp"
@@ -41,12 +42,19 @@ inline bool operator<(const pj::types::Name a, const pj::types::Name b) {
 namespace pj {
 namespace types {
 
+struct ValueType;
+
+using ChildVector = llvm::SmallVector<std::pair<mlir::Type, std::string>>;
+
 struct ValueTypeStorage : public mlir::TypeStorage {
   virtual ~ValueTypeStorage(){};
   virtual void print(llvm::raw_ostream& os) const = 0;
+  virtual bool hasDetails() const = 0;
+  virtual void printDetails(llvm::raw_ostream& os) const = 0;
   virtual Width headSize() const = 0;
   virtual Width headAlignment() const = 0;
   virtual bool hasMaxSize() const = 0;
+  virtual ChildVector children() const = 0;
 };
 
 // Base class for all PJ types that represent values; i.e., everything except
@@ -59,6 +67,17 @@ struct ValueType : public mlir::Type {
   void print(llvm::raw_ostream& os) const {
     static_cast<const ValueTypeStorage*>(impl)->print(os);
   }
+
+  bool hasDetails() const {
+    return static_cast<const ValueTypeStorage*>(impl)->hasDetails();
+  }
+
+  void printDetails(llvm::raw_ostream& os) const {
+    static_cast<const ValueTypeStorage*>(impl)->printDetails(os);
+  }
+
+  void printTree(llvm::raw_ostream& os, llvm::StringRef name = {},
+                 llvm::StringRef indent = {}, bool is_last = true) const;
 
   bool isUnit() const {
     // The pjc parser represents unit types via nullptr.
@@ -81,6 +100,10 @@ struct ValueType : public mlir::Type {
   // unbounded in total size, but char8[8:256][4] would return true.
   bool hasMaxSize() const {
     return static_cast<const ValueTypeStorage*>(impl)->hasMaxSize();
+  }
+
+  ChildVector children() const {
+    return static_cast<const ValueTypeStorage*>(impl)->children();
   }
 
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
@@ -117,9 +140,14 @@ struct StructuralTypeStorage : public ValueTypeStorage {
   }
 
   void print(llvm::raw_ostream& os) const override { os << key; }
+  bool hasDetails() const override { return key.hasDetails(); }
+  void printDetails(llvm::raw_ostream& os) const override {
+    key.printDetails(os);
+  }
   Width headSize() const override { return key.headSize(); }
   Width headAlignment() const override { return key.headAlignment(); }
   bool hasMaxSize() const override { return key.hasMaxSize(); }
+  ChildVector children() const override { return key.children(); }
 
   KeyTy key;
 };
@@ -188,9 +216,15 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
     }
   }
 
+  bool hasDetails() const override { return type_data_.hasDetails(); }
+  void printDetails(llvm::raw_ostream& os) const override {
+    type_data_.printDetails(os);
+  }
+
   Width headSize() const override { return type_data_.headSize(); }
   Width headAlignment() const override { return type_data_.headAlignment(); }
   bool hasMaxSize() const override { return type_data_.hasMaxSize(); }
+  ChildVector children() const override { return type_data_.children(); }
 
   mlir::LogicalResult mutate(mlir::TypeStorageAllocator& allocator,
                              const T& type_data) {

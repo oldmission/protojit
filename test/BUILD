@@ -26,6 +26,7 @@ pj_test(
     name = "test_variants",
     srcs = ["test_variants.cpp"],
     protos = ["variants.pj"],
+    size = "medium",
 )
 
 pj_test(
