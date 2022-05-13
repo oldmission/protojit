@@ -36,6 +36,20 @@ TEST_F(PJTest, VectorOutlineSame) {
   }
 }
 
+TEST_F(PJTest, VectorOutlineDifferent) {
+  std::vector<uint64_t> values{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+  B b{.vec = {&values[0], values.size()}};
+  A a;
+
+  auto results =
+      transcode(Options<B, A>{.from = &b, .to = &a, .expect_dec_buffer = true});
+
+  EXPECT_EQ(a.vec.size(), 12);
+  for (size_t i = 0; i < 12; ++i) {
+    EXPECT_EQ(a.vec[i], b.vec[i]);
+  }
+}
+
 TEST_F(PJTest, VectorTruncate) {
   std::vector<uint64_t> values{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
   A a{.vec = {&values[0], values.size()}};
@@ -48,6 +62,20 @@ TEST_F(PJTest, VectorTruncate) {
   EXPECT_EQ(b.vec.size(), 12);
   for (size_t i = 0; i < 12; ++i) {
     EXPECT_EQ(b.vec[i], a.vec[i]);
+  }
+}
+
+TEST_F(PJTest, VectorTruncateBelowInline) {
+  std::vector<uint64_t> values{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
+  A a{.vec = {&values[0], values.size()}};
+  D d;
+
+  auto results =
+      transcode(Options<A, D>{.from = &a, .to = &d, .expect_dec_buffer = true});
+
+  EXPECT_EQ(d.vec.size(), 7);
+  for (size_t i = 0; i < 7; ++i) {
+    EXPECT_EQ(d.vec[i], a.vec[i]);
   }
 }
 

@@ -545,6 +545,9 @@ struct Vector {
 
   // May be None. May not be 0.
   int64_t max_length;
+  int64_t maxLengthBound() const {
+    return max_length >= 0 ? max_length : std::numeric_limits<intptr_t>::max();
+  }
 
   /*** Generated ***/
   // The min_length specified by the user for the wire type.
