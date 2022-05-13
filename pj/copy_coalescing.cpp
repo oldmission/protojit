@@ -1,5 +1,6 @@
 #include <map>
 
+#include <llvm/ADT/SmallSet.h>
 #include <llvm/Analysis/AliasAnalysis.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/IR/Function.h>
@@ -9,6 +10,8 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/X86TargetParser.h>
 #include <llvm/Target/TargetMachine.h>
+#include <llvm/Transforms/Utils/Cloning.h>
+#include <llvm/Transforms/Utils/ValueMapper.h>
 
 #include "defer.hpp"
 #include "passes.hpp"
@@ -414,8 +417,12 @@ class CopyCoalescing : public FunctionPass {
 
     auto& alias = getAnalysis<AAResultsWrapperPass>().getAAResults();
     CopyTargetInfo cti{*target_};
+    llvm::SmallSet<BasicBlock*, 4> visited;
     for (auto& block : func) {
-      runOnBlock(cti, tli, alias, block);
+      if (visited.contains(&block)) {
+        continue;
+      }
+      runOnBlock(cti, tli, alias, block, visited);
     }
 
     return true;
@@ -426,11 +433,61 @@ class CopyCoalescing : public FunctionPass {
     usage.addRequired<TargetLibraryInfoWrapperPass>();
   }
 
+  BasicBlock* cloneUnconditionalSuccessor(llvm::BranchInst* branch,
+                                          BasicBlock* to_clone) {
+    llvm::ValueToValueMapTy value_map;
+    BasicBlock* cur = branch->getParent();
+    BasicBlock* cloned =
+        llvm::CloneBasicBlock(to_clone, value_map, "_copy_extend");
+
+    branch->setSuccessor(0, cloned);
+
+    // Fix up the operand references
+    for (auto& inst : *cloned) {
+      RemapInstruction(&inst, value_map, RemapFlags::RF_IgnoreMissingLocals);
+    }
+
+    // Replace phi nodes in cloned block with direct references.
+    for (auto it = cloned->begin(); it != cloned->end();) {
+      if (auto* phi = dyn_cast<llvm::PHINode>(&*it)) {
+        phi->replaceAllUsesWith(phi->getIncomingValueForBlock(cur));
+        it = phi->eraseFromParent();
+      } else {
+        ++it;
+      }
+    }
+
+    // Remove entries from original block's phi nodes
+    for (auto& phi : to_clone->phis()) {
+      phi.removeIncomingValue(branch->getParent(), false);
+    }
+
+    // Add entries to phi nodes of all successor blocks.
+    for (BasicBlock* succ : llvm::successors(cloned)) {
+      for (llvm::PHINode& phi : succ->phis()) {
+        auto* old_value = phi.getIncomingValueForBlock(to_clone);
+
+        auto it = value_map.find(old_value);
+        if (it == value_map.end()) {
+          phi.addIncoming(old_value, cloned);
+        } else {
+          phi.addIncoming(it->second, cloned);
+        }
+      }
+    }
+
+    // Insert into the parent function
+    cloned->insertInto(cur->getParent());
+    return cloned;
+  }
+
   void runOnBlock(const CopyTargetInfo& cti, TargetLibraryInfo& tli,
-                  AAResults& aliasing, BasicBlock& bb) {
-    auto it = bb.begin();
+                  AAResults& aliasing, BasicBlock& bb,
+                  llvm::SmallSet<BasicBlock*, 4>& visited) {
+    BasicBlock* cur_bb = &bb;
+    auto it = cur_bb->begin();
     CopySet set;
-    while (it != bb.end()) {
+    while (it != cur_bb->end()) {
       auto match = Copy::match(aliasing, target_->createDataLayout(), &*it);
 
       if (match.has_value()) {
@@ -449,13 +506,27 @@ class CopyCoalescing : public FunctionPass {
         continue;
       }
 
-      DEFER(++it);
-
       if (!set.canReorderWith(aliasing, &*it)) {
         set.generate(cti, tli, it);
         set = {};
       }
+
+      if (std::next(it) == cur_bb->end()) {
+        auto* branch = dyn_cast<llvm::BranchInst>(&*it);
+        if (branch != nullptr && branch->isUnconditional()) {
+          auto* succ = branch->getSuccessor(0);
+          auto* new_succ = succ;
+          new_succ = cloneUnconditionalSuccessor(branch, succ);
+          visited.insert(new_succ);
+          cur_bb = new_succ;
+          it = new_succ->begin();
+          continue;
+        }
+      }
+
+      ++it;
     }
+
     assert(set.empty());
   }
 
