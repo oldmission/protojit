@@ -10,6 +10,10 @@ struct C {
   vec: uint64[:16];
 }
 
+struct D {
+  vec: uint64[4:7];
+}
+
 struct NestedA {
   vec: uint64[:][2:4];
 }

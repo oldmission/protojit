@@ -44,7 +44,8 @@ using namespace types;
   V(CopyTagOp)                  \
   V(PoisonOp)                   \
   V(SizeOp)                     \
-  V(ReflectOp)
+  V(ReflectOp)                  \
+  V(AssumeOp)
 
 namespace {
 struct LLVMGenPass
@@ -738,6 +739,14 @@ LogicalResult LengthOpLowering::matchAndRewrite(
       loc, _, operands[0], type->length_offset, type->length_size);
   Value length = _.create<ZExtOp>(loc, pass->wordType(),
                                   _.create<LoadOp>(loc, length_ptr));
+
+  if (type->max_length >= 0) {
+    auto max = pass->buildWordConstant(loc, _, type->max_length);
+    auto cond = _.create<ICmpOp>(loc, pass->intType(Bits(1)),
+                                 ICmpPredicate::ule, length, max);
+    _.create<LLVM::AssumeOp>(loc, cond);
+  }
+
   _.replaceOp(op, length);
   return success();
 }
@@ -1020,6 +1029,14 @@ LogicalResult ReflectOpLowering::matchAndRewrite(
   // 2. Save the schema in the constant pool and get a pointer to it.
   // 3. Save pointers to the schema and object in the destination.
 
+  _.eraseOp(op);
+  return success();
+}
+
+LogicalResult AssumeOpLowering::matchAndRewrite(
+    ir::AssumeOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  _.create<LLVM::AssumeOp>(op.getLoc(), operands[0]);
   _.eraseOp(op);
   return success();
 }

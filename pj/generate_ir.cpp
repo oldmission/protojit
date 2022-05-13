@@ -610,13 +610,13 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
   auto src_type = src.getType().cast<VectorType>();
   auto dst_type = dst.getType().cast<VectorType>();
 
+  _.create<AssumeOp>(
+      loc, _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
+                            buildIndex(loc, _, src_type->min_length)));
+
   Value is_dst_inline = [&]() -> Value {
     if (dst_type->min_length == 0) {
       return buildBool(loc, _, false);
-    } else if (src_type->min_length <= dst_type->min_length) {
-      // copy_length is guaranteed to be <= src_type->min_length because src is
-      // inline and therefore is also <= dst_type->min_length
-      return buildBool(loc, _, true);
     }
     return _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
                             buildIndex(loc, _, dst_type->min_length));
@@ -668,20 +668,21 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
   auto src_type = src.getType().cast<VectorType>();
   auto dst_type = dst.getType().cast<VectorType>();
 
+  if (src_type->min_length > 0) {
+    _.create<AssumeOp>(
+        loc,
+        _.create<CmpIOp>(loc, CmpIPredicate::uge, copy_length,
+                         buildIndex(loc, _,
+                                    std::min(src_type->min_length + 1,
+                                             dst_type->maxLengthBound()))));
+  }
+
   Value is_dst_inline = [&]() -> Value {
-    if (dst_type->min_length == 0 ||
-        src_type->min_length >= dst_type->min_length) {
-      // It cannot be inline if there is no inline storage or if the input
-      // vector (which we know to be outline) has a larger inline storage than
-      // the dst vector does
+    if (dst_type->min_length == 0) {
       return buildBool(loc, _, false);
-    } else if (src_type->max_length >= 0 &&
-               src_type->max_length <= dst_type->min_length) {
-      return buildBool(loc, _, true);
-    } else {
-      return _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
-                              buildIndex(loc, _, dst_type->min_length));
     }
+    return _.create<CmpIOp>(loc, CmpIPredicate::ule, copy_length,
+                            buildIndex(loc, _, dst_type->min_length));
   }();
 
   auto zero = buildIndex(loc, _, 0);
@@ -692,7 +693,8 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
   {  // dst is inline
     _.setInsertionPointToStart(dst_inline_if.thenBlock());
 
-    auto ppl_count = buildIndex(loc, _, src_type->ppl_count);
+    auto ppl_count = buildIndex(
+        loc, _, std::min(src_type->ppl_count, dst_type->maxLengthBound()));
     auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
 
     auto result_buf =
@@ -782,8 +784,7 @@ mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
 
   auto src_length = _.create<LengthOp>(loc, _.getIndexType(), src);
   auto copy_length = [&]() -> Value {
-    if (to->max_length < 0 ||
-        (from->max_length >= 0 && from->max_length <= to->max_length)) {
+    if (to->max_length < 0) {
       return src_length;
     }
     auto max = buildIndex(loc, _, to->max_length);
@@ -796,8 +797,6 @@ mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
   auto is_src_inline = [&]() -> Value {
     if (from->min_length == 0) {
       return buildBool(loc, _, false);
-    } else if (from->min_length == from->max_length) {
-      return buildBool(loc, _, true);
     }
     return _.create<CmpIOp>(loc, CmpIPredicate::ule, src_length,
                             buildIndex(loc, _, from->min_length));

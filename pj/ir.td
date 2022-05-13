@@ -203,6 +203,10 @@ def PoisonOp : ProtoJit_Op<"poision"> {
   let arguments = (ins AnyType:$result, WidthAttr:$offset, WidthAttr:$width);
 }
 
+def AssumeOp : ProtoJit_Op<"assume"> {
+  let arguments = (ins I1:$condition);
+}
+
 ////////////////////////////////////////////////////////////////
 // These operations represent functions whose compilation was requested by
 // the user. They merely serve as markers which get elaborated during the
