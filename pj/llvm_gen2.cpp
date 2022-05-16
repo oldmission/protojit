@@ -979,9 +979,12 @@ LogicalResult UnitOpLowering::matchAndRewrite(
 LogicalResult PoisonOpLowering::matchAndRewrite(
     PoisonOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
-  auto width = pass->buildWordConstant(loc, _, op.width().bytes());
+
   auto ptr = pass->buildOffsetPtr(loc, _, operands[0], op.offset(), Bytes(1));
-  _.create<LLVM::LifetimeEndOp>(loc, width, ptr);
+  _.create<LLVM::MemsetOp>(
+      loc, ptr, _.create<LLVM::UndefOp>(loc, pass->intType(Bytes(1))),
+      pass->buildWordConstant(loc, _, op.width().bytes()),
+      pass->buildFalseVal(loc, _));
   _.eraseOp(op);
   return success();
 }

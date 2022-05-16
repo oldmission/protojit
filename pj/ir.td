@@ -199,7 +199,7 @@ def YieldOp : ProtoJit_Op<"yield", [Terminator]> {
 
 // Mark some area inside an object as being "poisoned"; i.e., the memory
 // in that area has undefined bits after this operation.
-def PoisonOp : ProtoJit_Op<"poision"> {
+def PoisonOp : ProtoJit_Op<"poison"> {
   let arguments = (ins AnyType:$result, WidthAttr:$offset, WidthAttr:$width);
 }
 

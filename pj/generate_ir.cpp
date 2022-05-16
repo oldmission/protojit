@@ -380,7 +380,8 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
     auto end =
         i + 1 < to_fields.size() ? to_fields[i + 1]->offset : to.headSize();
     if (end > start) {
-      _.create<PoisonOp>(loc, dst, start, end - start);
+      _.create<PoisonOp>(loc, dst, start,
+                         buildIndex(loc, _, (end - start).bytes()));
     }
   }
 
