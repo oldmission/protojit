@@ -192,4 +192,25 @@ class ArrayView<T, 0, MaxLength> {
   friend struct gen::BuildPJType;
 };
 
+struct Any {
+ private:
+  const void* type_;
+  const void* data_;
+
+  template <typename U>
+  friend struct gen::BuildPJType;
+};
+
+namespace gen {
+template <>
+struct BuildPJType<Any> {
+  static const void* build(PJContext* ctx) {
+    return PJCreateAnyType(ctx, offsetof(Any, data_) << 3,
+                           sizeof(Any::data_) << 3, offsetof(Any, type_) << 3,
+                           sizeof(Any::type_) << 3, sizeof(Any) << 3,
+                           alignof(Any) << 3);
+  }
+};
+}  // namespace gen
+
 }  // namespace pj

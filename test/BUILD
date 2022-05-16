@@ -73,3 +73,9 @@ pj_test(
     srcs = ["test_protocols.cpp"],
     protos = ["protocols.pj", "protocols2.pj"],
 )
+
+pj_test(
+    name = "test_any",
+    srcs = ["test_any.cpp"],
+    protos = ["any.pj"],
+)

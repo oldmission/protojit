@@ -1,0 +1,5 @@
+// Any tests
+
+struct Int32 {
+  i: int32;
+}

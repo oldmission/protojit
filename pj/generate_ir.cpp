@@ -79,7 +79,6 @@ struct GeneratePass
 
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
- private:
   mlir::Value buildIndex(mlir::Location loc, mlir::OpBuilder& _, size_t value) {
     return _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), value));
   }
@@ -88,6 +87,7 @@ struct GeneratePass
     return _.create<ConstantOp>(loc, _.getBoolAttr(value));
   }
 
+ private:
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                      VariantType src_type, VariantType dst_type,
                      const Term* src_term, const Term* dst_term, Value src,
@@ -967,20 +967,19 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
   } else if (dst_type.isa<AnyType>()) {
-    // SAMIR_TODO2:
-    // - generate host/reflect-side type
-    // - transcode into that type
-    // - create any to bottle it up
-    auto reflected_type = reflect::reflectableTypeFor(dst_type);
+    auto buf = operands[2];
+    auto reflected_type = reflect::reflectableTypeFor(src_type);
     auto reflected_dst =
-        _.create<ProjectOp>(loc, reflected_type, operands[2], Bytes(0));
-    Value result_buf = _.create<AllocateOp>(loc, operands[2],
-                                            reflected_type.headSize().bytes());
-    result_buf = _.create<TranscodeOp>(loc, operands[0], operands[1],
-                                       result_buf, PathAttr{}, ArrayAttr{});
+        _.create<ProjectOp>(loc, reflected_type, buf, Bytes(0));
+    Value result_buf = _.create<AllocateOp>(
+        loc, buf.getType(), buf,
+        pass->buildIndex(loc, _, reflected_type.headSize().bytes()));
+    result_buf = _.create<TranscodeOp>(loc, result_buf.getType(), operands[0],
+                                       reflected_dst, result_buf, op.path(),
+                                       op.handlers());
     _.create<ReflectOp>(loc, reflected_dst, operands[1]);
     _.replaceOp(op, result_buf);
-    return failure();
+    return success();
   }
 
   auto call = _.create<mlir::CallOp>(loc, fn, operands);

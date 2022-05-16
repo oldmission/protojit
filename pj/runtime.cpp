@@ -45,6 +45,23 @@ const PJUnitType* PJCreateUnitType(PJContext* c) {
           .getAsOpaquePointer());
 }
 
+const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
+                                 Bits data_ref_width, Bits type_ref_offset,
+                                 Bits type_ref_width, Bits size,
+                                 Bits alignment) {
+  auto any = pj::types::Any{
+      .data_ref_width = pj::Bits(data_ref_width),
+      .data_ref_offset = pj::Bits(data_ref_offset),
+      .type_ref_width = pj::Bits(type_ref_width),
+      .type_ref_offset = pj::Bits(type_ref_offset),
+      .size = pj::Bits(size),
+      .alignment = pj::Bits(alignment),
+  };
+  auto any_type = pj::types::AnyType::get(
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_, any);
+  return reinterpret_cast<const PJAnyType*>(any_type.getAsOpaquePointer());
+}
+
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign) {
   auto int_type =

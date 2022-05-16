@@ -22,6 +22,7 @@ typedef struct PJUnitType PJUnitType;
 typedef struct PJIntType PJIntType;
 typedef struct PJStructField PJStructField;
 typedef struct PJStructType PJStructType;
+typedef struct PJAnyType PJAnyType;
 typedef struct PJTerm PJTerm;
 typedef struct PJInlineVariantType PJInlineVariantType;
 typedef struct PJArrayType PJArrayType;
@@ -47,6 +48,11 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        uintptr_t num_fields,
                                        const PJStructField* fields[], Bits size,
                                        Bits alignment);
+
+const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
+                                 Bits data_ref_width, Bits type_ref_offset,
+                                 Bits type_ref_width, Bits size,
+                                 Bits alignment);
 
 const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 
