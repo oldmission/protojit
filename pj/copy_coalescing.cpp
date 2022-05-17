@@ -12,6 +12,7 @@
 #include "llvm/Analysis/AliasSetTracker.h"
 
 #include "defer.hpp"
+#include "llvm_utils.hpp"
 #include "passes.hpp"
 #include "util.hpp"
 
@@ -20,15 +21,12 @@ void initializeCopyCoalescingPass(PassRegistry&);
 }  // namespace llvm
 
 using namespace llvm;
+using namespace llvm_utils;
 
 namespace {
 
 struct CopyTargetInfo {
-  explicit CopyTargetInfo(const llvm::TargetMachine& target) {
-    if (target.getTargetTriple().isX86()) {
-      min_page_size = 0x1000;
-    }
-
+  explicit CopyTargetInfo(const TargetMachine& target) {
     if (!target.getTargetTriple().isX86()) return;
 
     auto* subtarget = target.getMCSubtargetInfo();
@@ -38,8 +36,7 @@ struct CopyTargetInfo {
       max_promotion_size = 32;
     } else if (subtarget->hasFeature(X86::FEATURE_AVX)) {
       max_promotion_size = 16;
-    } else if (target.getTargetTriple().getArch() ==
-               llvm::Triple::ArchType::x86_64) {
+    } else if (target.getTargetTriple().getArch() == Triple::ArchType::x86_64) {
       max_promotion_size = 8;
     } else {
       max_promotion_size = 4;
@@ -47,32 +44,9 @@ struct CopyTargetInfo {
   }
 
   size_t max_promotion_size = 0;
-  size_t min_page_size = 0;
 };
 
 struct Copy {
-  static std::pair<llvm::Value*, size_t> getRegionRoot(const DataLayout& layout,
-                                                       llvm::Value* mem) {
-    size_t offset = 0;
-    while (true) {
-      if (auto* bitcast = dyn_cast<llvm::BitCastInst>(mem)) {
-        mem = bitcast->getOperand(0);
-      } else if (auto* gep = dyn_cast<llvm::GetElementPtrInst>(mem)) {
-        APInt gep_offset{
-            layout.getIndexSizeInBits(gep->getPointerAddressSpace()), 0};
-        if (!gep->accumulateConstantOffset(layout, gep_offset) ||
-            gep_offset.isNegative()) {
-          break;
-        }
-        mem = gep->getPointerOperand();
-        offset += gep_offset.getSExtValue();
-      } else {
-        break;
-      }
-    }
-    return {mem, offset};
-  }
-
   static std::pair<BasicBlock::iterator, std::optional<Copy>> match(
       AliasSetTracker& ast, const DataLayout& layout, BasicBlock::iterator it) {
     std::optional<Copy> match;
@@ -147,11 +121,11 @@ struct Copy {
     // 2. the single use of inst is a store
     // 3. the source and destination memory regions cannot alias
 
-    auto* load = dyn_cast<llvm::LoadInst>(&*it);
+    auto* load = dyn_cast<LoadInst>(&*it);
     if (!load) return {it, {}};
     if (!load->hasNUses(1)) return {it, {}};
 
-    auto* store = dyn_cast<llvm::StoreInst>(load->user_back());
+    auto* store = dyn_cast<StoreInst>(load->user_back());
     if (!store || store->getValueOperand() != load) return {it, {}};
 
     auto load_size = layout.getTypeStoreSize(load->getType());
@@ -187,8 +161,8 @@ struct Copy {
     return {it, copy};
   }
 
-  llvm::Value* src_def;
-  llvm::Value* dst_def;
+  Value* src_def;
+  Value* dst_def;
 
   size_t src_begin;
   size_t dst_begin;
@@ -199,8 +173,7 @@ struct Copy {
 struct CopySet {
   bool empty() const { return pieces.empty(); }
 
-  bool canReorderWith(AAResults& aliasing,
-                      const llvm::Instruction* inst) const {
+  bool canReorderWith(AAResults& aliasing, const Instruction* inst) const {
     if (src_def == nullptr && dst_def == nullptr) {
       return true;
     }
@@ -280,8 +253,9 @@ struct CopySet {
     return true;
   }
 
-  void generate(const CopyTargetInfo& target, TargetLibraryInfo& tli,
-                AliasSetTracker& ast, BasicBlock::iterator pos) const {
+  void generate(const DataLayout& layout, const CopyTargetInfo& target,
+                TargetLibraryInfo& tli, AliasSetTracker& ast,
+                BasicBlock::iterator pos) const {
     if (pieces.size() == 0) {
       return;
     }
@@ -302,7 +276,7 @@ struct CopySet {
     llvm::errs().flush();
 #endif
 
-    llvm::SmallVector<Piece*, 4> pieces;
+    SmallVector<Piece*, 4> pieces;
     for (auto& [_, piece] : store_starts) pieces.push_back(piece);
 
     auto* it = pieces.begin();
@@ -318,7 +292,7 @@ struct CopySet {
       }
 
       auto try_extend_piece = [&]() {
-        if (!llvm::isPowerOf2_64(piece->len) &&
+        if (!isPowerOf2_64(piece->len) &&
             piece->len < target.max_promotion_size) {
           // If we can't combine them, try to extend the size of this piece to a
           // power of two. This requires:
@@ -328,7 +302,7 @@ struct CopySet {
           // (b) we can ensure the trailing memory on the load side is valid to
           //     read from, even if that read would entail reading arbitrary
           //     data.
-          auto new_len = llvm::NextPowerOf2(piece->len);
+          auto new_len = NextPowerOf2(piece->len);
           auto poison_len = new_len - piece->len;
 
           // (a)
@@ -345,18 +319,8 @@ struct CopySet {
             return;
           }
 
-          auto load_end = new_len + piece->load_start;
-          auto pos = piece->load_start + piece->len;
-
           // (b)
-          for (auto l = load_starts.lower_bound(piece->load_start);
-               l != load_starts.end() && pos < load_end; ++l) {
-            auto [_, next] = *l;
-            if (next->load_start >= pos + target.min_page_size) break;
-            pos = next->load_start + next->len;
-          }
-
-          if (pos < load_end) {
+          if (!isSafeToRead(layout, src_def, piece->load_start, new_len)) {
             return;
           }
 
@@ -373,8 +337,8 @@ struct CopySet {
     piece->generate(ast, pos, src_def, dst_def);
   }
 
-  llvm::Value* src_def = nullptr;
-  llvm::Value* dst_def = nullptr;
+  Value* src_def = nullptr;
+  Value* dst_def = nullptr;
 
   struct Piece {
     bool is_poison;
@@ -443,18 +407,19 @@ class CopyCoalescing : public FunctionPass {
 
   void runOnBlock(const CopyTargetInfo& cti, TargetLibraryInfo& tli,
                   AliasSetTracker& ast, BasicBlock& bb) {
+    const DataLayout& layout = target_->createDataLayout();
     auto it = bb.begin();
     CopySet set;
     while (it != bb.end()) {
       std::optional<Copy> match;
-      std::tie(it, match) = Copy::match(ast, target_->createDataLayout(), it);
+      std::tie(it, match) = Copy::match(ast, layout, it);
 
       if (match.has_value()) {
         if (set.mergeWith(*match)) {
           continue;
         }
 
-        set.generate(cti, tli, ast, it);
+        set.generate(layout, cti, tli, ast, it);
         set = {};
 
         auto single = set.mergeWith(*match);
@@ -463,7 +428,7 @@ class CopyCoalescing : public FunctionPass {
       }
 
       if (!set.canReorderWith(ast.getAliasAnalysis(), &*it)) {
-        set.generate(cti, tli, ast, it);
+        set.generate(layout, cti, tli, ast, it);
         set = {};
       }
 

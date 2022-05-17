@@ -9,3 +9,7 @@ def LLVM_MemsetOp : LLVM_ZeroResultIntrOp<"memset", [0, 2]> {
     LLVM_Type:$isVolatile
   );
 }
+
+def LLVM_InvariantStartOp : LLVM_ZeroResultIntrOp<"invariant.start", [1]> {
+  let arguments = (ins LLVM_Type:$len, LLVM_Type:$dst);
+}

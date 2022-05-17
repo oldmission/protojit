@@ -1,0 +1,18 @@
+--- llvm/lib/Analysis/LazyValueInfo.cpp
++++ llvm/lib/Analysis/LazyValueInfo.cpp
+@@ -1099,6 +1099,15 @@ static ValueLatticeElement getValueFromICmpCondition(Value *Val, ICmpInst *ICI,
+   if (matchICmpOperand(Offset, LHS, Val, EdgePred))
+     return getValueFromSimpleICmpCondition(EdgePred, RHS, Offset);
+ 
++  if ((match(Val, m_ZExt(m_Specific(LHS))) && CmpInst::isUnsigned(EdgePred)) ||
++      (match(Val, m_SExt(m_Specific(LHS))) && CmpInst::isSigned(EdgePred))) {
++    auto *CI = cast<CastInst>(Val);
++    auto LHSResult = getValueFromSimpleICmpCondition(
++        EdgePred, RHS, APInt{CI->getSrcTy()->getIntegerBitWidth(), 0});
++    return ValueLatticeElement::getRange(LHSResult.getConstantRange().castOp(
++        CI->getOpcode(), CI->getDestTy()->getIntegerBitWidth()));
++  }
++
+   CmpInst::Predicate SwappedPred = CmpInst::getSwappedPredicate(EdgePred);
+   if (matchICmpOperand(Offset, RHS, Val, SwappedPred))
+     return getValueFromSimpleICmpCondition(SwappedPred, LHS, Offset);

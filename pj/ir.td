@@ -76,12 +76,12 @@ def SizeOp : ProtoJit_Op<"size", [SingleBlockImplicitTerminator<"::pj::ir::Yield
   let regions = (region SizedRegion<1>:$body);
 }
 
-// Extract a reference to some component of a value from a fixed offset.
-// ProjectOp is used to load variable variants until the LowerVariableProjects
-// pass, at which point any ProjectOp with a VariableVariant output is
-// converted to a ProjectVariableOp.
+// Extract a reference to some component of a value from a fixed offset. The
+// "frozen" attributes indicates that the component is accessible and constant.
 def ProjectOp : ProtoJit_Op<"project", [NoSideEffect]> {
-  let arguments = (ins AnyType:$src, WidthAttr:$offset);
+  let arguments = (ins
+      AnyType:$base, WidthAttr:$offset, DefaultValuedAttr<BoolAttr, "false">:$frozen
+  );
   let results = (outs AnyType);
 }
 

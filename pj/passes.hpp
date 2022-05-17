@@ -19,5 +19,6 @@ std::unique_ptr<mlir::Pass> createLLVMGenPass(const llvm::TargetMachine*);
 }  // namespace pj
 
 namespace llvm {
+FunctionPass* createCopyExtendingPass(const llvm::TargetMachine& layout);
 FunctionPass* createCopyCoalescingPass(const llvm::TargetMachine& layout);
 }  // namespace llvm
