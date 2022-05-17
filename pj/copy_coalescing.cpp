@@ -9,6 +9,7 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/X86TargetParser.h>
 #include <llvm/Target/TargetMachine.h>
+#include "llvm/Analysis/AliasSetTracker.h"
 
 #include "defer.hpp"
 #include "passes.hpp"
@@ -73,21 +74,21 @@ struct Copy {
   }
 
   static std::optional<std::pair<BasicBlock::iterator, Copy>> match(
-      AAResults& aliasing, const DataLayout& layout, llvm::Instruction* inst) {
-    if (auto match = matchLoadAndStore(aliasing, layout, inst)) {
+      AliasSetTracker& ast, const DataLayout& layout, llvm::Instruction* inst) {
+    if (auto match = matchLoadAndStore(ast, layout, inst)) {
       return match;
     }
-    if (auto match = matchPoison(aliasing, layout, inst)) {
+    if (auto match = matchPoison(ast, layout, inst)) {
       return match;
     }
-    if (auto match = matchMemCpy(aliasing, layout, inst)) {
+    if (auto match = matchMemCpy(ast, layout, inst)) {
       return match;
     }
     return {};
   }
 
   static std::optional<std::pair<BasicBlock::iterator, Copy>> matchPoison(
-      AAResults& aliasing, const DataLayout& layout, llvm::Instruction* inst) {
+      AliasSetTracker& ast, const DataLayout& layout, llvm::Instruction* inst) {
     IntrinsicInst* poison = dyn_cast<IntrinsicInst>(inst);
     if (!poison) return {};
     if (poison->getIntrinsicID() != Intrinsic::lifetime_end) return {};
@@ -98,7 +99,9 @@ struct Copy {
     auto [store_root, store_base] =
         getRegionRoot(layout, poison->getOperand(1));
 
+    ast.deleteValue(inst);
     auto it = poison->eraseFromParent();
+
     auto copy = Copy{
         .src_def = nullptr,
         .dst_def = store_root,
@@ -110,7 +113,7 @@ struct Copy {
   }
 
   static std::optional<std::pair<BasicBlock::iterator, Copy>> matchMemCpy(
-      AAResults& aliasing, const DataLayout& layout, llvm::Instruction* inst) {
+      AliasSetTracker& ast, const DataLayout& layout, llvm::Instruction* inst) {
     MemCpyInst* memcpy = dyn_cast<MemCpyInst>(inst);
     if (!memcpy) return {};
 
@@ -120,6 +123,7 @@ struct Copy {
     auto [load_root, load_base] = getRegionRoot(layout, memcpy->getSource());
     auto [store_root, store_base] = getRegionRoot(layout, memcpy->getDest());
 
+    ast.deleteValue(inst);
     auto it = memcpy->eraseFromParent();
 
     const auto copy = Copy{
@@ -134,7 +138,7 @@ struct Copy {
   }
 
   static std::optional<std::pair<BasicBlock::iterator, Copy>> matchLoadAndStore(
-      AAResults& aliasing, const DataLayout& layout, llvm::Instruction* inst) {
+      AliasSetTracker& ast, const DataLayout& layout, llvm::Instruction* inst) {
     // Three conditions must hold for a match:
     //
     // 1. inst points to a load instruction with a single use
@@ -161,10 +165,12 @@ struct Copy {
     MemoryLocation load_region{load_root, load_base + width};
     MemoryLocation store_region{store_root, store_base + width};
 
-    if (!aliasing.isNoAlias(load_region, store_region)) {
+    if (!ast.getAliasAnalysis().isNoAlias(load_region, store_region)) {
       return {};
     }
 
+    ast.deleteValue(store);
+    ast.deleteValue(load);
     auto it = store->eraseFromParent();
     load->eraseFromParent();
 
@@ -201,12 +207,12 @@ struct CopySet {
       return false;
     }
 
-    // TODO: we can relax this a bit, just check 'inst' doesn't store to src
-    // or load from dst.
+    assert(dst_def != nullptr);
     const MemoryLocation src_loc{src_def, load_end};
     const MemoryLocation dst_loc{dst_def, store_end};
-    return isNoModRef(aliasing.getModRefInfo(inst, {src_loc})) &&
-           isNoModRef(aliasing.getModRefInfo(inst, {dst_loc}));
+    return (src_def == nullptr ||
+            !isModSet(aliasing.getModRefInfo(inst, {src_loc}))) &&
+           !isRefSet(aliasing.getModRefInfo(inst, {dst_loc}));
   }
 
   bool mergeWith(const Copy& copy) {
@@ -273,7 +279,7 @@ struct CopySet {
   }
 
   void generate(const CopyTargetInfo& target, TargetLibraryInfo& tli,
-                BasicBlock::iterator pos) const {
+                AliasSetTracker& ast, BasicBlock::iterator pos) const {
     if (pieces.size() == 0) {
       return;
     }
@@ -358,11 +364,11 @@ struct CopySet {
 
       try_extend_piece();
 
-      piece->generate(pos, src_def, dst_def);
+      piece->generate(ast, pos, src_def, dst_def);
       piece = *it;
     }
 
-    piece->generate(pos, src_def, dst_def);
+    piece->generate(ast, pos, src_def, dst_def);
   }
 
   llvm::Value* src_def = nullptr;
@@ -374,7 +380,8 @@ struct CopySet {
     size_t store_start;
     size_t len;
 
-    void generate(BasicBlock::iterator pos, Value* src_def, Value* dst_def) {
+    void generate(AliasSetTracker& ast, BasicBlock::iterator pos,
+                  Value* src_def, Value* dst_def) {
       if (is_poison) return;
       IRBuilder<> builder(pos->getParent(), pos);
       auto* int8ptr = builder.getInt8PtrTy(0);
@@ -384,7 +391,7 @@ struct CopySet {
           builder.CreateConstGEP1_64(builder.getInt8Ty(), src_ptr, load_start);
       auto* dst_offset =
           builder.CreateConstGEP1_64(builder.getInt8Ty(), dst_ptr, store_start);
-      builder.CreateMemCpy(dst_offset, {}, src_offset, {}, len);
+      ast.add(builder.CreateMemCpy(dst_offset, {}, src_offset, {}, len));
     };
   };
 
@@ -413,9 +420,15 @@ class CopyCoalescing : public FunctionPass {
     if (!tli.has(LibFunc_memcpy)) return false;
 
     auto& alias = getAnalysis<AAResultsWrapperPass>().getAAResults();
+    auto ast = AliasSetTracker{alias};
+
+    for (auto& block : func) {
+      ast.add(block);
+    }
+
     CopyTargetInfo cti{*target_};
     for (auto& block : func) {
-      runOnBlock(cti, tli, alias, block);
+      runOnBlock(cti, tli, ast, block);
     }
 
     return true;
@@ -427,11 +440,11 @@ class CopyCoalescing : public FunctionPass {
   }
 
   void runOnBlock(const CopyTargetInfo& cti, TargetLibraryInfo& tli,
-                  AAResults& aliasing, BasicBlock& bb) {
+                  AliasSetTracker& ast, BasicBlock& bb) {
     auto it = bb.begin();
     CopySet set;
     while (it != bb.end()) {
-      auto match = Copy::match(aliasing, target_->createDataLayout(), &*it);
+      auto match = Copy::match(ast, target_->createDataLayout(), &*it);
 
       if (match.has_value()) {
         it = match->first;
@@ -441,7 +454,7 @@ class CopyCoalescing : public FunctionPass {
           continue;
         }
 
-        set.generate(cti, tli, it);
+        set.generate(cti, tli, ast, it);
         set = {};
 
         auto single = set.mergeWith(copy);
@@ -451,8 +464,8 @@ class CopyCoalescing : public FunctionPass {
 
       DEFER(++it);
 
-      if (!set.canReorderWith(aliasing, &*it)) {
-        set.generate(cti, tli, it);
+      if (!set.canReorderWith(ast.getAliasAnalysis(), &*it)) {
+        set.generate(cti, tli, ast, it);
         set = {};
       }
     }
