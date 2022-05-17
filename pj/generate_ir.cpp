@@ -88,7 +88,7 @@ struct GeneratePass
   }
 
   Value projectPath(mlir::OpBuilder& _, mlir::Location loc, Value base,
-                    PathAttr path_attr);
+                    PathAttr path_attr, bool frozen);
 
   Value generateTermCondition(mlir::OpBuilder& _, mlir::Location loc, Value src,
                               Span<TermAttribute> dst_attributes);
@@ -185,7 +185,7 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
 }
 
 Value GeneratePass::projectPath(mlir::OpBuilder& _, mlir::Location loc,
-                                Value base, PathAttr path_attr) {
+                                Value base, PathAttr path_attr, bool frozen) {
   auto path = path_attr.getValue();
   if (path.size() == 1) {
     return base;
@@ -196,8 +196,8 @@ Value GeneratePass::projectPath(mlir::OpBuilder& _, mlir::Location loc,
       std::find_if(type->fields.begin(), type->fields.end(),
                    [&](const StructField& f) { return f.name == path[0]; });
   assert(it != type->fields.end());
-  auto body = _.create<ProjectOp>(loc, it->type, base, it->offset);
-  return projectPath(_, loc, body, path_attr.narrow());
+  auto body = _.create<ProjectOp>(loc, it->type, base, it->offset, frozen);
+  return projectPath(_, loc, body, path_attr.narrow(), frozen);
 }
 
 Value GeneratePass::generateTermCondition(mlir::OpBuilder& _,
@@ -210,7 +210,7 @@ Value GeneratePass::generateTermCondition(mlir::OpBuilder& _,
                             cur_cond = buildBool(loc, _, undef.is_default);
                           },
                           [&](const TermAttribute::VectorSplit& vs) {
-                            auto vec = projectPath(_, loc, src, vs.path);
+                            auto vec = projectPath(_, loc, src, vs.path, true);
                             auto length =
                                 _.create<LengthOp>(loc, _.getIndexType(), vec);
                             cur_cond = _.create<CmpIOp>(
@@ -236,7 +236,7 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
 
   if (!dst_terms.empty()) {
     auto src_body = _.create<ir::ProjectOp>(loc, src_term->type, src,
-                                            src_type.term_offset());
+                                            src_type.term_offset(), true);
 
     mlir::OpBuilder::InsertPoint ip;
     Value start_buf = buffer;
@@ -337,8 +337,12 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
     to_fields.insert(to_fields.begin(), outline_field);
   }
 
+  // Poison the entire area of the destination struct so that future
+  // optimizations can overwrite the padding bytes.
+  _.create<PoisonOp>(loc, dst, Bytes(0), to.headSize());
+
   Value result_buf = func.getArgument(2);
-  for (auto* to_field : to_fields) {
+  for (const auto* to_field : to_fields) {
     llvm::SmallVector<mlir::Attribute> field_handlers;
 
     for (auto& attr : handlers) {
@@ -357,7 +361,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
     if (auto it = from_fields.find(to_field->name); it != from_fields.end()) {
       auto& from_field = it->second;
       auto src_field = _.create<ir::ProjectOp>(loc, from_field->type, src,
-                                               from_field->offset);
+                                               from_field->offset, true);
 
       // If the target field exists in the source struct, encode
       // the source field into the target.
@@ -368,20 +372,6 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
       // Otherwise fill in the target field with a default value.
       _.create<ir::DefaultOp>(loc, result_buf.getType(), dst_field, result_buf,
                               handlers_attr);
-    }
-  }
-
-  // Add poisons for padding space in the destination.
-  std::sort(to_fields.begin(), to_fields.end(),
-            [](auto& l, auto& r) { return l->offset < r->offset; });
-
-  for (intptr_t i = 0; i < to_fields.size(); ++i) {
-    auto start = to_fields[i]->offset + to_fields[i]->type.headSize();
-    auto end =
-        i + 1 < to_fields.size() ? to_fields[i + 1]->offset : to.headSize();
-    if (end > start) {
-      _.create<PoisonOp>(loc, dst, start,
-                         buildIndex(loc, _, (end - start).bytes()));
     }
   }
 
@@ -631,6 +621,13 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
   // If dst is inline
   {
     _.setInsertionPointToStart(dst_inline_if.thenBlock());
+
+    // Mark the dst inline region as poison.
+    auto region_start = _.create<VectorIndexOp>(loc, dst_type->elem, dst, zero,
+                                                VectorRegion::Inline, buf);
+    auto region_size = dst_type->elem.headSize() * dst_type->min_length;
+    _.create<PoisonOp>(loc, region_start, Bytes(0), region_size);
+
     _.create<scf::YieldOp>(
         loc, generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Inline,
                                     dst, zero, VectorRegion::Inline,
@@ -649,6 +646,7 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
 
     Value result_buf =
         _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
+
     result_buf = generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Inline,
                                         dst, zero, VectorRegion::Partial,
                                         ppl_count, buf, result_buf);
@@ -693,6 +691,12 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
 
   {  // dst is inline
     _.setInsertionPointToStart(dst_inline_if.thenBlock());
+
+    // Mark the dst inline region as poison.
+    auto region_start = _.create<VectorIndexOp>(loc, dst_type->elem, dst, zero,
+                                                VectorRegion::Inline, buf);
+    auto region_size = dst_type->elem.headSize() * dst_type->min_length;
+    _.create<PoisonOp>(loc, region_start, Bytes(0), region_size);
 
     auto ppl_count = buildIndex(
         loc, _, std::min(src_type->ppl_count, dst_type->maxLengthBound()));
@@ -856,15 +860,18 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
   auto* entry_block = func.addEntryBlock();
   _.setInsertionPointToStart(entry_block);
 
+  auto src =
+      _.create<ProjectOp>(loc, op.src(), func.getArgument(0), Bits(0), true);
+
   auto dst =
-      _.create<ir::ProjectOp>(loc, proto->head, func.getArgument(1), Bits(0));
+      _.create<ProjectOp>(loc, proto->head, func.getArgument(1), Bits(0));
 
   auto dst_buf =
-      _.create<ir::ProjectOp>(loc, RawBufferType::get(ctx), func.getArgument(1),
-                              proto->head.headSize() + proto->buffer_offset);
+      _.create<ProjectOp>(loc, RawBufferType::get(ctx), func.getArgument(1),
+                          proto->head.headSize() + proto->buffer_offset);
 
-  _.create<TranscodeOp>(loc, RawBufferType::get(ctx), func.getArgument(0), dst,
-                        dst_buf, op.src_path(), ArrayAttr::get(ctx, {}));
+  _.create<TranscodeOp>(loc, RawBufferType::get(ctx), src, dst, dst_buf,
+                        op.src_path(), ArrayAttr::get(ctx, {}));
 
   _.create<ReturnOp>(loc);
 
@@ -917,8 +924,8 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
 
   _.setInsertionPointToStart(catch_body);
 
-  auto src =
-      _.create<ir::ProjectOp>(loc, proto->head, func.getArgument(0), Bits(0));
+  auto src = _.create<ir::ProjectOp>(loc, proto->head, func.getArgument(0),
+                                     Bits(0), true);
 
   Value buf = _.create<TranscodeOp>(loc, BoundedBufferType::get(ctx), src,
                                     func.getArgument(1), func.getArgument(2),

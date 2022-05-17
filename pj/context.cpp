@@ -238,6 +238,22 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
   {
     llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
     funcPM.doInitialization();
+    funcPM.add(llvm::createCopyExtendingPass(*machine));
+    for (auto& func : *llvm_module) {
+      funcPM.run(func);
+    }
+    funcPM.doFinalization();
+  }
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After LLVM optimization (extending):\n"
+                      "==================================================\n";
+      llvm::errs() << *llvm_module << "\n");
+
+  {
+    llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
+    funcPM.doInitialization();
     funcPM.add(llvm::createCopyCoalescingPass(*machine));
     funcPM.add(llvm::createCFGSimplificationPass());
     funcPM.add(llvm::createEarlyCSEPass());
@@ -250,7 +266,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
 
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
-                      "After LLVM optimization (custom):\n"
+                      "After LLVM optimization (coalescing):\n"
                       "==================================================\n";
       llvm::errs() << *llvm_module << "\n");
 

@@ -58,6 +58,7 @@ http_archive(
     urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)],
     patches = [
         "//patches:any_integer_switch.patch",
+        "//patches:lazy_value_info.patch",
     ],
 )
 

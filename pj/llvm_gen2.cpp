@@ -325,13 +325,13 @@ LogicalResult FuncOpLowering::matchAndRewrite(
 LogicalResult ProjectOpLowering::matchAndRewrite(
     ProjectOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
-  auto source = operands[0];
-  auto src_type = op.src().getType();
+  auto loc = op.getLoc();
+  auto base = operands[0];
+  auto base_type = op.base().getType();
   auto result = op.getResult().getType();
-  auto loc = source.getLoc();
 
-  if (src_type.isa<types::ValueType>() ||
-      src_type.isa<types::RawBufferType>()) {
+  if (base_type.isa<types::ValueType>() ||
+      base_type.isa<types::RawBufferType>()) {
     // ValueTypes and RawBuffers are represented as 'char*' in LLVM.
     // The output should have the same representation. We can't create
     // a bounded buffer anyway without some reference for the size.
@@ -339,13 +339,22 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
            result.isa<types::RawBufferType>());
 
     Value val =
-        _.create<GEPOp>(loc, pass->bytePtrType(), source,
+        _.create<GEPOp>(loc, pass->bytePtrType(), base,
                         pass->buildWordConstant(loc, _, op.offset().bytes()));
+
+    if (result.isa<types::ValueType>() && op.frozen()) {
+      _.create<LLVM::InvariantStartOp>(
+          loc,
+          pass->buildWordConstant(
+              loc, _, result.cast<types::ValueType>().headSize().bytes()),
+          val);
+    }
+
     _.replaceOp(op, val);
-  } else if (src_type.isa<types::BoundedBufferType>() &&
+  } else if (base_type.isa<types::BoundedBufferType>() &&
              (result.isa<types::ValueType>() ||
               result.isa<types::RawBufferType>())) {
-    auto [buf, __] = pass->buildBoundedBufferDestructuring(loc, _, source);
+    auto [buf, __] = pass->buildBoundedBufferDestructuring(loc, _, base);
     Value val =
         _.create<GEPOp>(loc, pass->bytePtrType(), buf,
                         pass->buildWordConstant(loc, _, op.offset().bytes()));
