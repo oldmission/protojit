@@ -72,6 +72,7 @@ cc_library(
         "ir.cpp",
         "ir.cpp.inc",
         "type_support.cpp",
+        "types.cpp",
     ],
     hdrs = [
         "arch.hpp",
@@ -146,8 +147,6 @@ cc_library(
         "scope.cpp",
         "side_effect_analysis.cpp",
         "sizing.cpp",
-        "type_support.cpp",
-        "types.cpp",
     ],
     hdrs = [
         "llvm_extra.cpp.inc",
