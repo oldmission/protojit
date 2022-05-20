@@ -285,7 +285,14 @@ LogicalResult FuncOpLowering::matchAndRewrite(
   auto* new_entry = func.addEntryBlock();
   auto* old_entry = &op.getBlocks().front();
 
-  _.inlineRegionBefore(op.getBody(), func.getBody(), func.getBody().end());
+  for (auto it = ++op.getBody().begin(); it != op.getBody().end(); ++it) {
+    func.body().push_back(&*it);
+  }
+  // _.inlineRegionBefore(op.getBody(), func.getBody(), func.getBody().end());
+
+  while (!old_entry->empty()) {
+    old_entry->front().moveBefore(new_entry, new_entry->end());
+  }
 
   for (intptr_t i = 0, j = 0, k = 0; i < op.getNumArguments(); ++i) {
     if (j < buf_args.size() && i == buf_args[j]) {
@@ -293,6 +300,7 @@ LogicalResult FuncOpLowering::matchAndRewrite(
       auto ptr = func.getArgument(k), size = func.getArgument(k + 1);
       auto to = pass->buildBoundedBuf(loc, _, ptr, size);
       _.replaceUsesOfBlockArgument(old_arg, to);
+      k += 2, ++j;
     } else {
       _.replaceUsesOfBlockArgument(op.getArgument(i), func.getArgument(k++));
     }
