@@ -56,6 +56,9 @@ http_archive(
     sha256 = LLVM_SHA256,
     strip_prefix = "llvm-project-" + LLVM_COMMIT,
     urls = ["https://github.com/llvm/llvm-project/archive/{commit}.tar.gz".format(commit = LLVM_COMMIT)],
+    patches = [
+        "//patches:any_integer_switch.patch",
+    ],
 )
 
 http_archive(
