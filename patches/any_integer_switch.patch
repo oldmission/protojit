@@ -1,0 +1,126 @@
+@@ Taken from commit 30d87d4a5d02 landed in LLVM 14. Also adds a convenience
+@@ build function taking APInt instead of int32_t for the case values which was
+@@ not included in the original commit.
+
+--- mlir/include/mlir/Dialect/LLVMIR/LLVMOps.td
++++ mlir/include/mlir/Dialect/LLVMIR/LLVMOps.td
+@@ -701,7 +701,7 @@ def LLVM_UnreachableOp : LLVM_TerminatorOp<"unreachable", []> {
+ def LLVM_SwitchOp : LLVM_TerminatorOp<"switch",
+     [AttrSizedOperandSegments, DeclareOpInterfaceMethods<BranchOpInterface>,
+      NoSideEffect]> {
+-  let arguments = (ins I32:$value,
++  let arguments = (ins AnyInteger:$value,
+                    Variadic<AnyType>:$defaultOperands,
+                    Variadic<AnyType>:$caseOperands,
+                    OptionalAttr<ElementsAttr>:$case_values,
+@@ -713,9 +713,9 @@ def LLVM_SwitchOp : LLVM_TerminatorOp<"switch",
+ 
+   let verifier = [{ return ::verify(*this); }];
+   let assemblyFormat = [{
+-    $value `,`
++    $value `:` type($value) `,`
+     $defaultDestination (`(` $defaultOperands^ `:` type($defaultOperands) `)`)?
+-    `[` `\n` custom<SwitchOpCases>($case_values, $caseDestinations,
++    `[` `\n` custom<SwitchOpCases>(ref(type($value)), $case_values, $caseDestinations,
+                                    $caseOperands, type($caseOperands),
+                                    $case_operand_offsets) `]`
+     attr-dict
+@@ -729,6 +729,13 @@ def LLVM_SwitchOp : LLVM_TerminatorOp<"switch",
+       CArg<"BlockRange", "{}">:$caseDestinations,
+       CArg<"ArrayRef<ValueRange>", "{}">:$caseOperands,
+       CArg<"ArrayRef<int32_t>", "{}">:$branchWeights)>,
++    OpBuilder<(ins "Value":$value,
++      "Block *":$defaultDestination,
++      "ValueRange":$defaultOperands,
++      CArg<"ArrayRef<APInt>", "{}">:$caseValues,
++      CArg<"BlockRange", "{}">:$caseDestinations,
++      CArg<"ArrayRef<ValueRange>", "{}">:$caseOperands,
++      CArg<"ArrayRef<int32_t>", "{}">:$branchWeights)>,
+     LLVM_TerminatorPassthroughOpBuilder
+   ];
+ 
+
+--- mlir/lib/Dialect/LLVMIR/IR/LLVMDialect.cpp
++++ mlir/lib/Dialect/LLVMIR/IR/LLVMDialect.cpp
+@@ -259,25 +259,59 @@ void SwitchOp::build(OpBuilder &builder, OperationState &result, Value value,
+         caseDestinations);
+ }
+ 
++void SwitchOp::build(OpBuilder &builder, OperationState &result, Value value,
++                     Block *defaultDestination, ValueRange defaultOperands,
++                     ArrayRef<APInt> caseValues, BlockRange caseDestinations,
++                     ArrayRef<ValueRange> caseOperands,
++                     ArrayRef<int32_t> branchWeights) {
++  SmallVector<Value> flattenedCaseOperands;
++  SmallVector<int32_t> caseOperandOffsets;
++  int32_t offset = 0;
++  for (ValueRange operands : caseOperands) {
++    flattenedCaseOperands.append(operands.begin(), operands.end());
++    caseOperandOffsets.push_back(offset);
++    offset += operands.size();
++  }
++  ElementsAttr caseValuesAttr;
++  if (!caseValues.empty()) {
++    ShapedType caseValueType = VectorType::get(
++        static_cast<int64_t>(caseValues.size()), value.getType());
++    caseValuesAttr = DenseIntElementsAttr::get(caseValueType, caseValues);
++  }
++  ElementsAttr caseOperandOffsetsAttr;
++  if (!caseOperandOffsets.empty())
++    caseOperandOffsetsAttr = builder.getI32VectorAttr(caseOperandOffsets);
++
++  ElementsAttr weightsAttr;
++  if (!branchWeights.empty())
++    weightsAttr = builder.getI32VectorAttr(llvm::to_vector<4>(branchWeights));
++
++  build(builder, result, value, defaultOperands, flattenedCaseOperands,
++        caseValuesAttr, caseOperandOffsetsAttr, weightsAttr, defaultDestination,
++        caseDestinations);
++}
++
+ /// <cases> ::= integer `:` bb-id (`(` ssa-use-and-type-list `)`)?
+ ///             ( `,` integer `:` bb-id (`(` ssa-use-and-type-list `)`)? )?
+ static ParseResult
+-parseSwitchOpCases(OpAsmParser &parser, ElementsAttr &caseValues,
++parseSwitchOpCases(OpAsmParser &parser, Type flagType, ElementsAttr &caseValues,
+                    SmallVectorImpl<Block *> &caseDestinations,
+                    SmallVectorImpl<OpAsmParser::OperandType> &caseOperands,
+                    SmallVectorImpl<Type> &caseOperandTypes,
+                    ElementsAttr &caseOperandOffsets) {
+-  SmallVector<int32_t> values;
++  SmallVector<APInt> values;
++  unsigned bitWidth = flagType.getIntOrFloatBitWidth();
+   SmallVector<int32_t> offsets;
+-  int32_t value, offset = 0;
++  int32_t offset = 0;
+   do {
++    int64_t value = 0;
+     OptionalParseResult integerParseResult = parser.parseOptionalInteger(value);
+     if (values.empty() && !integerParseResult.hasValue())
+       return success();
+ 
+     if (!integerParseResult.hasValue() || integerParseResult.getValue())
+       return failure();
+-    values.push_back(value);
++    values.push_back(APInt(bitWidth, value));
+ 
+     Block *destination;
+     SmallVector<OpAsmParser::OperandType> operands;
+@@ -295,13 +329,15 @@ parseSwitchOpCases(OpAsmParser &parser, ElementsAttr &caseValues,
+   } while (!parser.parseOptionalComma());
+ 
+   Builder &builder = parser.getBuilder();
+-  caseValues = builder.getI32VectorAttr(values);
++  ShapedType caseValueType =
++      VectorType::get(static_cast<int64_t>(values.size()), flagType);
++  caseValues = DenseIntElementsAttr::get(caseValueType, values);
+   caseOperandOffsets = builder.getI32VectorAttr(offsets);
+ 
+   return success();
+ }
+ 
+-static void printSwitchOpCases(OpAsmPrinter &p, SwitchOp op,
++static void printSwitchOpCases(OpAsmPrinter &p, SwitchOp op, Type flagType,
+                                ElementsAttr caseValues,
+                                SuccessorRange caseDestinations,
+                                OperandRange caseOperands,

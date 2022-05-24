@@ -408,7 +408,8 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
   std::sort(tag_mapping.begin(), tag_mapping.end(),
             [](auto& l, auto& r) { return l.first < r.first; });
 
-  // TODO: this is int64_t whereas tags can be uint64_t
+  // Tags are uint64_t, but this is fine because LLVM treats signed and unsigned
+  // ints the same, except for signed instructions, which are not used here.
   llvm::SmallVector<int64_t> table;
   for (size_t i = 0, t = 0; i < tag_mapping.size(); ++t) {
     if (tag_mapping[i].first == t) {
@@ -477,14 +478,14 @@ LogicalResult MatchOpLowering::matchAndRewrite(
 
   Value tag_val = _.create<LoadOp>(op.getLoc(), load_ptr);
 
-  // TODO: llvm case expects 32-bit ints, we allow up to 64-bit tags
-  tag_val = _.create<ZExtOp>(op.getLoc(), pass->intType(Bits(32)), tag_val);
+  tag_val = _.create<ZExtOp>(op.getLoc(), pass->intType(Bits(64)), tag_val);
 
-  llvm::SmallVector<int32_t, 4> case_vals;
+  llvm::SmallVector<llvm::APInt, 4> case_vals;
   for (auto& term : var_type.terms()) {
-    case_vals.emplace_back(term.tag);
+    case_vals.emplace_back(64, term.tag);
   }
-  std::sort(case_vals.begin(), case_vals.end());
+  std::sort(case_vals.begin(), case_vals.end(),
+            [](const APInt& a, const APInt& b) { return a.ult(b); });
 
   // Switch on the tag and dispatch to the appropriate branch.
   _.create<LLVM::SwitchOp>(loc,
