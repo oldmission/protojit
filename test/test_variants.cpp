@@ -17,9 +17,10 @@ TEST_P(PJVariantTest, VariantSame) {
     EXPECT_EQ(T.tag, Var1::Kind::x);
   });
 
-  auto [_, enc_size] = transcode<Var1>(&F, &T, "x", "_");
+  auto results = transcode(
+      Options<Var1>{.from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 
-  EXPECT_EQ(enc_size, 9);
+  EXPECT_EQ(results.enc_size, 9);
   EXPECT_EQ(F.value.x, 42);
 }
 
@@ -31,7 +32,8 @@ TEST_P(PJVariantTest, VariantMismatch) {
   onMatch<1, Var2>("undef",
                    [&](const Var2& T) { EXPECT_EQ(T.tag, Var2::Kind::undef); });
 
-  transcode<Var1, Var2>(&F, &T, "x", "_");
+  transcode(Options<Var1, Var2>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 }
 
 TEST_P(PJVariantTest, VariantInvalidHandler) {
@@ -40,7 +42,8 @@ TEST_P(PJVariantTest, VariantInvalidHandler) {
 
   onNoMatch<0, Var2>("x", [&](const Var2& T) {});
 
-  transcode<Var1, Var2>(&F, &T, "x", "_");
+  transcode(Options<Var1, Var2>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 }
 
 TEST_P(PJVariantTest, VariantAddCaseBig) {
@@ -52,7 +55,8 @@ TEST_P(PJVariantTest, VariantAddCaseBig) {
     EXPECT_EQ(T.tag, Var3::Kind::x);
   });
 
-  transcode<Var1, Var3>(&F, &T, "x", "_");
+  transcode(Options<Var1, Var3>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 
   EXPECT_EQ(F.value.x, 42);
 }
@@ -64,7 +68,8 @@ TEST_P(PJVariantTest, VariantMissingHandler) {
   onNoMatch<0, Var3>("y", [&](const Var3& T) {});
   onNoMatch<0, Var3>("undef", [&](const Var3& T) {});
 
-  transcode<Var1, Var3>(&F, &T, "x", "_");
+  transcode(Options<Var1, Var3>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 }
 
 TEST_P(PJVariantTest, VariantMoveCase) {
@@ -76,7 +81,8 @@ TEST_P(PJVariantTest, VariantMoveCase) {
     EXPECT_EQ(T.value.x, 42);
   });
 
-  transcode<Var1, Var4>(&F, &T, "x", "_");
+  transcode(Options<Var1, Var4>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 }
 
 TEST_P(PJVariantTest, VariantMoveCase2) {
@@ -88,16 +94,17 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
     EXPECT_EQ(T.value.x, 42);
   });
 
-  auto [_, enc_size] = transcode<Var3, Var4>(&F, &T, "x", "_");
+  auto results = transcode(Options<Var3, Var4>{
+      .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
 
-  EXPECT_EQ(enc_size, no_tag ? 65 : 9);
+  EXPECT_EQ(results.enc_size, no_tag ? 65 : 9);
 }
 
 TEST_F(PJTest, VariantAddTagField) {
   Outer2 F{.z = 0xab};
   Outer T{.v = {.value = {.x = 42}, .tag = Var4::Kind::x}, .z = 0};
 
-  transcode<Outer2, Outer>(&F, &T);
+  transcode(Options<Outer2, Outer>{.from = &F, .to = &T});
 
   EXPECT_EQ(T.v.tag, Var4::Kind::undef);
   EXPECT_EQ(T.z, 0xab);
@@ -107,9 +114,10 @@ TEST_P(PJVariantTest, VariantRemoveTagField) {
   Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
   Outer2 T{.z = 0};
 
-  auto [_, enc_size] = transcode<Outer, Outer2>(&F, &T, "v.undef", "v._");
+  auto results = transcode(Options<Outer, Outer2>{
+      .from = &F, .to = &T, .src_path = "v.undef", .tag_path = "v._"});
 
-  EXPECT_EQ(enc_size, no_tag ? 10 : 2);
+  EXPECT_EQ(results.enc_size, no_tag ? 10 : 2);
   EXPECT_EQ(T.z, 0xab);
 }
 
@@ -123,9 +131,10 @@ TEST_P(PJVariantTest, VariantSameNestedPath) {
     EXPECT_EQ(T.z, 0xab);
   });
 
-  auto [_, enc_size] = transcode<Outer>(&F, &T, "v.x", "v._");
+  auto results = transcode(Options<Outer>{
+      .from = &F, .to = &T, .src_path = "v.x", .tag_path = "v._"});
 
-  EXPECT_EQ(enc_size, 10);
+  EXPECT_EQ(results.enc_size, 10);
 }
 
 TEST_F(PJTest, VariantDispatchDefault) {
@@ -137,7 +146,7 @@ TEST_F(PJTest, VariantDispatchDefault) {
     EXPECT_EQ(T.z, 0xab);
   });
 
-  transcode<Outer2, Outer>(&F, &T);
+  transcode(Options<Outer2, Outer>{.from = &F, .to = &T});
 }
 
 TEST_P(PJVariantTest, VariantDispatchUndef) {
@@ -149,7 +158,8 @@ TEST_P(PJVariantTest, VariantDispatchUndef) {
     EXPECT_EQ(T.z, 0xab);
   });
 
-  transcode<Outer>(&F, &T, "v.undef", "v._");
+  transcode(Options<Outer>{
+      .from = &F, .to = &T, .src_path = "v.undef", .tag_path = "v._"});
 }
 
 TEST_F(PJTest, VariantDispatchDefaultNested) {
@@ -162,7 +172,7 @@ TEST_F(PJTest, VariantDispatchDefaultNested) {
     EXPECT_EQ(T.z, 0xab);
   });
 
-  transcode<Outer2, NestedOuter>(&F, &T);
+  transcode(Options<Outer2, NestedOuter>{.from = &F, .to = &T});
 }
 
 TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
@@ -183,9 +193,10 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
     EXPECT_EQ(T.b.value.x, 0x22222222);
   });
 
-  auto [_, enc_size] = transcode<Outer3>(&F, &T, "a.w", "a._");
+  auto results = transcode(Options<Outer3>{
+      .from = &F, .to = &T, .src_path = "a.w", .tag_path = "a._"});
 
-  EXPECT_EQ(enc_size, no_tag ? 18 : 11);
+  EXPECT_EQ(results.enc_size, no_tag ? 18 : 11);
 }
 
 TEST_P(PJVariantTest, VariantAfterVector) {
@@ -200,19 +211,20 @@ TEST_P(PJVariantTest, VariantAfterVector) {
     EXPECT_EQ(T.vec, F.vec);
   });
 
-  auto [_, enc_size] = transcode<VecVar>(&F, &T, "var.w", "var._");
+  auto results = transcode(Options<VecVar>{
+      .from = &F, .to = &T, .src_path = "var.w", .tag_path = "var._"});
 
   // Vector has 8 length bytes, 8 ref bytes, and 4*8 data bytes
-  EXPECT_EQ(enc_size, (no_tag ? 9 : 2) + 48);
+  EXPECT_EQ(results.enc_size, (no_tag ? 9 : 2) + 48);
 }
 
 TEST_F(PJTest, EnumTableTest) {
   EnumA F{.tag = EnumA::Kind::x};
   EnumB T{.tag = EnumB::Kind::undef};
 
-  auto [_, enc_size] = transcode<EnumA, EnumB>(&F, &T);
+  auto results = transcode(Options<EnumA, EnumB>{.from = &F, .to = &T});
 
-  EXPECT_EQ(enc_size, 1);
+  EXPECT_EQ(results.enc_size, 1);
   EXPECT_EQ(T.tag, EnumB::Kind::x);
 }
 

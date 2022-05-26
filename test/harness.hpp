@@ -10,10 +10,6 @@
 
 namespace pj {
 
-struct Params {
-  bool round_up_size = false;
-};
-
 template <size_t I>
 static void handleDispatch(
     const void* received,
@@ -72,47 +68,68 @@ class PJGenericTest
         term, reinterpret_cast<const void*>(&handleDispatch<I>)));
   }
 
-  template <typename Src, typename Dest = Src, typename Proto = void,
-            typename X, typename Y = void>
-  std::pair<std::unique_ptr<char[]>, uintptr_t> transcode(
-      const X* from, Y* to_msg = nullptr, const std::string& src_path = "",
-      const std::string& tag_path = "", const Params& params = {}) {
+  struct Results {
+    uintptr_t enc_size;
+    std::unique_ptr<char[]> dec_buffer;
+  };
+
+  template <typename SrcT, typename DstT = SrcT, typename ProtoT = void>
+  struct Options {
+    using Src = SrcT;
+    using Dst = DstT;
+    using Proto = ProtoT;
+
+    Src* from;
+    Dst* to = nullptr;
+    std::string src_path = "";
+    std::string tag_path = "";
+    bool round_up_size = false;
+  };
+
+  template <typename OptionsT>
+  Results transcode(const OptionsT& options) {
+    using Src = typename OptionsT::Src;
+    using Dst = typename OptionsT::Dst;
+    using Proto = typename OptionsT::Proto;
+
     const PJProtocol* protocol;
     if constexpr (std::is_same_v<Proto, void>) {
-      protocol = plan<Src>(ctx, no_tag ? "" : tag_path);
+      protocol = plan<Src>(ctx, no_tag ? "" : options.tag_path);
     } else {
       protocol = planProtocol<Proto>(ctx);
     }
 
     addEncodeFunction<Src>(ctx, "encode", protocol,
-                           no_src_path ? "" : src_path);
-    addDecodeFunction<Dest>(ctx, "decode", protocol, branches);
-    addSizeFunction<Src>(ctx, "size", protocol, no_src_path ? "" : src_path,
-                         params.round_up_size);
+                           no_src_path ? "" : options.src_path);
+    addDecodeFunction<Dst>(ctx, "decode", protocol, branches);
+    addSizeFunction<Src>(ctx, "size", protocol,
+                         no_src_path ? "" : options.src_path,
+                         options.round_up_size);
 
     const auto portal = compile(ctx);
 
-    const auto size_fn = portal->ResolveTarget<uintptr_t (*)(const X*)>("size");
+    const auto size_fn =
+        portal->ResolveTarget<uintptr_t (*)(const Src*)>("size");
     const auto encode_fn =
-        portal->ResolveTarget<void (*)(const X*, char*)>("encode");
+        portal->ResolveTarget<void (*)(const Src*, char*)>("encode");
     const auto decode_fn =
         portal->ResolveTarget<std::pair<const char*, uintptr_t> (*)(
-            const char*, char*, std::pair<char*, uintptr_t>, const void*)>(
+            const char*, Dst*, std::pair<char*, uintptr_t>, const void*)>(
             "decode");
 
-    const uintptr_t size = size_fn(from);
+    const uintptr_t size = size_fn(options.from);
 
     std::unique_ptr<char[]> dec_buffer;
-    if (to_msg != nullptr) {
+    if (options.to != nullptr) {
       // TODO: retry with larger decode buffer size if needed
       const uintptr_t dec_size = 1024;
       auto enc_buffer = std::make_unique<char[]>(size);
       dec_buffer = std::make_unique<char[]>(dec_size);
 
-      encode_fn(from, enc_buffer.get());
+      encode_fn(options.from, enc_buffer.get());
 
       auto [_, remaining_size] =
-          decode_fn(enc_buffer.get(), reinterpret_cast<char*>(to_msg),
+          decode_fn(enc_buffer.get(), options.to,
                     std::make_pair(dec_buffer.get(), dec_size), &handlers);
 
       if (remaining_size == dec_size) {
@@ -120,7 +137,7 @@ class PJGenericTest
       }
     }
 
-    return std::make_pair(std::move(dec_buffer), size);
+    return Results{.enc_size = size, .dec_buffer = std::move(dec_buffer)};
   }
 
   std::vector<std::pair<std::string, const void*>> branches;

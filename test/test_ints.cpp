@@ -13,7 +13,7 @@ TEST_F(PJTest, IntSameTest) {
   Int32 x{.i = 1};
   Int32 y{.i = 0};
 
-  transcode<Int32>(&x, &y);
+  transcode(Options<Int32>{.from = &x, .to = &y});
 
   EXPECT_EQ(y.i, 1);
 }
@@ -22,7 +22,7 @@ TEST_F(PJTest, IntSignExtendTest) {
   Int32 x{.i = -1};
   Int64 y{.i = 0};
 
-  transcode<Int32, Int64>(&x, &y);
+  transcode(Options<Int32, Int64>{.from = &x, .to = &y});
 
   EXPECT_EQ(y.i, -1);
 }
@@ -52,7 +52,7 @@ TEST_F(PJTest, IntZeroExtendTest) {
   UInt32 x{.i = 0xffffffff};
   UInt64 y{.i = 0};
 
-  transcode<UInt32, UInt64>(&x, &y);
+  transcode(Options<UInt32, UInt64>{.from = &x, .to = &y});
 
   EXPECT_EQ(y.i, 0xffffffff);
 }
@@ -61,7 +61,7 @@ TEST_F(PJTest, IntTruncTest) {
   Int64 x{.i = -1};
   Int32 y{.i = 0};
 
-  transcode<Int64, Int32>(&x, &y);
+  transcode(Options<Int64, Int32>{&x, &y});
 
   EXPECT_EQ(x.i, -1);
   EXPECT_EQ(y.i, -1);
