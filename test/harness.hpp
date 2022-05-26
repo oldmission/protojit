@@ -69,6 +69,7 @@ class PJGenericTest
 
   struct Results {
     uintptr_t enc_size;
+    uintptr_t dec_buffer_size;
     std::unique_ptr<char[]> dec_buffer;
   };
 
@@ -83,6 +84,7 @@ class PJGenericTest
     std::string src_path = "";
     std::string tag_path = "";
     bool round_up_size = false;
+    bool expect_dec_buffer = false;  // We expect the decode buffer to be used.
   };
 
   template <typename OptionsT>
@@ -116,27 +118,37 @@ class PJGenericTest
             const char*, Dst*, std::pair<char*, uintptr_t>, const void*)>(
             "decode");
 
-    const uintptr_t size = size_fn(options.from);
-
-    std::unique_ptr<char[]> dec_buffer;
+    Results results;
+    results.enc_size = size_fn(options.from);
+    results.dec_buffer_size = 0;
     if (options.to != nullptr) {
-      // TODO: retry with larger decode buffer size if needed
-      const uintptr_t dec_size = 1024;
-      auto enc_buffer = std::make_unique<char[]>(size);
-      dec_buffer = std::make_unique<char[]>(dec_size);
+      while (true) {
+        auto enc_buffer = std::make_unique<char[]>(results.enc_size);
+        results.dec_buffer = std::make_unique<char[]>(results.dec_buffer_size);
 
-      encode_fn(options.from, enc_buffer.get());
+        encode_fn(options.from, enc_buffer.get());
 
-      auto [_, remaining_size] =
-          decode_fn(enc_buffer.get(), options.to,
-                    std::make_pair(dec_buffer.get(), dec_size), &handlers);
+        auto [buf, remaining_size] = decode_fn(
+            enc_buffer.get(), options.to,
+            std::make_pair(results.dec_buffer.get(), results.dec_buffer_size),
+            &handlers);
 
-      if (remaining_size == dec_size) {
-        dec_buffer = nullptr;
+        if (buf == nullptr) {
+          EXPECT_TRUE(options.expect_dec_buffer);
+
+          // Horribly inefficient, but it ensures that any off-by-one error in
+          // the decoding size check will be caught by ASAN
+          results.dec_buffer_size += 1;
+          continue;
+        }
+        if (remaining_size == results.dec_buffer_size) {
+          results.dec_buffer = nullptr;
+        }
+        break;
       }
     }
 
-    return Results{.enc_size = size, .dec_buffer = std::move(dec_buffer)};
+    return results;
   }
 
   std::vector<std::pair<std::string, const void*>> branches;

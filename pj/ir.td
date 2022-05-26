@@ -57,13 +57,16 @@ def CopyTagOp : ProtoJit_Op<"copytag"> {
 
 // DefaultOp populates a value with a default for that type.
 //
-// No buffer is accepted because the default value for types with external
-// data is empty anyway.
+// For consistency and to preserve assumptions made by downstream optimizations,
+// accepts and returns buffers like TranscodeOp, even though they are never used
+// or modified.
 def DefaultOp : ProtoJit_Op<"default"> {
   let arguments = (ins
       AnyType:$dst,
+      BufferType:$buf,
       TypedArrayAttrBase<DispatchHandlerAttr, "decode handlers">:$handlers
   );
+  let results = (outs BufferType);
 }
 
 // Calculates the size of the memory allocated within the region.
@@ -93,9 +96,7 @@ def TagOp : ProtoJit_Op<"tag"> {
 // Dispatch on the tag of a variant and jump to the corresponding successor.
 // The number of successors should match the number of tag values for the
 // incoming variant, and should be listed in the same numerical order.
-//
-// TODO: rename to match after IR rewrite is complete.
-def MatchOp : ProtoJit_Op<"matchtag", [Terminator]> {
+def MatchOp : ProtoJit_Op<"match", [Terminator]> {
   let arguments = (ins VariantType:$var);
   let successors = (
     successor AnySuccessor:$dflt, VariadicSuccessor<AnySuccessor>:$cases
@@ -156,6 +157,10 @@ def ReflectOp : ProtoJit_Op<"reflect"> {
   let arguments = (ins ValueType:$src, ProtoJitAnyType:$dst, BufferType:$buf);
   let results = (outs BufferType);
 }
+
+// Terminates execution and causes decoding to return a null buffer without
+// calling any callbacks, signalling that insufficient memory was provided.
+def ThrowOp : ProtoJit_Op<"throw", [Terminator]> {}
 
 // Register a callback to be invoked when decoding is complete.
 def SetCallbackOp : ProtoJit_Op<"setcallback"> {

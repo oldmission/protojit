@@ -40,6 +40,8 @@ class SideEffectAnalysis {
     return nullptr;
   }
 
+  void replaceOperation(mlir::Operation* orig, mlir::Operation* sub);
+
   using OpSet =
       llvm::DenseSet<mlir::Operation*, llvm::DenseMapInfo<mlir::Operation*>>;
 

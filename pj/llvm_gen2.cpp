@@ -30,6 +30,7 @@ using namespace types;
   V(TranscodePrimitiveOp)       \
   V(TagOp)                      \
   V(MatchOp)                    \
+  V(ThrowOp)                    \
   V(SetCallbackOp)              \
   V(DefaultOp)                  \
   V(UnitOp)                     \
@@ -64,12 +65,11 @@ struct LLVMGenPass
 
   Width wordSize() const { return Bytes(machine_->getPointerSize(0)); };
 
-  mlir::IntegerType wordType() {
-    return mlir::IntegerType::get(&getContext(), wordSize().bits(),
-                                  mlir::IntegerType::Signless);
-  }
+  mlir::IntegerType wordType() { return intType(wordSize()); }
 
-  mlir::Type intType(Width width) {
+  mlir::IntegerType boolType() { return intType(Bits(1)); }
+
+  mlir::IntegerType intType(Width width) {
     return mlir::IntegerType::get(&getContext(), width.bits(),
                                   mlir::IntegerType::Signless);
   }
@@ -134,13 +134,17 @@ struct LLVMGenPass
     return buildOffsetPtr(loc, _, variant, type.tag_offset(), type.tag_width());
   }
 
-  Value buildBoundedBuf(Location loc, ConversionPatternRewriter& _, Value ptr,
-                        Value size) {
+  Value buildBoundedBuf(Location loc, ConversionPatternRewriter& _,
+                        std::optional<Value> ptr, std::optional<Value> size) {
     Value buf_struct = _.create<LLVM::UndefOp>(loc, boundedBufType());
-    buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, ptr,
-                                               _.getI64ArrayAttr(0));
-    buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, size,
-                                               _.getI64ArrayAttr(1));
+    if (ptr.has_value()) {
+      buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, ptr.value(),
+                                                 _.getI64ArrayAttr(0));
+    }
+    if (size.has_value()) {
+      buf_struct = _.create<LLVM::InsertValueOp>(loc, buf_struct, size.value(),
+                                                 _.getI64ArrayAttr(1));
+    }
     return buf_struct;
   }
 
@@ -235,7 +239,7 @@ LogicalResult FuncOpLowering::matchAndRewrite(
 
   if (pass->effectAnalysis()->hasEffects(op)) {
     // success
-    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
+    op.insertArgument(op.getNumArguments(), pass->ptrType(Bits(1)),
                       DictionaryAttr::get(ctx));
     // callback
     op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
@@ -420,7 +424,7 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
   }
 
   auto too_high = _.create<ICmpOp>(
-      loc, pass->intType(Bits(1)), ICmpPredicate::uge, src_tag,
+      loc, pass->boolType(), ICmpPredicate::uge, src_tag,
       pass->buildIntConstant(loc, _, src_type->tag_width, table.size()));
 
   auto dst_tag = _.create<scf::IfOp>(loc, pass->intType(dst_type->tag_width),
@@ -544,6 +548,19 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
   return success();
 }
 
+LogicalResult ThrowOpLowering::matchAndRewrite(
+    ThrowOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+
+  auto [check_store, __] = pass->getEffectDefsFor(op);
+  _.create<LLVM::StoreOp>(loc, pass->buildTrueVal(loc, _), check_store);
+  _.create<LLVM::ReturnOp>(loc,
+                           ValueRange{pass->buildBoundedBuf(loc, _, {}, {})});
+
+  _.eraseOp(op);
+  return success();
+}
+
 LogicalResult SetCallbackOpLowering::matchAndRewrite(
     SetCallbackOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
@@ -595,7 +612,7 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
       auto ref = _.create<LoadOp>(loc, ref_ptr);
 
       if (type->reference_mode == Vector::kOffset) {
-        // TODO: bounds check on the offset
+        // TODO: bounds check on the offset in "adversarial mode"
         start = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
                                 ValueRange{ref});
       } else {
@@ -624,10 +641,26 @@ LogicalResult AllocateOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
   auto buf = operands[0];
   if (buf.getType() == pass->boundedBufType()) {
+    auto* cur_block = _.getInsertionBlock();
+    auto* continuation = _.splitBlock(cur_block, _.getInsertionPoint());
+    auto* throw_block = _.createBlock(cur_block->getParent());
+
+    _.setInsertionPointToEnd(cur_block);
     auto [ptr, size] = pass->buildBoundedBufferDestructuring(loc, _, buf);
-    // TODO: insert a bounds check
-    ptr = _.create<GEPOp>(loc, pass->bytePtrType(), ptr, operands[1]);
     size = _.create<SubOp>(loc, size, operands[1]);
+
+    auto too_small = _.create<ICmpOp>(loc, pass->boolType(), ICmpPredicate::slt,
+                                      size, pass->buildWordConstant(loc, _, 0));
+    _.create<LLVM::CondBrOp>(loc, too_small, throw_block, ValueRange{},
+                             continuation, ValueRange{},
+                             std::make_pair(0u, 1u));
+
+    _.setInsertionPointToStart(throw_block);
+    auto throw_op = _.create<ThrowOp>(loc);
+    pass->effectAnalysis()->replaceOperation(op, throw_op);
+
+    _.setInsertionPointToStart(continuation);
+    ptr = _.create<GEPOp>(loc, pass->bytePtrType(), ptr, operands[1]);
     buf = pass->buildBoundedBuf(loc, _, ptr, size);
   } else if (buf.getType() == pass->rawBufType()) {
     buf = _.create<GEPOp>(loc, pass->bytePtrType(), buf, operands[1]);
@@ -704,43 +737,85 @@ LogicalResult StoreRefOpLowering::matchAndRewrite(
 LogicalResult DecodeCatchOpLowering::matchAndRewrite(
     DecodeCatchOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
+  auto* ctx = _.getContext();
   auto loc = op.getLoc();
 
   // Create real definitions for the anchors and replace anchor uses with
   // them.
   auto one = pass->buildWordConstant(loc, _, 1);
-  auto check_alloc = _.create<AllocaOp>(loc, pass->wordPtrType(), one);
+  auto check_alloc = _.create<AllocaOp>(loc, pass->ptrType(Bits(1)), one);
   auto callback_alloc = _.create<AllocaOp>(loc, pass->wordPtrType(), one);
 
   pass->setEffectDefs(op, check_alloc, callback_alloc);
 
   // Initialize the allocations.
-  auto zero = pass->buildWordConstant(loc, _, 0);
-  _.create<StoreOp>(loc, zero, check_alloc);
-  _.create<StoreOp>(loc, zero, callback_alloc);
+  _.create<StoreOp>(loc, pass->buildFalseVal(loc, _), check_alloc);
+  _.create<StoreOp>(loc, pass->buildWordConstant(loc, _, 0), callback_alloc);
 
-  // Replace uses of the op with the YieldOp value.
-  auto* yield_op = &op.body().front().back();
+  // Restructure the blocks from
+  //  ^start:
+  //    <before DecodeCatchOp>
+  //    %buf = "pj.catch"() ({ <body> })
+  //    <after DecodeCatchOp>
+  // to
+  //  ^start:
+  //    <before DecodeCatchOp>
+  //    br ^body
+  //  ^body:
+  //    <contents of body>
+  //    ERASED: "pj.yield"(%result_buf)
+  //    br ^continuation
+  //  ^continuation_start:
+  //    %check = <load value of check>
+  //    llvm.cond_br %check (weights 0, 1), ^fail, ^succ
+  //  ^fail:
+  //    br ^continuation_end(<null buffer>)
+  //  ^succ:
+  //    br ^continuation_end(%result_buf)
+  //  ^continuation_end(%buf):
+  //    <after DecodeCatchOp using block argument in place of original %buf>
+  auto* start = _.getInsertionBlock();
+
+  auto* body = &op.body().front();
+  assert(op.body().hasOneBlock());
+
+  // Get the result buffer contained in the YieldOp.
+  auto* yield_op = &body->back();
   assert(isa<YieldOp>(yield_op));
-
-  auto yield_val = cast<YieldOp>(yield_op).result();
-
-  _.replaceOp(op, yield_val);
+  auto result_buf = cast<YieldOp>(yield_op).result();
   _.eraseOp(yield_op);
 
-  // Stitch the body in into the current block.
-  // TODO: branch out when we see Check ops.
-  auto* start = _.getInsertionBlock();
-  auto* body_entry = &op.body().front();
-  auto* continuation =
-      _.splitBlock(_.getInsertionBlock(), _.getInsertionPoint());
-  _.inlineRegionBefore(op.body(), continuation);
+  auto* continuation_start = _.splitBlock(start, _.getInsertionPoint());
+  auto* fail = _.createBlock(start->getParent());
+  auto* succ = _.createBlock(start->getParent());
+
+  _.inlineRegionBefore(op.body(), continuation_start);
 
   _.setInsertionPointToEnd(start);
-  _.create<mlir::BranchOp>(loc, body_entry, ValueRange{});
+  _.create<mlir::BranchOp>(loc, body, ValueRange{});
 
-  _.setInsertionPointToEnd(body_entry);
-  _.create<mlir::BranchOp>(loc, continuation, ValueRange{});
+  _.setInsertionPointToEnd(body);
+  _.create<mlir::BranchOp>(loc, continuation_start, ValueRange{});
+
+  _.setInsertionPointToStart(continuation_start);
+  auto check_val = _.create<LoadOp>(loc, pass->boolType(), check_alloc);
+  _.create<LLVM::CondBrOp>(loc, check_val, fail, ValueRange{}, succ,
+                           ValueRange{}, std::make_pair(0u, 1u));
+
+  auto* continuation_end =
+      _.splitBlock(continuation_start, _.getInsertionPoint());
+  auto result_buf_arg =
+      continuation_end->addArgument(BoundedBufferType::get(ctx), loc);
+
+  _.setInsertionPointToStart(fail);
+  auto empty_buf = pass->buildBoundedBuf(
+      loc, _, _.create<LLVM::NullOp>(loc, pass->bytePtrType()), {});
+  _.create<LLVM::BrOp>(loc, ValueRange{empty_buf}, continuation_end);
+
+  _.setInsertionPointToStart(succ);
+  _.create<LLVM::BrOp>(loc, ValueRange{result_buf}, continuation_end);
+
+  _.replaceOp(op, result_buf_arg);
 
   return success();
 }
@@ -753,7 +828,9 @@ LogicalResult CallOpLowering::matchAndRewrite(
   const auto& buf_args =
       pass->effectAnalysis()->flattenedBufferArguments(op.callee());
 
-  if (!pass->effectAnalysis()->hasEffects(op) && buf_args.empty()) {
+  const auto* effects = pass->effectAnalysis();
+
+  if (!effects->hasEffects(op) && buf_args.empty()) {
     return failure();
   }
 
@@ -770,13 +847,31 @@ LogicalResult CallOpLowering::matchAndRewrite(
     }
   }
 
-  if (pass->effectAnalysis()->hasEffects(op)) {
+  if (effects->hasEffects(op)) {
     auto [check, cb] = pass->getEffectDefsFor(op);
     new_operands.insert(new_operands.end(), {check, cb});
   }
 
   auto call = _.create<mlir::CallOp>(op.getLoc(), op.getResultTypes(),
                                      op.callee(), new_operands);
+
+  if (effects->hasEffects(effects->effectProviderFor(op))) {
+    auto* cur_block = _.getInsertionBlock();
+    auto* continuation = _.splitBlock(cur_block, _.getInsertionPoint());
+    auto* exit_block = _.createBlock(cur_block->getParent());
+
+    _.setInsertionPointToEnd(cur_block);
+    auto [check, __] = pass->getEffectDefsFor(op);
+    auto check_val = _.create<LoadOp>(loc, check);
+    _.create<LLVM::CondBrOp>(loc, check_val, exit_block, ValueRange{},
+                             continuation, ValueRange{},
+                             std::make_pair(0u, 1u));
+
+    _.setInsertionPointToStart(exit_block);
+    _.create<LLVM::ReturnOp>(loc,
+                             ValueRange{pass->buildBoundedBuf(loc, _, {}, {})});
+  }
+
   if (call.getNumResults() > 0) {
     _.replaceOp(op, call.getResults());
   } else {
@@ -816,10 +911,8 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
 
 LogicalResult UnitOpLowering::matchAndRewrite(
     UnitOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
-  auto loc = op.getLoc();
-  auto zero = pass->buildWordConstant(loc, _, 0);
-  auto ptr = _.create<IntToPtrOp>(loc, pass->bytePtrType(), zero);
-  _.replaceOp(op, ptr.getResult());
+  auto null = _.create<LLVM::NullOp>(op.getLoc(), pass->bytePtrType());
+  _.replaceOp(op, ValueRange{null});
   return success();
 }
 

@@ -24,12 +24,17 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   // 1. Build bipartite graph of exception points (calls + roots)
   //    and functions.
   //
-  //    Record root points (SetCallbackOp, TODO: ThrowOp as well).
+  //    Record root points (SetCallbackOp, ThrowOp).
 
   root->walk([&](Operation* op) {
     if (!isa<SetCallbackOp>(op) && !isa<CallOp>(op) &&
-        !isa<InvokeCallbackOp>(op)) {
+        !isa<InvokeCallbackOp>(op) && !isa<ThrowOp>(op) &&
+        !isa<AllocateOp>(op)) {
       return;
+    }
+
+    if (auto alloc = dyn_cast<AllocateOp>(op)) {
+      if (!alloc.buf().getType().isa<BoundedBufferType>()) return;
     }
 
     if (isa<DecodeCatchOp>(op->getParentOp()) ||
@@ -95,6 +100,20 @@ Span<size_t> SideEffectAnalysis::flattenedBufferArguments(
     return Span<size_t>{&it->second[0], it->second.size()};
   }
   return {};
+}
+
+void SideEffectAnalysis::replaceOperation(mlir::Operation* orig,
+                                          mlir::Operation* sub) {
+  // Don't bother deleting entries, because the original has been replaced and
+  // will never be used again.
+  if (effect_points.contains(orig)) {
+    effect_points.insert(sub);
+  }
+  if (auto it = effect_providers.find(orig); it != effect_providers.end()) {
+    auto copy = *it;
+    copy.first = sub;
+    effect_providers.insert(copy);
+  }
 }
 
 }  // namespace pj
