@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PROTOJIT_PROTOJIT_HPP
+#define PROTOJIT_PROTOJIT_HPP
 
 #include <array>
 #include <memory>
@@ -201,16 +202,25 @@ struct Any {
   friend struct gen::BuildPJType;
 };
 
+}  // namespace pj
+
+#include "pj/reflect.pj.hpp"
+
+namespace pj {
 namespace gen {
+
 template <>
 struct BuildPJType<Any> {
   static const void* build(PJContext* ctx) {
-    return PJCreateAnyType(ctx, offsetof(Any, data_) << 3,
-                           sizeof(Any::data_) << 3, offsetof(Any, type_) << 3,
-                           sizeof(Any::type_) << 3, sizeof(Any) << 3,
-                           alignof(Any) << 3);
+    return PJCreateAnyType(
+        ctx, offsetof(Any, data_) << 3, sizeof(Any::data_) << 3,
+        offsetof(Any, type_) << 3, sizeof(Any::type_) << 3, sizeof(Any) << 3,
+        alignof(Any) << 3,
+        ::pj::gen::BuildPJType<::pj::reflect::Proto>::build(ctx));
   }
 };
-}  // namespace gen
 
+}  // namespace gen
 }  // namespace pj
+
+#endif  // PROTOJIT_PROTOJIT_HPP

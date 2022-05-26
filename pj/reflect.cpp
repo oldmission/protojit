@@ -1,5 +1,5 @@
 #include "pj/reflect.hpp"
-#include "pj/reflect.pj.hpp"
+#include "pj/protojit.hpp"
 
 namespace pj {
 using namespace types;

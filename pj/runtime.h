@@ -52,7 +52,7 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
                                  Bits type_ref_width, Bits size,
-                                 Bits alignment);
+                                 Bits alignment, const void* self_type);
 
 const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 

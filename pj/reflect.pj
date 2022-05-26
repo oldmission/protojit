@@ -1,3 +1,7 @@
+// NOTE: do not try to include the generated header 'reflect.pj.hpp' directly:
+// it has a cyclic dependency on 'protojit.hpp'. Just include 'protojit.hpp'
+// instead.
+
 space pj {
 
 enum Sign external {
@@ -81,7 +85,5 @@ struct Proto {
   types: Type[:];
 }
 
-protocol ProtocolJit: Proto;
-
-}  // space self
+}  // space reflect
 }  // space pj

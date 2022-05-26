@@ -656,12 +656,14 @@ struct Any {
   Width size;
   Width alignment;
 
+  ValueType self;
+
   bool operator==(const Any& other) const {
     return data_ref_width == other.data_ref_width &&
            data_ref_offset == other.data_ref_offset &&
            type_ref_width == other.type_ref_width &&
            type_ref_offset == other.type_ref_offset && size == other.size &&
-           alignment == other.alignment;
+           alignment == other.alignment && self == other.self;
   }
 
   Width headSize() const { return size; }
@@ -681,7 +683,7 @@ inline ::llvm::hash_code hash_value(const Any& A) {
   return llvm::hash_combine(
       hash_value(A.data_ref_width), hash_value(A.data_ref_offset),
       hash_value(A.type_ref_width), hash_value(A.type_ref_offset),
-      hash_value(A.size), hash_value(A.alignment));
+      hash_value(A.size), hash_value(A.alignment), hash_value(A.self));
 }
 
 inline Any type_intern(mlir::TypeStorageAllocator& allocator, const Any& A) {

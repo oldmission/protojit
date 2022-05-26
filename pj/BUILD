@@ -83,7 +83,6 @@ cc_library(
         "exceptions.hpp",
         "ir.hpp",
         "ir.hpp.inc",
-        "protojit.hpp",
         "runtime.h",
         "span.hpp",
         "type_support.hpp",
@@ -126,6 +125,7 @@ cc_library(
     name = "reflect",
     srcs = ["reflect.cpp"],
     hdrs = [
+        "protojit.hpp",
         "reflect.hpp",
         "reflect.pj.hpp",
     ],
@@ -196,6 +196,7 @@ cc_library(
     linkopts = ["-lstdc++"],
     deps = [
         ":compiler",
+        ":reflect",
     ],
 )
 

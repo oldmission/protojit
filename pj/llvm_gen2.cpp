@@ -275,6 +275,10 @@ LogicalResult FuncOpLowering::matchAndRewrite(
       loc, op.getName(),
       _.getFunctionType(new_fn_types, op.getType().getResults()), {},
       new_fn_attrs);
+  _.notifyOperationInserted(func);
+
+  auto* new_entry = func.addEntryBlock();
+  auto* old_entry = &op.getBlocks().front();
 
   // 2. Update argument uses to refrence args from the new function.
   if (pass->effectAnalysis()->hasEffects(op)) {
@@ -282,18 +286,18 @@ LogicalResult FuncOpLowering::matchAndRewrite(
                         func.getArgument(func.getNumArguments() - 1));
   }
 
-  auto* new_entry = func.addEntryBlock();
-  auto* old_entry = &op.getBlocks().front();
-
-  for (auto it = ++op.getBody().begin(); it != op.getBody().end(); ++it) {
-    func.body().push_back(&*it);
+  {
+    auto& fn_blocks = func.body().getBlocks();
+    auto& op_blocks = op.body().getBlocks();
+    fn_blocks.splice(fn_blocks.end(), op_blocks, ++op_blocks.begin(),
+                     op_blocks.end());
   }
-  // _.inlineRegionBefore(op.getBody(), func.getBody(), func.getBody().end());
 
   while (!old_entry->empty()) {
     old_entry->front().moveBefore(new_entry, new_entry->end());
   }
 
+  _.setInsertionPointToStart(new_entry);
   for (intptr_t i = 0, j = 0, k = 0; i < op.getNumArguments(); ++i) {
     if (j < buf_args.size() && i == buf_args[j]) {
       auto old_arg = op.getArgument(i);
@@ -914,7 +918,17 @@ LogicalResult SizeOpLowering::matchAndRewrite(
 LogicalResult ReflectOpLowering::matchAndRewrite(
     ReflectOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
-  // SAMIR_TODO2
+  auto loc = op.getLoc();
+  auto any = op.dst().getType().cast<AnyType>();
+
+  // 1. Create binary representation of the source schema in the host's self
+  // representation.
+
+  // 2. Save the schema in the constant pool and get a pointer to it.
+  Value schema_ptr{};
+
+  // 3. Save pointers to the schema and object in the destination.
+  auto schema_slot = pass->buildOffsetPtr(loc, _, operands[1], );
   _.eraseOp(op);
   return success();
 }

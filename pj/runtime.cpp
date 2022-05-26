@@ -47,8 +47,8 @@ const PJUnitType* PJCreateUnitType(PJContext* c) {
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
-                                 Bits type_ref_width, Bits size,
-                                 Bits alignment) {
+                                 Bits type_ref_width, Bits size, Bits alignment,
+                                 const void* self_type) {
   auto any = pj::types::Any{
       .data_ref_width = pj::Bits(data_ref_width),
       .data_ref_offset = pj::Bits(data_ref_offset),
@@ -56,6 +56,8 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
       .type_ref_offset = pj::Bits(type_ref_offset),
       .size = pj::Bits(size),
       .alignment = pj::Bits(alignment),
+      .self = mlir::Type::getFromOpaquePointer(self_type)
+                  .cast<pj::types::ValueType>(),
   };
   auto any_type = pj::types::AnyType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_, any);
