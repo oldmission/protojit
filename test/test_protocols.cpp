@@ -32,7 +32,8 @@ TEST_P(PJVariantTest, ProtocolSame) {
     EXPECT_EQ(A.fee, F.fee);
   });
 
-  transcode<Adoption, Adoption, AdoptionProto>(&F, &T, "animal.specifics.dog");
+  transcode(Options<Adoption, Adoption, AdoptionProto>{
+      .from = &F, .to = &T, .src_path = "animal.specifics.dog"});
 }
 
 TEST_P(PJVariantTest, ProtocolForwards) {
@@ -60,8 +61,8 @@ TEST_P(PJVariantTest, ProtocolForwards) {
     EXPECT_EQ(A.fee, F.fee);
   });
 
-  transcode<v1::Adoption, v2::Adoption, v1::AdoptionProto>(
-      &F, &T, "animal.specifics.cat");
+  transcode(Options<v1::Adoption, v2::Adoption, v1::AdoptionProto>{
+      .from = &F, .to = &T, .src_path = "animal.specifics.cat"});
 }
 
 TEST_P(PJVariantTest, ProtocolBackwards) {
@@ -89,8 +90,8 @@ TEST_P(PJVariantTest, ProtocolBackwards) {
     EXPECT_EQ(A.fee, 0x23);
   });
 
-  transcode<v2::Adoption, v1::Adoption, v2::AdoptionProto>(
-      &F, &T, "animal.specifics.cat");
+  transcode(Options<v2::Adoption, v1::Adoption, v2::AdoptionProto>{
+      &F, &T, "animal.specifics.cat"});
 }
 
 INSTANTIATE_TEST_SUITE_P(ProtocolVariants, PJVariantTest,

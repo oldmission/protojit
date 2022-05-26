@@ -17,7 +17,7 @@ TEST_F(PJTest, VectorOfStructsRoundUp) {
 
   B b{.v3 = {&long_v3[0], long_v3.size()}};
 
-  auto [_, enc_size] = transcode<B>(&b, {}, "", "", {.round_up_size = true});
+  auto results = transcode(Options<B>{.from = &b, .round_up_size = true});
 
   // Because all of the vectors are filled to their maximum lengths, we expect
   // that the rounded up size is EQUAL to the actual size of the vector. Manual
@@ -33,7 +33,7 @@ TEST_F(PJTest, VectorOfStructsRoundUp) {
   //   10 uint64[8:16]: 10 * outlined data (9*8) = 720
   //   10 char[2:10]: 10 * outlined data (10) = 100
   //   10 A: 10*74 = 740
-  EXPECT_EQ(enc_size, 75 + 720 + 100 + 740);
+  EXPECT_EQ(results.enc_size, 75 + 720 + 100 + 740);
 }  // namespace pj
 
 }  // namespace pj

@@ -13,7 +13,7 @@ TEST_F(PJTest, ArraySameTest) {
   A1 x = {.arr = {'a', 'b', 'c', 'd'}};
   A1 y = {.arr = {0x7f, 0x7f, 0x7f, 0x7f}};
 
-  transcode<A1>(&x, &y);
+  transcode(Options<A1>{.from = &x, .to = &y});
 
   for (intptr_t i = 0; i < 4; ++i) {
     EXPECT_EQ(y.arr[i], x.arr[i]);
@@ -24,7 +24,7 @@ TEST_F(PJTest, ArrayExtendTest) {
   A1 x = {.arr = {'a', 'b', 'c', 'd'}};
   A2 y = {.arr = {0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f}};
 
-  transcode<A1, A2>(&x, &y);
+  transcode(Options<A1, A2>{.from = &x, .to = &y});
 
   for (intptr_t i = 0; i < 4; ++i) {
     EXPECT_EQ(y.arr[i], x.arr[i]);
@@ -40,7 +40,7 @@ TEST_F(PJTest, ArrayDefaultTest) {
                    A2{.arr = {-1, -1, -1, -1, -1, -1}},
                    A2{.arr = {-1, -1, -1, -1, -1, -1}}}};
 
-  transcode<A1, A3>(&x, &y);
+  transcode(Options<A1, A3>{.from = &x, .to = &y});
 
   for (intptr_t i = 0; i < 4; ++i) {
     EXPECT_EQ(y.arr[i], x.arr[i]);
