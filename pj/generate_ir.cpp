@@ -284,7 +284,8 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
           path.into(to_field->name), handlers_attr);
     } else {
       // Otherwise fill in the target field with a default value.
-      _.create<ir::DefaultOp>(loc, dst_field, handlers_attr);
+      _.create<ir::DefaultOp>(loc, result_buf.getType(), dst_field, result_buf,
+                              handlers_attr);
     }
   }
 
@@ -444,6 +445,7 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
   auto default_loop =
       _.create<scf::ForOp>(loc, loop_start, loop_end, step, ValueRange{});
 
+  auto final_buf = transcode_loop.getResult(0);
   _.create<ReturnOp>(loc, transcode_loop.getResult(0));
 
   // Transcode available elements.
@@ -470,7 +472,8 @@ mlir::FuncOp GeneratePass::getOrCreateArrayTranscodeFn(
     _.setInsertionPointToStart(body);
     Value idx = body->getArgument(0);
     auto dst_elem = _.create<ArrayIndexOp>(loc, to->elem, dst, idx);
-    _.create<DefaultOp>(loc, dst_elem, ArrayAttr::get(ctx, {}));
+    _.create<DefaultOp>(loc, final_buf.getType(), dst_elem, final_buf,
+                        ArrayAttr::get(ctx, {}));
     // ForOp::build automatically creates a terminating yield since
     // we have no loop carried variables.
   }
@@ -558,7 +561,7 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
     auto ppl_count = buildIndex(loc, _, dst_type->ppl_count);
     auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
     auto outline_bytes = _.create<MulIOp>(
-        loc, buildIndex(loc, _, dst_type->headSize().bytes()), outline_count);
+        loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
 
     Value result_buf =
         _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
@@ -990,7 +993,6 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   auto type = op.dst().getType();
 
   UnitOp src;
-  auto buf = _.create<UnitOp>(loc, RawBufferType::get(ctx));
 
   if (type.isa<StructType>()) {
     llvm::StringRef name = "<empty>";
@@ -1007,7 +1009,7 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
     return failure();
   }
 
-  _.create<TranscodeOp>(loc, buf.getType(), src, op.dst(), buf,
+  _.create<TranscodeOp>(loc, op.buf().getType(), src, op.dst(), op.buf(),
                         PathAttr::none(ctx), op.handlers());
   _.eraseOp(op);
   return success();

@@ -11,7 +11,6 @@ TEST_F(PJTest, VectorSame) {
   A b;
 
   auto results = transcode(Options<A>{.from = &a, .to = &b});
-  EXPECT_EQ(results.dec_buffer.get(), nullptr);
 
   EXPECT_EQ(results.enc_size, /*length=*/1 + /*inline data=*/8 * 8);
   EXPECT_EQ(b.vec.size(), a.vec.size());
@@ -25,11 +24,12 @@ TEST_F(PJTest, VectorOutlineSame) {
   A a{.vec = {&values[0], values.size()}};
   A b;
 
-  auto results = transcode(Options<A>{.from = &a, .to = &b});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results =
+      transcode(Options<A>{.from = &a, .to = &b, .expect_dec_buffer = true});
 
   EXPECT_EQ(results.enc_size,
             /*length=*/1 + /*ref=*/8 + /*ppl=*/7 * 8 + /*outline data=*/6 * 8);
+  EXPECT_EQ(results.dec_buffer_size, 8 * 13);
   EXPECT_EQ(b.vec.size(), a.vec.size());
   for (size_t i = 0; i < a.vec.size(); ++i) {
     EXPECT_EQ(b.vec[i], a.vec[i]);
@@ -41,9 +41,10 @@ TEST_F(PJTest, VectorTruncate) {
   A a{.vec = {&values[0], values.size()}};
   B b;
 
-  auto results = transcode(Options<A, B>{.from = &a, .to = &b});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results =
+      transcode(Options<A, B>{.from = &a, .to = &b, .expect_dec_buffer = true});
 
+  EXPECT_EQ(results.dec_buffer_size, 8 * 12);
   EXPECT_EQ(b.vec.size(), 12);
   for (size_t i = 0; i < 12; ++i) {
     EXPECT_EQ(b.vec[i], a.vec[i]);
@@ -54,9 +55,10 @@ TEST_F(PJTest, VectorInlineToOutline) {
   A a{.vec = {std::array<uint64_t, 5>{1, 2, 3, 4, 5}}};
   C c;
 
-  auto results = transcode(Options<A, C>{.from = &a, .to = &c});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results =
+      transcode(Options<A, C>{.from = &a, .to = &c, .expect_dec_buffer = true});
 
+  EXPECT_EQ(results.dec_buffer_size, 8 * 5);
   EXPECT_EQ(c.vec.size(), a.vec.size());
   for (size_t i = 0; i < a.vec.size(); ++i) {
     EXPECT_EQ(c.vec[i], a.vec[i]);
@@ -76,8 +78,8 @@ TEST_F(PJTest, NestedVectorSame) {
   NestedA a{.vec = {&arr[0], arr.size()}};
   NestedA b;
 
-  auto results = transcode(Options<NestedA>{.from = &a, .to = &b});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results = transcode(
+      Options<NestedA>{.from = &a, .to = &b, .expect_dec_buffer = true});
 
   // Head sizes of various types:
   //   uint64[:]: length (8), ref(8) = 16
@@ -88,6 +90,15 @@ TEST_F(PJTest, NestedVectorSame) {
   //   2 outlined uint64[:]:
   //     head (2*16), outline data (1*8 + 5*8) = 32 + 48 = 80
   EXPECT_EQ(results.enc_size, 33 + 64 + 80);
+
+  // Host types have no partial payload, and both the outer and inner vector
+  // exceed the inline length, so the entire vector contents are in the decode
+  // buffer.
+  EXPECT_EQ(results.dec_buffer_size,
+            3 * (/*length of inner=*/8 +
+                 /*ref of inner=*/8) +
+                /*data for inner vectors=*/8 * (8 + 1 + 5));
+
   EXPECT_EQ(a.vec.size(), b.vec.size());
   for (size_t i = 0; i < a.vec.size(); ++i) {
     EXPECT_EQ(b.vec[i].size(), a.vec[i].size());
@@ -110,8 +121,12 @@ TEST_F(PJTest, NestedVectorDifferent) {
   NestedA a{.vec = {&arr[0], arr.size()}};
   NestedB b;
 
-  auto results = transcode(Options<NestedA, NestedB>{.from = &a, .to = &b});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results = transcode(Options<NestedA, NestedB>{
+      .from = &a, .to = &b, .expect_dec_buffer = true});
+
+  // Only first and third exceed the inline size, so only their data should be
+  // in the decode buffer. First is truncated to a size of 6 from 8.
+  EXPECT_EQ(results.dec_buffer_size, 8 * (6 + 5));
 
   EXPECT_EQ(a.vec.size(), b.vec.size());
   for (size_t i = 0; i < a.vec.size(); ++i) {
@@ -135,7 +150,6 @@ TEST_F(PJTest, VectorOfStructsForwards) {
 
   auto results =
       transcode(Options<CollectionA, CollectionB>{.from = &a, .to = &b});
-  EXPECT_EQ(results.dec_buffer.get(), nullptr);
 
   EXPECT_EQ(b.items.size(), a.items.size());
   EXPECT_EQ(b.owners.size(), 0);
@@ -165,9 +179,8 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
           ItemB{.name = std::array{'A', 'B', 'C'}, .price = 1, .quantity = 1}}};
   CollectionA a;
 
-  auto results =
-      transcode(Options<CollectionB, CollectionA>{.from = &b, .to = &a});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results = transcode(Options<CollectionB, CollectionA>{
+      .from = &b, .to = &a, .expect_dec_buffer = true});
 
   // Head sizes of various types:
   //   ItemB.name = char8[12:]: length (8), inline data (12) = 20
@@ -179,6 +192,11 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
   // The only data that exceeds any inline data is the owner names, which add up
   // to 15 bytes total
   EXPECT_EQ(results.enc_size, 191);
+
+  // Everything is inline except the second item name, which exceeds the inline
+  // size of ItemA.name.
+  EXPECT_EQ(results.dec_buffer_size, 9);
+
   EXPECT_EQ(a.items.size(), b.items.size());
   for (size_t i = 0; i < b.items.size(); ++i) {
     EXPECT_EQ(a.items[i].name, b.items[i].name);
@@ -205,8 +223,11 @@ TEST_F(PJTest, VectorOfStructsSame) {
           ItemB{.name = std::array{'A', 'B', 'C'}, .price = 1, .quantity = 1}}};
   CollectionB b2;
 
-  auto results = transcode(Options<CollectionB>{.from = &b1, .to = &b2});
-  EXPECT_NE(results.dec_buffer.get(), nullptr);
+  auto results = transcode(
+      Options<CollectionB>{.from = &b1, .to = &b2, .expect_dec_buffer = true});
+
+  // Everything is inline except all the owner name data.
+  EXPECT_EQ(results.dec_buffer_size, 5 + 3 + 7);
 
   EXPECT_EQ(b2.items.size(), b1.items.size());
   EXPECT_EQ(b2.owners.size(), b2.owners.size());

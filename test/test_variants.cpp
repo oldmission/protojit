@@ -211,11 +211,15 @@ TEST_P(PJVariantTest, VariantAfterVector) {
     EXPECT_EQ(T.vec, F.vec);
   });
 
-  auto results = transcode(Options<VecVar>{
-      .from = &F, .to = &T, .src_path = "var.w", .tag_path = "var._"});
+  auto results = transcode(Options<VecVar>{.from = &F,
+                                           .to = &T,
+                                           .src_path = "var.w",
+                                           .tag_path = "var._",
+                                           .expect_dec_buffer = true});
 
   // Vector has 8 length bytes, 8 ref bytes, and 4*8 data bytes
   EXPECT_EQ(results.enc_size, (no_tag ? 9 : 2) + 48);
+  EXPECT_EQ(results.dec_buffer_size, 8 * 4);
 }
 
 TEST_F(PJTest, EnumTableTest) {
