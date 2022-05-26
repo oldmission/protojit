@@ -14,6 +14,7 @@ Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key) {
   s.size = key.size;
   s.alignment = key.alignment;
 
+  s.has_max_size = true;
   for (uintptr_t i = 0; i < key.fields.size(); ++i) {
     s.has_max_size = s.has_max_size && key.fields[i].type.hasMaxSize();
     fields[i] = StructField{
