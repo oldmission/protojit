@@ -13,7 +13,7 @@ TEST_F(PJTest, IntSameTest) {
   Int32 x{.i = 1};
   Any y;
 
-  transcode<Int32, Any>(.from = &x, .to = &y);
+  transcode(Options<Int32, Any>{.from = &x, .to = &y});
 }
 
 }  // namespace pj
