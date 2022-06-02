@@ -287,7 +287,7 @@ void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
       std::any_of(type->terms.begin(), type->terms.end(),
                   [](auto& term) { return bool(term.type); });
 
-  pj::Width tag_width = compute_tag_width(types::InlineVariant(type));
+  pj::Width tag_width = compute_tag_width(type);
   generateVariantDef(decl, output, back, has_value, tag_width);
 
   // Generate a BuildPJType specialization for this type.

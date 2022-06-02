@@ -928,7 +928,7 @@ LogicalResult ReflectOpLowering::matchAndRewrite(
   Value schema_ptr{};
 
   // 3. Save pointers to the schema and object in the destination.
-  auto schema_slot = pass->buildOffsetPtr(loc, _, operands[1], );
+  // auto schema_slot = pass->buildOffsetPtr(loc, _, operands[1], );
   _.eraseOp(op);
   return success();
 }
