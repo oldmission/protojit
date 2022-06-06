@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/RuntimeDyld.h>
 #include <llvm/ExecutionEngine/SectionMemoryManager.h>
@@ -8,6 +10,8 @@
 
 namespace pj {
 
+static constexpr const char* kUserFunctionPrefix = "user_";
+
 class PortalImpl : public Portal {
  public:
   PortalImpl(std::unique_ptr<llvm::orc::LLJIT>&& jit) : jit_(std::move(jit)) {}
@@ -15,8 +19,10 @@ class PortalImpl : public Portal {
 
   std::unique_ptr<llvm::orc::LLJIT> jit_;
 
-  Artifact* ResolveTargetArtifact(const char* name) const override {
-    auto result = jit_->lookup(name);
+  Artifact* ResolveTargetArtifact(const char* name,
+                                  bool internal = false) const override {
+    auto full_name = (internal ? "" : kUserFunctionPrefix) + std::string{name};
+    auto result = jit_->lookup(full_name);
     if (!result) {
       return nullptr;
     } else {

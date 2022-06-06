@@ -207,6 +207,22 @@ const PJProtocol* PJPlanProtocol(PJContext* ctx_, const void* head_,
       pj::plan_protocol(ctx->ctx_, head, tag_path).getAsOpaquePointer());
 }
 
+uint64_t PJGetProtoSize(PJContext* ctx_, const PJProtocol* proto) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  return ctx->getProtoSize(ConvertProtocol(proto));
+}
+
+void PJEncodeProto(PJContext* ctx_, const PJProtocol* proto, char* buf) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  ctx->encodeProto(ConvertProtocol(proto), buf);
+}
+
+const PJProtocol* PJDecodeProto(PJContext* ctx_, const char* buf) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  return reinterpret_cast<const PJProtocol*>(
+      ctx->decodeProto(buf).getAsOpaquePointer());
+}
+
 void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,
                          const PJProtocol* protocol_, const char* src_path) {
   auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
