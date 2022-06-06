@@ -152,7 +152,7 @@ struct BuildPJType<Any> {
         ctx, offsetof(Any, data_) << 3, sizeof(Any::data_) << 3,
         offsetof(Any, type_) << 3, sizeof(Any::type_) << 3, sizeof(Any) << 3,
         alignof(Any) << 3,
-        ::pj::gen::BuildPJType<::pj::reflect::Proto>::build(ctx));
+        ::pj::gen::BuildPJType<::pj::reflect::Protocol>::build(ctx));
   }
 };
 

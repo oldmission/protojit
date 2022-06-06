@@ -3,8 +3,9 @@
 namespace pj {
 namespace reflect {
 
-struct Proto;
-Proto reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType proto);
+struct Protocol;
+Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType proto);
+types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx);
 types::ValueType reflectableTypeFor(types::ValueType);
 
 }  // namespace reflect
