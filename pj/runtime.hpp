@@ -23,6 +23,18 @@ const PJProtocol* planProtocol(PJContext* ctx) {
   return plan<Head>(ctx, gen::ProtocolHead<Proto>::tag());
 }
 
+uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto) {
+  return PJGetProtoSize(ctx, proto);
+}
+
+void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf) {
+  PJEncodeProto(ctx, proto, buf);
+}
+
+const PJProtocol* decodeProto(PJContext* ctx, const char* buf) {
+  return PJDecodeProto(ctx, buf);
+}
+
 template <typename Src>
 void addEncodeFunction(PJContext* ctx, const std::string& name,
                        const PJProtocol* protocol,
