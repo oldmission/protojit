@@ -68,7 +68,6 @@ gentbl_cc_library(
 cc_library(
     name = "core",
     srcs = [
-        "context_base.cpp",
         "ir.cpp",
         "ir.cpp.inc",
         "type_support.cpp",
@@ -76,14 +75,12 @@ cc_library(
     ],
     hdrs = [
         "arch.hpp",
-        "context.hpp",
         "defer.hpp",
         "enums.cpp.inc",
         "enums.hpp.inc",
         "exceptions.hpp",
         "ir.hpp",
         "ir.hpp.inc",
-        "runtime.h",
         "span.hpp",
         "type_support.hpp",
         "types.hpp",
@@ -112,6 +109,7 @@ cc_binary(
     ],
     deps = [
         ":core",
+        ":plan",
         "@pegtl//:headers",
     ],
 )
@@ -128,6 +126,7 @@ cc_library(
         "protojit.hpp",
         "reflect.hpp",
         "reflect.pj.hpp",
+        "runtime.h",
     ],
     linkopts = ["-lstdc++fs"],
     deps = [":core"],
@@ -136,7 +135,6 @@ cc_library(
 cc_library(
     name = "compiler",
     srcs = [
-        "context.cpp",
         "copy_coalescing.cpp",
         "copy_extending.cpp",
         "gdb.cpp",
@@ -145,7 +143,6 @@ cc_library(
         "llvm_extra.cpp",
         "llvm_gen2.cpp",
         "llvm_utils.cpp",
-        "portal.cpp",
         "scope.cpp",
         "side_effect_analysis.cpp",
         "sizing.cpp",
@@ -157,8 +154,6 @@ cc_library(
         "llvm_extra_conversions.cpp.inc",
         "llvm_utils.hpp",
         "passes.hpp",
-        "portal.hpp",
-        "portal_impl.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
         "span.hpp",
@@ -179,12 +174,10 @@ cc_library(
 )
 
 cc_library(
-    name = "runtime",
+    name = "plan",
     srcs = [
         "convert_internal.cpp",
         "plan.cpp",
-        "protojit.cpp",
-        "runtime.cpp",
         "variant_outlining.cpp",
         "vector_hoisting.cpp",
         "wire_layout.cpp",
@@ -192,15 +185,32 @@ cc_library(
     hdrs = [
         "convert_internal.hpp",
         "plan.hpp",
-        "protojit.hpp",
-        "runtime.h",
         "variant_outlining.hpp",
         "vector_hoisting.hpp",
         "wire_layout.hpp",
     ],
     linkopts = ["-lstdc++"],
+    deps = [":core"],
+)
+
+cc_library(
+    name = "runtime",
+    srcs = [
+        "context.cpp",
+        "protojit.cpp",
+        "runtime.cpp",
+    ],
+    hdrs = [
+        "context.hpp",
+        "portal.hpp",
+        "portal_impl.hpp",
+        "runtime.hpp",
+        "runtime.h",
+    ],
+    linkopts = ["-lstdc++"],
     deps = [
         ":compiler",
+        ":plan",
         ":reflect",
     ],
 )

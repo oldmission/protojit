@@ -41,6 +41,8 @@ struct ProtoJitContext {
   pj::types::ValueType unit_type_;
 
  private:
+  void resetModule();
+
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);
 };
 

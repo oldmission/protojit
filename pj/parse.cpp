@@ -15,11 +15,9 @@ using namespace tao::pegtl;
 
 namespace pj {
 
-using SourceId = std::vector<std::string>;
-
 struct ParseState {
   ParsingScope& parse_scope;
-  ProtoJitContext& ctx;
+  mlir::MLIRContext& ctx;
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
@@ -174,7 +172,7 @@ static void parseInt(const ActionInput& in, ParseState* state) {
   types::Int data{.width = Bits(bits), .sign = sign};
   validate(data, in.position());
 
-  __ type = types::IntType::get(&__ ctx.ctx_, data);
+  __ type = types::IntType::get(&__ ctx, data);
 }
 
 struct UIntType : seq<string<'u', 'i', 'n', 't'>, num> {};
@@ -238,7 +236,7 @@ BEGIN_ACTION(FixedArrayModifier) {
                     .length = __ array_len};
   validate(data, in.position());
 
-  __ type = types::ArrayType::get(&__ ctx.ctx_, data);
+  __ type = types::ArrayType::get(&__ ctx, data);
   __ array_len = kNone;
 }
 END_ACTION()
@@ -275,7 +273,7 @@ BEGIN_ACTION(VarArrayModifier) {
       .max_length = __ array_max_len};
   validate(data, in.position());
 
-  __ type = types::VectorType::get(&__ ctx.ctx_, data);
+  __ type = types::VectorType::get(&__ ctx, data);
 
   __ array_max_len = kNone;
   __ array_min_len = kNone;
@@ -338,7 +336,7 @@ BEGIN_ACTION(StructDecl) {
 
   auto name = __ popScopedId();
   SpanConverter<llvm::StringRef> name_converter{name};
-  auto type = types::StructType::get(&__ ctx.ctx_, types::TypeDomain::kHost,
+  auto type = types::StructType::get(&__ ctx, types::TypeDomain::kHost,
                                      name_converter.get());
 
   types::Struct data{.fields =
@@ -436,8 +434,8 @@ static void handleVariant(const ActionInput& in, ParseState* state,
 
   auto name = __ popScopedId();
   SpanConverter<llvm::StringRef> name_converter{name};
-  auto type = types::InlineVariantType::get(
-      &__ ctx.ctx_, types::TypeDomain::kHost, name_converter.get());
+  auto type = types::InlineVariantType::get(&__ ctx, types::TypeDomain::kHost,
+                                            name_converter.get());
 
   types::InlineVariant data{.terms =
                                 Span<types::Term>{&terms[0], terms.size()}};
@@ -531,7 +529,7 @@ struct TagPath : seq<star<seq<identifier, tok<'.'>>>, tok<'_'>> {};
 BEGIN_ACTION(TagPath) {
   assert(__ tag_path.empty());
   __ tag_path = types::PathAttr::fromString(
-      &__ ctx.ctx_,
+      &__ ctx,
       {in.begin(), static_cast<size_t>(std::distance(in.begin(), in.end()))});
 }
 END_ACTION()
@@ -595,7 +593,7 @@ BEGIN_ACTION(ProtoDecl) {
       .tag_path = __ tag_path,
   });
 
-  __ tag_path = types::PathAttr::none(&__ ctx.ctx_);
+  __ tag_path = types::PathAttr::none(&__ ctx);
 }
 END_ACTION()
 
@@ -619,12 +617,13 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
   scope.pending_files.emplace(path);
 
   auto& parsed = scope.parsed_files[path];
+
   ParseState state{
       .parse_scope = scope,
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
-      .tag_path = types::PathAttr::none(&scope.ctx.ctx_),
+      .tag_path = types::PathAttr::none(&scope.ctx),
   };
   file_input in(path);
   parse<ParseFile, ParseAction>(in, &state);
