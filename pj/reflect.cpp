@@ -1,5 +1,6 @@
 #include "pj/reflect.hpp"
 #include "pj/protojit.hpp"
+#include "pj/span.hpp"
 
 namespace pj {
 using namespace types;
@@ -10,15 +11,19 @@ namespace reflect {
   V(Int)                                      \
   V(Struct)                                   \
   V(InlineVariant)                            \
+  V(OutlineVariant)                           \
   V(Array)                                    \
   V(Vector)
 
-#define DECLARE_TYPE_REFLECTER(T)                                        \
-  void reflect(::pj::types::T##Type type, llvm::BumpPtrAllocator& alloc, \
-               std::vector<Type>& pool,                                  \
-               std::unordered_map<const void*, int32_t>& cache);
-FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(DECLARE_TYPE_REFLECTER)
-#undef DECLARE_TYPE_REFLECTER
+#define DECLARE_TYPE_REFLECTORS(T)                                         \
+  void reflect(::pj::types::T##Type type, llvm::BumpPtrAllocator& alloc,   \
+               std::vector<Type>& pool,                                    \
+               std::unordered_map<const void*, int32_t>& cache);           \
+  ::pj::types::ValueType unreflect(const ::pj::reflect::T& type,           \
+                                   int32_t index, mlir::MLIRContext& ctxi, \
+                                   Span<Type> pool);
+FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(DECLARE_TYPE_REFLECTORS)
+#undef DECLARE_TYPE_REFLECTORS
 
 int32_t reflect(types::ValueType type, llvm::BumpPtrAllocator& alloc,
                 std::vector<Type>& pool,
@@ -45,33 +50,70 @@ int32_t reflect(types::ValueType type, llvm::BumpPtrAllocator& alloc,
   return result;
 }
 
+types::ValueType unreflect(const Type& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+#define MATCH_TYPE(T)                                 \
+  else if (type.tag == Type::Kind::T) {               \
+    return unreflect(type.value.T, index, ctx, pool); \
+  }
+
+  if (false)
+    ;
+  FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(MATCH_TYPE)
+#undef MATCH_TYPE
+  else {
+    UNREACHABLE();
+  }
+}
+
 static constexpr uint32_t kProtojitMajorVersion = 0;
 
-Proto reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
+Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
   std::vector<Type> pool;
   std::unordered_map<const void*, int32_t> cache;
   const int32_t head_offset = reflect(protocol->head, alloc, pool, cache);
   auto* pool_alloc = alloc.Allocate<Type>(pool.size());
   std::copy(pool.begin(), pool.end(), pool_alloc);
 
-  const auto proto = Proto{
+  const auto proto = Protocol{
+      .pj_version = kProtojitMajorVersion,
       .head = head_offset,
-      .pj_ver = kProtojitMajorVersion,
+      .buffer_offset = protocol->buffer_offset,
       .types = {pool_alloc, pool.size()},
   };
 
   return proto;
 }
 
-void reflect(::pj::types::IntType type, llvm::BumpPtrAllocator& alloc,
+types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx) {
+  Span<Type> pool{&type.types[0], type.types.size()};
+  const Type& head = pool[type.head];
+  return ProtocolType::get(&ctx,
+                           types::Protocol{
+                               .head = unreflect(head, type.head, ctx, pool),
+                               .buffer_offset = type.buffer_offset,
+                           });
+}
+
+void reflect(IntType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   Type result{.tag = Type::Kind::Int};
   result.value.Int = Int{
       .width = type->width,
+      .alignment = type->alignment,
       .sign = type->sign,
   };
   pool.emplace_back(result);
+}
+
+types::ValueType unreflect(const Int& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  return IntType::get(&ctx, types::Int{
+                                .width = type.width,
+                                .alignment = type.alignment,
+                                .sign = type.sign,
+                            });
 }
 
 Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
@@ -80,6 +122,12 @@ Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
     result[i] = {name[i].data(), name[i].size()};
   }
   return {result, name.size()};
+}
+
+SpanConverter<llvm::StringRef> unreflectName(Name name) {
+  return {&name[0], name.size(), [](auto str) {
+            return llvm::StringRef{&str[0], str.size()};
+          }};
 }
 
 void reflect(StructType type, llvm::BumpPtrAllocator& alloc,
@@ -103,42 +151,102 @@ void reflect(StructType type, llvm::BumpPtrAllocator& alloc,
       .name = reflectName(type.name(), alloc),
       .fields = {fields, type->fields.size()},
       .size = type->size,
+      .alignment = type->alignment,
   };
   pool.emplace_back(typ);
+}
+
+types::ValueType unreflect(const Struct& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  auto name_conv = unreflectName(type.name);
+  SpanConverter<types::StructField> field_conv{
+      type.fields, type.fields.size(), [&](const StructField& f) {
+        return types::StructField{
+            .type = unreflect(pool[index + f.type], index + f.type, ctx, pool),
+            .name = {&f.name[0], f.name.size()},
+            .offset = f.offset,
+        };
+      }};
+  auto result =
+      StructType::get(&ctx, types::TypeDomain::kReflect, name_conv.get());
+  result.setTypeData(types::Struct{
+      .fields = field_conv.get(),
+      .size = type.size,
+      .alignment = type.alignment,
+  });
+  return result;
 }
 
 void reflect(ArrayType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
-  const int32_t elem_offset =
-      pool.size() - reflect(type->elem, alloc, pool, cache);
+  const int32_t elem = reflect(type->elem, alloc, pool, cache);
+  const int32_t elem_offset = elem - pool.size();
   Type typ{.tag = Type::Kind::Array};
   typ.value.Array = {
       .elem = elem_offset,
       .length = type->length,
       .elem_size = type->elem_size,
+      .alignment = type->alignment,
   };
   pool.emplace_back(typ);
+}
+
+types::ValueType unreflect(const Array& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  return ArrayType::get(
+      &ctx, types::Array{
+                .elem = unreflect(pool[index + type.elem], index + type.elem,
+                                  ctx, pool),
+                .length = type.length,
+                .elem_size = type.elem_size,
+                .alignment = type.alignment,
+            });
 }
 
 void reflect(VectorType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
-  ASSERT(type->min_length == 0);
-  ASSERT(type->ppl_count == 0);
-  ASSERT(type->reference_mode == ReferenceMode::kPointer);
-  const int32_t elem_offset =
-      pool.size() - reflect(type->elem, alloc, pool, cache);
+  const int32_t elem = reflect(type->elem, alloc, pool, cache);
+  const int32_t elem_offset = elem - pool.size();
   Type typ{.tag = Type::Kind::Vector};
   typ.value.Vector = {
       .elem = elem_offset,
+      .min_length = type->min_length,
       .max_length = type->max_length,
+      .ppl_count = type->ppl_count,
       .length_offset = type->length_offset,
       .length_size = type->length_size,
       .ref_offset = type->ref_offset,
       .ref_size = type->ref_size,
+      .reference_mode = type->reference_mode,
+      .inline_payload_offset = type->inline_payload_offset,
+      .partial_payload_offset = type->partial_payload_offset,
+      .size = type->size,
+      .alignment = type->alignment,
   };
   pool.emplace_back(typ);
+}
+
+types::ValueType unreflect(const Vector& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  return VectorType::get(
+      &ctx, types::Vector{
+                .elem = unreflect(pool[index + type.elem], index + type.elem,
+                                  ctx, pool),
+                .min_length = type.min_length,
+                .max_length = type.max_length,
+                .ppl_count = type.ppl_count,
+                .length_offset = type.length_offset,
+                .length_size = type.length_size,
+                .ref_offset = type.ref_offset,
+                .ref_size = type.ref_size,
+                .reference_mode = type.reference_mode,
+                .inline_payload_offset = type.inline_payload_offset,
+                .partial_payload_offset = type.partial_payload_offset,
+                .size = type.size,
+                .alignment = type.alignment,
+            });
 }
 
 Term* reflectTerms(pj::Span<pj::types::Term> terms,
@@ -160,6 +268,19 @@ Term* reflectTerms(pj::Span<pj::types::Term> terms,
   return terms_alloc;
 }
 
+SpanConverter<types::Term> unreflectTerms(ArrayView<Term, 0, -1> terms,
+                                          int32_t index, mlir::MLIRContext& ctx,
+                                          Span<Type> pool) {
+  return {&terms[0], terms.size(), [&](const Term& term) {
+            return types::Term{
+                .name = {&term.name[0], term.name.size()},
+                .type = unreflect(pool[index + term.type], index + term.type,
+                                  ctx, pool),
+                .tag = term.tag,
+            };
+          }};
+}
+
 void reflect(InlineVariantType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
@@ -171,11 +292,62 @@ void reflect(InlineVariantType type, llvm::BumpPtrAllocator& alloc,
       .term_offset = type->term_offset,
       .tag_offset = type->tag_offset,
       .tag_width = type->tag_width,
+      .size = type->size,
+      .alignment = type->alignment,
   };
   pool.emplace_back(typ);
 }
 
-#undef FOR_EACH_REFLECTABLE_PROTOJIT_TYPE
+types::ValueType unreflect(const InlineVariant& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  auto name_conv = unreflectName(type.name);
+  auto term_conv = unreflectTerms(type.terms, index, ctx, pool);
+  auto result = types::InlineVariantType::get(&ctx, types::TypeDomain::kReflect,
+                                              name_conv.get());
+  result.setTypeData(types::InlineVariant{
+      .terms = term_conv.get(),
+      .term_offset = type.term_offset,
+      .tag_offset = type.tag_offset,
+      .tag_width = type.tag_width,
+      .size = type.size,
+      .alignment = type.alignment,
+  });
+  return result;
+}
+
+void reflect(OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
+             std::vector<Type>& pool,
+             std::unordered_map<const void*, int32_t>& cache) {
+  auto* terms = reflectTerms(type->terms, alloc, pool, cache);
+  Type typ{.tag = Type::Kind::OutlineVariant};
+  typ.value.OutlineVariant = {
+      .name = reflectName(type.name(), alloc),
+      .terms = {terms, type->terms.size()},
+      .tag_width = type->tag_width,
+      .tag_alignment = type->tag_alignment,
+      .term_offset = type->term_offset,
+      .term_alignment = type->term_alignment,
+  };
+  pool.emplace_back(typ);
+}
+
+types::ValueType unreflect(const OutlineVariant& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  auto name_conv = unreflectName(type.name);
+  auto term_conv = unreflectTerms(type.terms, index, ctx, pool);
+  auto result = types::OutlineVariantType::get(
+      &ctx, types::TypeDomain::kReflect, name_conv.get());
+  result.setTypeData(types::OutlineVariant{
+      .terms = term_conv.get(),
+      .tag_width = type.tag_width,
+      .tag_alignment = type.tag_alignment,
+      .term_offset = type.term_offset,
+      .term_alignment = type.term_offset,
+  });
+  return result;
+}
+
+#undef FOR_EACH_PROTOJIT_TYPE
 
 ValueType reflectableTypeFor(ValueType type) {
   if (type.isa<IntType>()) {

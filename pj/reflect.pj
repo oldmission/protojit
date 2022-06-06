@@ -27,6 +27,7 @@ type Offset = int32;
 
 struct Int {
   width: Width;
+  alignment: Width;
   sign: Sign;
 }
 
@@ -40,6 +41,7 @@ struct Struct {
   name: Name;
   fields: StructField[:];
   size: Width;
+  alignment: Width;
 }
 
 struct Term {
@@ -54,34 +56,55 @@ struct InlineVariant {
   term_offset: Width;
   tag_offset: Width;
   tag_width: Width;
+  size: Width;
+  alignment: Width;
+}
+
+struct OutlineVariant {
+  name: Name;
+  terms: Term[:];
+  tag_width: Width;
+  tag_alignment: Width;
+  term_offset: Width;
+  term_alignment: Width;
 }
 
 struct Array {
   elem: Offset;
   length: uint64;
   elem_size: Width;
+  alignment: Width;
 }
 
 struct Vector {
   elem: Offset;
+  min_length: int64;
   max_length: int64;
+  ppl_count: int64;
   length_offset: Width;
   length_size: Width;
   ref_offset: Width;
   ref_size: Width;
+  reference_mode: ReferenceMode;
+  inline_payload_offset: Width;
+  partial_payload_offset: Width;
+  size: Width;
+  alignment: Width;
 }
 
 variant Type {
   Int: Int;
   Struct: Struct;
   InlineVariant: InlineVariant;
+  OutlineVariant: OutlineVariant;
   Array: Array;
   Vector: Vector;
 }
 
-struct Proto {
+struct Protocol {
+  pj_version: int32;
   head: int32;
-  pj_ver: uint32;
+  buffer_offset: Width;
   types: Type[:];
 }
 
