@@ -10,6 +10,8 @@ ValueType WireLayout::visit(IntType type) {
       Int{.width = type->width, .alignment = Bytes(1), .sign = type->sign});
 }
 
+ValueType WireLayout::visit(UnitType type) { return type; }
+
 ValueType WireLayout::visit(StructType type) {
   Width offset = Bytes(0);
   Width alignment = Bytes(1);

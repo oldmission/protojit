@@ -914,6 +914,17 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
   auto src_type = op.src().getType().cast<ValueType>();
   auto dst_type = op.dst().getType().cast<ValueType>();
 
+  if (dst_type.isa<UnitType>()) {
+    _.replaceOp(op, op.buf());
+    return success();
+  }
+
+  if (src_type.isa<UnitType>()) {
+    _.create<DefaultOp>(loc, op.dst(), op.handlers());
+    _.replaceOp(op, op.buf());
+    return success();
+  }
+
   if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
     _.create<TranscodePrimitiveOp>(loc, operands[0], operands[1]);
     _.replaceOp(op, operands[2]);
@@ -1002,6 +1013,11 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   auto* ctx = _.getContext();
   auto loc = op.getLoc();
   auto type = op.dst().getType();
+
+  if (type.isa<UnitType>()) {
+    _.eraseOp(op);
+    return success();
+  }
 
   UnitOp src;
   auto buf = _.create<UnitOp>(loc, RawBufferType::get(ctx));

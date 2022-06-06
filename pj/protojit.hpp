@@ -18,6 +18,16 @@ struct ProtocolHead {};
 
 }  // namespace gen
 
+template <typename T, PJSign S>
+struct Integer {
+  static_assert(std::is_integral_v<T>);
+
+ private:
+  T pad_;
+};
+
+struct Unit {};
+
 template <typename T, size_t MinLength, intptr_t MaxLength>
 class ArrayView {
  public:
@@ -83,7 +93,7 @@ class ArrayView {
   const char* outline;
   std::array<T, MinLength> storage;
 
-  template <typename U>
+  template <typename U, typename>
   friend struct gen::BuildPJType;
 };
 
@@ -125,7 +135,7 @@ class ArrayView<T, 0, MaxLength> {
   uint64_t length;
   const char* outline;
 
-  template <typename U>
+  template <typename U, typename>
   friend struct gen::BuildPJType;
 };
 
@@ -134,10 +144,71 @@ struct Any {
   const void* type_;
   const void* data_;
 
-  template <typename U>
+  template <typename U, typename>
   friend struct gen::BuildPJType;
 };
 
+}  // namespace pj
+
+namespace pj {
+namespace gen {
+
+template <typename T, PJSign S>
+struct BuildPJType<Integer<T, S>> {
+  static const void* build(PJContext* ctx) {
+    static_assert(std::is_integral_v<T>);
+    return PJCreateIntType(ctx, /*width=*/sizeof(T) << 3,
+                           /*alignment=*/alignof(T) << 3,
+                           /*sign=*/S);
+  }
+};
+
+template <>
+struct BuildPJType<::pj::Unit> {
+  static const void* build(PJContext* ctx) { return PJCreateUnitType(ctx); }
+};
+
+template <typename Elem, size_t Length>
+struct BuildPJType<std::array<Elem, Length>> {
+  static const void* build(PJContext* ctx) {
+    using Array = std::array<Elem, Length>;
+    auto elem = BuildPJType<Elem>::build(ctx);
+    return PJCreateArrayType(ctx, /*elem=*/elem, /*length=*/Length,
+                             /*elem_size=*/sizeof(Elem) << 3,
+                             /*alignment=*/alignof(Array) << 3);
+  }
+};
+
+template <typename Elem, size_t MinLength, intptr_t MaxLength>
+struct BuildPJType<::pj::ArrayView<Elem, MinLength, MaxLength>> {
+  static const void* build(PJContext* ctx) {
+    using AV = ::pj::ArrayView<Elem, MinLength, MaxLength>;
+    auto elem = BuildPJType<Elem>::build(ctx);
+    intptr_t inline_payload_offset = -1;
+    intptr_t inline_payload_size = 0;
+    if constexpr (MinLength > 0) {
+      inline_payload_offset = offsetof(AV, storage) << 3;
+      inline_payload_size = sizeof(AV::storage) << 3;
+    }
+    return PJCreateVectorType(ctx, /*elem=*/elem, /*min_length=*/MinLength,
+                              /*max_length=*/MaxLength,
+                              /*wire_min_length=*/MinLength,
+                              /*ppl_count=*/0,
+                              /*length_offset=*/offsetof(AV, length) << 3,
+                              /*length_size=*/sizeof(AV::length) << 3,
+                              /*ref_offset=*/offsetof(AV, outline) << 3,
+                              /*ref_size=*/sizeof(AV::outline) << 3,
+                              /*reference_mode=*/PJ_REFERENCE_MODE_POINTER,
+                              inline_payload_offset, inline_payload_size,
+                              /*partial_payload_offset=*/-1,
+                              /*partial_payload_size=*/0,
+                              /*size=*/sizeof(AV) << 3,
+                              /*alignment=*/alignof(AV) << 3,
+                              /*outlined_payload_alignment=*/64);
+  }
+};
+
+}  // namespace gen
 }  // namespace pj
 
 #include "pj/reflect.pj.hpp"

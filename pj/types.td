@@ -26,6 +26,9 @@ def ValueType :
 def IntType :
     Type<CPred<"$_self.isa<::pj::types::IntType>()">, "int">;
 
+def UnitType :
+    Type<CPred<"$_self.isa<::pj::types::UnitType>()">, "unit">;
+
 def StructType :
     Type<CPred<"$_self.isa<::pj::types::StructType>()">, "struct">;
 

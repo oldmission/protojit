@@ -101,6 +101,7 @@ cc_binary(
         "pjc.cpp",
         "protogen.hpp",
         "sourcegen.cpp",
+        "sourcegen.hpp",
         "validate.cpp",
         "validate.hpp",
     ],

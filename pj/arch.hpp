@@ -9,7 +9,7 @@
 namespace pj {
 
 namespace gen {
-template <typename T>
+template <typename T, typename Enable = void>
 struct BuildPJType;
 }  // namespace gen
 

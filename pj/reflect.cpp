@@ -9,6 +9,7 @@ namespace reflect {
 
 #define FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(V) \
   V(Int)                                      \
+  V(Unit)                                     \
   V(Struct)                                   \
   V(InlineVariant)                            \
   V(OutlineVariant)                           \
@@ -114,6 +115,17 @@ types::ValueType unreflect(const Int& type, int32_t index,
                                 .alignment = type.alignment,
                                 .sign = type.sign,
                             });
+}
+
+void reflect(UnitType type, llvm::BumpPtrAllocator& alloc,
+             std::vector<Type>& pool,
+             std::unordered_map<const void*, int32_t>& cache) {
+  pool.emplace_back(Type{.tag = Type::Kind::Unit});
+}
+
+types::ValueType unreflect(const Unit& type, int32_t index,
+                           mlir::MLIRContext& ctx, Span<Type> pool) {
+  return UnitType::get(&ctx);
 }
 
 Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {

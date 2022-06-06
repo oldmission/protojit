@@ -25,6 +25,7 @@ typedef struct PJStructType PJStructType;
 typedef struct PJAnyType PJAnyType;
 typedef struct PJTerm PJTerm;
 typedef struct PJInlineVariantType PJInlineVariantType;
+typedef struct PJOutlineVariantType PJOutlineVariantType;
 typedef struct PJArrayType PJArrayType;
 typedef struct PJVectorType PJVectorType;
 typedef struct PJProtocol PJProtocol;
@@ -34,10 +35,10 @@ typedef struct PJHandler {
   const void* function;
 } PJHandler;
 
-const PJUnitType* PJCreateUnitType(PJContext* c);
-
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
+
+const PJUnitType* PJCreateUnitType(PJContext* c);
 
 const PJStructField* PJCreateStructField(const char* name, const void* type,
                                          Bits offset);
@@ -51,8 +52,8 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
-                                 Bits type_ref_width, Bits size,
-                                 Bits alignment, const void* self_type);
+                                 Bits type_ref_width, Bits size, Bits alignment,
+                                 const void* self_type);
 
 const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 
@@ -61,6 +62,11 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_size, Bits size,
     Bits alignment);
+
+const PJOutlineVariantType* PJCreateOutlineVariantType(
+    PJContext* c, uintptr_t name_size, const char* name[],
+    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment);
 
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      uint64_t length, Bits elem_size,
@@ -74,6 +80,9 @@ const PJVectorType* PJCreateVectorType(
     Bits inline_payload_size, Bits partial_payload_offset,
     Bits partial_payload_size, Bits size, Bits alignment,
     Bits outlined_payload_alignment);
+
+const PJProtocol* PJCreateProtocolType(PJContext* ctx, const void* head,
+                                       Bits buffer_offset);
 
 const PJProtocol* PJPlanProtocol(PJContext* ctx, const void* head,
                                  const char* tag_path);
