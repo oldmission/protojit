@@ -41,6 +41,7 @@ struct NestedOuter {
   z: uint8;
 }
 
+// TODO: warn that variant has no values and will be generated as an enum.
 variant EnumA {
   x;
   y;
@@ -51,6 +52,12 @@ variant EnumB {
   z;
   y;
   x;
+}
+
+variant NotAnEnum {
+  x: uint8;
+  y: uint8;
+  z: uint8;
 }
 
 struct VecVar {

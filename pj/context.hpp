@@ -38,13 +38,10 @@ struct ProtoJitContext {
 
   std::unique_ptr<Portal> compile();
 
-  pj::types::ValueType unitType() const { return unit_type_; }
-
   // TODO: make these private after removing old compile API.
   mlir::MLIRContext ctx_;
   mlir::OpBuilder builder_;
   mlir::OwningModuleRef module_;
-  pj::types::ValueType unit_type_;
 
  private:
   void resetModule();

@@ -387,7 +387,7 @@ struct VariantFieldDecl
 BEGIN_ACTION(VariantFieldDecl) {
   auto field_name = __ popId();
   // The type may be null, indicating no payload is attached.
-  __ fields[field_name] = __ type;
+  __ fields[field_name] = __ type ? __ type : types::UnitType::get(&__ ctx);
   __ type = nullptr;
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
@@ -467,7 +467,7 @@ struct EnumFieldDecl : if_must<Id, ExplicitTagDecl, tok<';'>> {};
 
 BEGIN_ACTION(EnumFieldDecl) {
   auto field_name = __ popId();
-  __ fields[field_name] = nullptr;
+  __ fields[field_name] = types::UnitType::get(&__ ctx);
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
     __ explicit_tags[field_name] = __ explicit_tag;

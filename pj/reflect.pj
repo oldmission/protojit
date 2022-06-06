@@ -31,6 +31,8 @@ struct Int {
   sign: Sign;
 }
 
+struct Unit {}
+
 struct StructField {
   type: Offset;
   name: char8[:];
@@ -94,6 +96,7 @@ struct Vector {
 
 variant Type {
   Int: Int;
+  Unit: Unit;
   Struct: Struct;
   InlineVariant: InlineVariant;
   OutlineVariant: OutlineVariant;
