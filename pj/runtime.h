@@ -78,6 +78,12 @@ const PJVectorType* PJCreateVectorType(
 const PJProtocol* PJPlanProtocol(PJContext* ctx, const void* head,
                                  const char* tag_path);
 
+uint64_t PJGetProtoSize(PJContext* ctx, const PJProtocol* proto);
+
+void PJEncodeProto(PJContext* ctx, const PJProtocol* proto, char* buf);
+
+const PJProtocol* PJDecodeProto(PJContext* ctx, const char* buf);
+
 void PJAddEncodeFunction(PJContext* ctx, const char* name, const void* src,
                          const PJProtocol* protocol, const char* src_path);
 

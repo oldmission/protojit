@@ -17,6 +17,12 @@ struct ProtoJitContext {
   ProtoJitContext();
   ~ProtoJitContext();
 
+  uint64_t getProtoSize(types::ProtocolType proto);
+
+  void encodeProto(types::ProtocolType proto, char* buf);
+
+  types::ProtocolType decodeProto(const char* buf);
+
   void addEncodeFunction(std::string_view name, mlir::Type src,
                          types::ProtocolType protocol,
                          llvm::StringRef src_path);
@@ -42,8 +48,11 @@ struct ProtoJitContext {
 
  private:
   void resetModule();
+  Portal* schemaPortal();
 
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);
+
+  std::unique_ptr<Portal> schema_portal_;
 };
 
 }  // namespace pj
