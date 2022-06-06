@@ -223,13 +223,34 @@ TEST_P(PJVariantTest, VariantAfterVector) {
 }
 
 TEST_F(PJTest, EnumTableTest) {
-  EnumA F{.tag = EnumA::Kind::x};
-  EnumB T{.tag = EnumB::Kind::undef};
+  EnumA F = EnumA::x;
+  EnumB T = EnumB::undef;
 
   auto results = transcode(Options<EnumA, EnumB>{.from = &F, .to = &T});
 
   EXPECT_EQ(results.enc_size, 1);
-  EXPECT_EQ(T.tag, EnumB::Kind::x);
+  EXPECT_EQ(T, EnumB::x);
+}
+
+TEST_F(PJTest, EnumToVariant) {
+  EnumA F = EnumA::x;
+  NotAnEnum T = {.value = {.x = 42}, .tag = NotAnEnum::Kind::x};
+
+  auto results = transcode(Options<EnumA, NotAnEnum>{.from = &F, .to = &T});
+
+  EXPECT_EQ(results.enc_size, 1);
+  EXPECT_EQ(T.tag, NotAnEnum::Kind::x);
+  EXPECT_EQ(T.value.x, 0);
+}
+
+TEST_F(PJTest, VariantToEnum) {
+  NotAnEnum F = {.value = {.x = 42}, .tag = NotAnEnum::Kind::x};
+  EnumA T = EnumA::z;
+
+  auto results = transcode(Options<NotAnEnum, EnumA>{.from = &F, .to = &T});
+
+  EXPECT_EQ(results.enc_size, 2);
+  EXPECT_EQ(T, EnumA::x);
 }
 
 // Automatically tests all combinations of src_path and tag_path being provided

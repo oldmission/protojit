@@ -348,7 +348,7 @@ BEGIN_ACTION(StructDecl) {
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = {},
+      .name = name,
       .type = type,
       .is_external = __ is_external,
   });
@@ -387,7 +387,7 @@ struct VariantFieldDecl
 BEGIN_ACTION(VariantFieldDecl) {
   auto field_name = __ popId();
   // The type may be null, indicating no payload is attached.
-  __ fields[field_name] = __ type;
+  __ fields[field_name] = __ type ? __ type : types::UnitType::get(&__ ctx);
   __ type = nullptr;
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
@@ -445,7 +445,7 @@ static void handleVariant(const ActionInput& in, ParseState* state,
   __ defineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = {},
+      .name = name,
       .type = type,
       .is_enum = is_enum,
       .is_external = __ is_external,
@@ -467,7 +467,7 @@ struct EnumFieldDecl : if_must<Id, ExplicitTagDecl, tok<';'>> {};
 
 BEGIN_ACTION(EnumFieldDecl) {
   auto field_name = __ popId();
-  __ fields[field_name] = nullptr;
+  __ fields[field_name] = types::UnitType::get(&__ ctx);
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
     __ explicit_tags[field_name] = __ explicit_tag;

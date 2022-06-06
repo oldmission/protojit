@@ -15,6 +15,7 @@ using llvm::StringRef;
 
 #define FOR_EACH_VALUE_TYPE(V)       \
   V(::pj::types::IntType)            \
+  V(::pj::types::UnitType)           \
   V(::pj::types::StructType)         \
   V(::pj::types::InlineVariantType)  \
   V(::pj::types::OutlineVariantType) \
@@ -85,6 +86,32 @@ struct IntType
     return mlir::IntegerType::get(getContext(), getImpl()->key.width.bits(),
                                   mlir::IntegerType::Signless);
   }
+};
+
+struct UnitTypeStorage : public ValueTypeStorage {
+  using KeyTy = std::tuple<>;
+
+  UnitTypeStorage() = default;
+
+  bool operator==(const std::tuple<>) const { return true; }
+  static llvm::hash_code hashKey(std::tuple<>) { return 0; }
+  static UnitTypeStorage* construct(mlir::TypeStorageAllocator& allocator,
+                                    std::tuple<>) {
+    return new (allocator.allocate<UnitTypeStorage>()) UnitTypeStorage();
+  }
+  void print(llvm::raw_ostream& os) const override { os << "<unit>"; }
+  bool hasDetails() const override { return false; }
+  void printDetails(llvm::raw_ostream& os) const override {}
+  Width headSize() const override { return Bytes(0); }
+  Width headAlignment() const override { return Bytes(1); }
+  bool hasMaxSize() const override { return true; }
+  ChildVector children() const override { return {}; }
+};
+
+struct UnitType
+    : public mlir::Type::TypeBase<UnitType, ValueType, UnitTypeStorage> {
+  using Base::Base;
+  using Base::get;
 };
 
 struct StructField {

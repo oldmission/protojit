@@ -11,13 +11,11 @@ ValueType VariantOutlining::tryOutlineVariant(Type type, PathAttr path) {
   }
 
   if (auto var = type.dyn_cast<InlineVariantType>()) {
-    // Modify the name so that the final identifier starts with a ^ to
-    // disambiguate it from the InlineVariant. For example, A::B::C becomes
-    // A::B::^C
+    // Modify the name to disambiguate it from the InlineVariant.
     assert(var.name().size() > 0);
     std::vector<llvm::StringRef> name{var.name().begin(),
                                       std::prev(var.name().end())};
-    std::string last = "^" + var.name().back().str();
+    std::string last = "__outline__" + var.name().back().str();
     name.push_back(last);
     auto outline = OutlineVariantType::get(&ctx_, types::TypeDomain::kInternal,
                                            Name{name.data(), name.size()});
