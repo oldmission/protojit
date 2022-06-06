@@ -6,7 +6,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Types.h>
 
-#include "context.hpp"
 #include "types.hpp"
 
 namespace pj {
@@ -58,7 +57,7 @@ struct SourceIdLess : std::less<SourceId> {
 };
 
 struct ParsingScope {
-  ProtoJitContext& ctx;
+  mlir::MLIRContext& ctx;
   std::map<std::filesystem::path, ParsedProtoFile> parsed_files;
   std::map<SourceId, types::ValueType, SourceIdLess> type_defs;
   // std::map<SourceId, mlir::Type, SourceIdLess> protocol_defs;

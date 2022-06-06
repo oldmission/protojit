@@ -6,7 +6,7 @@
 #include <functional>
 
 #include "pj/portal.hpp"
-#include "pj/protojit.hpp"
+#include "pj/runtime.hpp"
 
 namespace pj {
 

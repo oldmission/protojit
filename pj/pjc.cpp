@@ -5,6 +5,7 @@
 
 #include "llvm/Support/CommandLine.h"
 
+#include "ir.hpp"
 #include "protogen.hpp"
 
 namespace cl = llvm::cl;
@@ -22,7 +23,9 @@ int main(int argc, char** argv) {
   cl::HideUnrelatedOptions(ProtogenOptionsCategory);
   cl::ParseCommandLineOptions(argc, argv);
 
-  pj::ProtoJitContext ctx;
+  mlir::MLIRContext ctx;
+  ctx.getOrLoadDialect<pj::ir::ProtoJitDialect>();
+
   pj::ParsingScope parse_scope{.ctx = ctx};
 
   const auto path = std::filesystem::path(InputFile.getValue());
