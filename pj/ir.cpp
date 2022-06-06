@@ -49,7 +49,7 @@ ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
     : Dialect(getDialectNamespace(), ctx, TypeID::get<ProtoJitDialect>()) {
   addAttributes<WidthAttr, PathAttr, DispatchHandlerAttr>();
 
-  addTypes<UserStateType, IntType, StructType, InlineVariantType,
+  addTypes<UserStateType, IntType, UnitType, StructType, InlineVariantType,
            OutlineVariantType, ArrayType, VectorType, AnyType, ProtocolType,
            BoundedBufferType, RawBufferType, DummyBufferType>();
 

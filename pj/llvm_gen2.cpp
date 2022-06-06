@@ -344,6 +344,7 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
                         pass->buildWordConstant(loc, _, op.offset().bytes()));
 
     if (result.isa<types::ValueType>() && op.frozen()) {
+      auto value = result.cast<types::ValueType>();
       _.create<LLVM::InvariantStartOp>(
           loc,
           pass->buildWordConstant(

@@ -38,13 +38,6 @@ pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
       .cast<pj::types::ProtocolType>();
 }
 
-const PJUnitType* PJCreateUnitType(PJContext* c) {
-  return reinterpret_cast<const PJUnitType*>(
-      reinterpret_cast<pj::ProtoJitContext*>(c)
-          ->unitType()
-          .getAsOpaquePointer());
-}
-
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
                                  Bits type_ref_width, Bits size, Bits alignment,
@@ -72,6 +65,12 @@ const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                              .alignment = pj::Bits(alignment),
                                              .sign = ConvertSign(sign)});
   return reinterpret_cast<const PJIntType*>(int_type.getAsOpaquePointer());
+}
+
+const PJUnitType* PJCreateUnitType(PJContext* c) {
+  auto unit_type = pj::types::UnitType::get(
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);
+  return reinterpret_cast<const PJUnitType*>(unit_type.getAsOpaquePointer());
 }
 
 const PJStructField* PJCreateStructField(const char* name, const void* type,
@@ -147,6 +146,32 @@ const PJInlineVariantType* PJCreateInlineVariantType(
       inline_variant_type.getAsOpaquePointer());
 }
 
+const PJOutlineVariantType* PJCreateOutlineVariantType(
+    PJContext* c, uintptr_t name_size, const char* name[],
+    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment) {
+  pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
+
+  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::SpanConverter<pj::types::Term> terms_converter{
+      terms, num_terms, [](const PJTerm* t) {
+        auto casted = reinterpret_cast<const pj::types::Term*>(t);
+        DEFER(delete casted);
+        return *casted;
+      }};
+  auto outline_variant_type = pj::types::OutlineVariantType::get(
+      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+  outline_variant_type.setTypeData(
+      {.terms = terms_converter.get(),
+       .tag_width = pj::Bits(tag_width),
+       .tag_alignment = pj::Bits(tag_alignment),
+       .term_offset = pj::Bits(term_offset),
+       .term_alignment = pj::Bits(term_alignment)});
+
+  return reinterpret_cast<const PJOutlineVariantType*>(
+      outline_variant_type.getAsOpaquePointer());
+}
+
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      uint64_t length, Bits elem_size,
                                      Bits alignment) {
@@ -194,6 +219,18 @@ const PJVectorType* PJCreateVectorType(
           .outlined_payload_alignment = pj::Bits(outlined_payload_alignment)});
   return reinterpret_cast<const PJVectorType*>(
       vector_type.getAsOpaquePointer());
+}
+
+const PJProtocol* PJCreateProtocolType(PJContext* ctx_, const void* head_,
+                                       Bits buffer_offset) {
+  auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
+  auto head = mlir::Type::getFromOpaquePointer(head_);
+
+  auto proto = pj::types::ProtocolType::get(
+      &ctx->ctx_,
+      pj::types::Protocol{.head = head.cast<pj::types::ValueType>(),
+                          .buffer_offset = pj::Bits(buffer_offset)});
+  return reinterpret_cast<const PJProtocol*>(proto.getAsOpaquePointer());
 }
 
 const PJProtocol* PJPlanProtocol(PJContext* ctx_, const void* head_,
