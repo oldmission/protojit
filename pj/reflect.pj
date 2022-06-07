@@ -111,5 +111,7 @@ struct Protocol {
   types: Type[:];
 }
 
+protocol Schema : Protocol;
+
 }  // space reflect
 }  // space pj
