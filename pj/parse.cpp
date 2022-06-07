@@ -308,6 +308,7 @@ BEGIN_ACTION(TypeDecl) {
       .kind = ParsedProtoFile::DeclKind::kType,
       .name = name,
       .type = __ type,
+      .tag_path = types::PathAttr::none(&__ ctx),
   });
   __ type = nullptr;
 }
@@ -348,8 +349,9 @@ BEGIN_ACTION(StructDecl) {
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = {},
+      .name = name,
       .type = type,
+      .tag_path = types::PathAttr::none(&__ ctx),
       .is_external = __ is_external,
   });
 
@@ -445,8 +447,9 @@ static void handleVariant(const ActionInput& in, ParseState* state,
   __ defineType(in, name, type);
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kComposite,
-      .name = {},
+      .name = name,
       .type = type,
+      .tag_path = types::PathAttr::none(&__ ctx),
       .is_enum = is_enum,
       .is_external = __ is_external,
   });

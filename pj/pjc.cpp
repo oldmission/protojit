@@ -20,7 +20,8 @@ cl::list<std::string> IncludeDirectories("import-dir",
 
 cl::opt<std::string> GenerateProtocol(
     "gen-proto",
-    cl::desc("Generate an optimized wire protocol for the specified protocol"),
+    cl::desc("Generate an optimized wire protocol for the specified protocol "
+             "or type"),
     cl::cat(ProtogenOptionsCategory));
 
 cl::opt<std::string> InputFile(cl::Positional, cl::desc("<proto file>"),
@@ -59,21 +60,18 @@ int main(int argc, char** argv) {
     size_t pos = 0;
     do {
       auto next = proto.find('.', pos);
-      name.push_back(proto.substr(pos, next));
+      name.push_back(proto.substr(pos, next - pos));
       pos = next + 1;
       if (next == std::string::npos) {
         break;
       }
     } while (true);
 
-    auto it = std::find_if(
-        parsed_file.decls.begin(), parsed_file.decls.end(),
-        [&](const auto& decl) {
-          return decl.kind == pj::ParsedProtoFile::DeclKind::kProtocol &&
-                 decl.name == name;
-        });
+    auto it = std::find_if(parsed_file.decls.begin(), parsed_file.decls.end(),
+                           [&](const auto& decl) { return decl.name == name; });
     if (it == parsed_file.decls.end()) {
-      std::cerr << "Protocol provided with option --gen-proto not found.\n";
+      std::cerr
+          << "Protocol or type provided with option --gen-proto not found.\n";
       return 1;
     }
 
