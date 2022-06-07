@@ -20,7 +20,7 @@ ValueType VariantOutlining::tryOutlineVariant(Type type, PathAttr path) {
     std::string last = "^" + var.name().back().str();
     name.push_back(last);
     auto outline = OutlineVariantType::get(&ctx_, types::TypeDomain::kInternal,
-                                           Name{&name[0], name.size()});
+                                           Name{name.data(), name.size()});
 
     // term_offset is left unset because it depends on the final generated
     // head sizes of all types coming after it. It will be set in the end in

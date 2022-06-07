@@ -39,7 +39,7 @@ struct SpanConverter {
 
   std::vector<T>& storage() { return storage_; }
 
-  Span<T> get() { return Span<T>{&storage_[0], storage_.size()}; }
+  Span<T> get() { return Span<T>{storage_.data(), storage_.size()}; }
 
  private:
   std::vector<T> storage_;

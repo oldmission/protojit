@@ -86,7 +86,7 @@ Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
 }
 
 types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx) {
-  Span<Type> pool{&type.types[0], type.types.size()};
+  Span<Type> pool{type.types.begin(), type.types.size()};
   const Type& head = pool[type.head];
   return ProtocolType::get(&ctx,
                            types::Protocol{
@@ -125,8 +125,8 @@ Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
 }
 
 SpanConverter<llvm::StringRef> unreflectName(Name name) {
-  return {&name[0], name.size(), [](auto str) {
-            return llvm::StringRef{&str[0], str.size()};
+  return {name.begin(), name.size(), [](auto str) {
+            return llvm::StringRef{str.begin(), str.size()};
           }};
 }
 
@@ -163,7 +163,7 @@ types::ValueType unreflect(const Struct& type, int32_t index,
       type.fields, type.fields.size(), [&](const StructField& f) {
         return types::StructField{
             .type = unreflect(pool[index + f.type], index + f.type, ctx, pool),
-            .name = {&f.name[0], f.name.size()},
+            .name = {f.name.begin(), f.name.size()},
             .offset = f.offset,
         };
       }};
@@ -271,9 +271,9 @@ Term* reflectTerms(pj::Span<pj::types::Term> terms,
 SpanConverter<types::Term> unreflectTerms(ArrayView<Term, 0, -1> terms,
                                           int32_t index, mlir::MLIRContext& ctx,
                                           Span<Type> pool) {
-  return {&terms[0], terms.size(), [&](const Term& term) {
+  return {terms.begin(), terms.size(), [&](const Term& term) {
             return types::Term{
-                .name = {&term.name[0], term.name.size()},
+                .name = {term.name.begin(), term.name.size()},
                 .type = unreflect(pool[index + term.type], index + term.type,
                                   ctx, pool),
                 .tag = term.tag,

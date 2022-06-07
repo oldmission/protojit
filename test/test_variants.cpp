@@ -201,7 +201,7 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
 
 TEST_P(PJVariantTest, VariantAfterVector) {
   std::array<uint64_t, 4> values{1, 2, 3, 4};
-  VecVar F{.vec = {&values[0], values.size()},
+  VecVar F{.vec = {values.data(), values.size()},
            .var = {.value = {.w = 42}, .tag = Var4::Kind::w}};
   VecVar T;
 
