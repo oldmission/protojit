@@ -33,7 +33,7 @@ Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key) {
     }
   }
 
-  s.fields = {&fields[0], key.fields.size()};
+  s.fields = {fields, key.fields.size()};
   return s;
 }
 

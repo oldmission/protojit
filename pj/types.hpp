@@ -293,7 +293,7 @@ inline V internVariant(mlir::TypeStorageAllocator& allocator,
             [&](const Term& l, const Term& r) { return l.name < r.name; });
 
   V result = type_data;
-  result.terms = {&terms[0], type_data.terms.size()};
+  result.terms = {terms, type_data.terms.size()};
   if constexpr (std::is_same_v<V, InlineVariant>) {
     result.is_enum = is_enum;
   }

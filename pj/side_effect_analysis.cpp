@@ -93,7 +93,7 @@ Span<size_t> SideEffectAnalysis::flattenedBufferArguments(
     llvm::StringRef callee) const {
   if (auto it = flattened_buffer_args.find(callee);
       it != flattened_buffer_args.end()) {
-    return Span<size_t>{&it->second[0], it->second.size()};
+    return Span<size_t>{it->second.data(), it->second.size()};
   }
   return {};
 }

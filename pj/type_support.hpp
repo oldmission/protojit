@@ -121,7 +121,7 @@ inline Name type_intern(mlir::TypeStorageAllocator& allocator, Name n) {
   for (llvm::StringRef piece : n) {
     pieces.push_back(allocator.copyInto(piece));
   }
-  return Name{allocator.copyInto(Name{&pieces[0], pieces.size()})};
+  return Name{allocator.copyInto(Name{pieces.data(), pieces.size()})};
 }
 
 template <typename T>
@@ -307,7 +307,7 @@ struct PathAttrStorage : public mlir::AttributeStorage {
   // PathAttr, don't re-copy all the strings into the allocator.
   static PathAttrStorage* construct(mlir::AttributeStorageAllocator& allocator,
                                     KeyTy key) {
-    auto list = reinterpret_cast<llvm::StringRef*>(allocator.allocate(
+    auto* list = reinterpret_cast<llvm::StringRef*>(allocator.allocate(
         sizeof(llvm::StringRef) * key.size(), alignof(llvm::StringRef)));
 
     for (uintptr_t i = 0; i < key.size(); ++i) {
@@ -315,7 +315,7 @@ struct PathAttrStorage : public mlir::AttributeStorage {
     }
 
     return new (allocator.allocate<PathAttrStorage>())
-        PathAttrStorage(Span<llvm::StringRef>{&list[0], key.size()});
+        PathAttrStorage(Span<llvm::StringRef>{list, key.size()});
   }
 
   KeyTy key;

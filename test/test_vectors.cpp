@@ -22,7 +22,7 @@ TEST_F(PJTest, VectorSame) {
 
 TEST_F(PJTest, VectorOutlineSame) {
   std::vector<uint64_t> values{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
-  A a{.vec = {&values[0], values.size()}};
+  A a{.vec = {values.data(), values.size()}};
   A b;
 
   auto results = transcode(Options<A>{.from = &a, .to = &b});
@@ -38,7 +38,7 @@ TEST_F(PJTest, VectorOutlineSame) {
 
 TEST_F(PJTest, VectorTruncate) {
   std::vector<uint64_t> values{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
-  A a{.vec = {&values[0], values.size()}};
+  A a{.vec = {values.data(), values.size()}};
   B b;
 
   auto results = transcode(Options<A, B>{.from = &a, .to = &b});
@@ -69,11 +69,11 @@ TEST_F(PJTest, NestedVectorSame) {
   std::array<uint64_t, 5> third{50, 51, 52, 53, 54};
 
   using NestedViewA = std::decay_t<decltype(NestedA::vec[0])>;
-  std::array<NestedViewA, 3> arr{NestedViewA{&first[0], first.size()},
-                                 NestedViewA{&second[0], second.size()},
-                                 NestedViewA{&third[0], third.size()}};
+  std::array<NestedViewA, 3> arr{NestedViewA{first.data(), first.size()},
+                                 NestedViewA{second.data(), second.size()},
+                                 NestedViewA{third.data(), third.size()}};
 
-  NestedA a{.vec = {&arr[0], arr.size()}};
+  NestedA a{.vec = {arr.data(), arr.size()}};
   NestedA b;
 
   auto results = transcode(Options<NestedA>{.from = &a, .to = &b});
@@ -103,11 +103,11 @@ TEST_F(PJTest, NestedVectorDifferent) {
   std::array<uint64_t, 5> third{50, 51, 52, 53, 54};
 
   using NestedViewA = std::decay_t<decltype(NestedA::vec[0])>;
-  std::array<NestedViewA, 3> arr{NestedViewA{&first[0], first.size()},
-                                 NestedViewA{&second[0], second.size()},
-                                 NestedViewA{&third[0], third.size()}};
+  std::array<NestedViewA, 3> arr{NestedViewA{first.data(), first.size()},
+                                 NestedViewA{second.data(), second.size()},
+                                 NestedViewA{third.data(), third.size()}};
 
-  NestedA a{.vec = {&arr[0], arr.size()}};
+  NestedA a{.vec = {arr.data(), arr.size()}};
   NestedB b;
 
   auto results = transcode(Options<NestedA, NestedB>{.from = &a, .to = &b});
@@ -129,7 +129,7 @@ TEST_F(PJTest, VectorOfStructsForwards) {
   CollectionA a{
       .items = std::array{
           ItemA{.name = std::array{'X'}, .price = 5},
-          ItemA{.name = {&outline_name[0], outline_name.size()}, .price = 8},
+          ItemA{.name = {outline_name.data(), outline_name.size()}, .price = 8},
           ItemA{.name = std::array{'A', 'B', 'C'}, .price = 1}}};
   CollectionB b;
 
@@ -154,9 +154,9 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
   std::array charlie{'c', 'h', 'a', 'r', 'l', 'i', 'e'};
 
   CollectionB b{
-      .owners = std::array{OwnerName{&alice[0], alice.size()},
-                           OwnerName{&bob[0], bob.size()},
-                           OwnerName{&charlie[0], charlie.size()}},
+      .owners = std::array{OwnerName{alice.data(), alice.size()},
+                           OwnerName{bob.data(), bob.size()},
+                           OwnerName{charlie.data(), charlie.size()}},
       .items = std::array{
           ItemB{.name = std::array{'X'}, .price = 5, .quantity = 3},
           ItemB{.name = std::array{'0', '1', '2', '3', '4', '5', '6', '7', '8'},
@@ -194,9 +194,9 @@ TEST_F(PJTest, VectorOfStructsSame) {
   std::array charlie{'c', 'h', 'a', 'r', 'l', 'i', 'e'};
 
   CollectionB b1{
-      .owners = std::array{OwnerName{&alice[0], alice.size()},
-                           OwnerName{&bob[0], bob.size()},
-                           OwnerName{&charlie[0], charlie.size()}},
+      .owners = std::array{OwnerName{alice.data(), alice.size()},
+                           OwnerName{bob.data(), bob.size()},
+                           OwnerName{charlie.data(), charlie.size()}},
       .items = std::array{
           ItemB{.name = std::array{'X'}, .price = 5, .quantity = 3},
           ItemB{.name = std::array{'0', '1', '2', '3', '4', '5', '6', '7', '8'},
