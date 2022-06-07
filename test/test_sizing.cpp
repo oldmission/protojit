@@ -9,13 +9,13 @@ namespace pj {
 TEST_F(PJTest, VectorOfStructsRoundUp) {
   std::array<uint64_t, 16> long_v1;
   std::array<char, 10> long_v2;
-  A long_A{.v1 = {&long_v1[0], long_v1.size()},
-           .v2 = {&long_v2[0], long_v2.size()}};
+  A long_A{.v1 = {long_v1.data(), long_v1.size()},
+           .v2 = {long_v2.data(), long_v2.size()}};
 
   std::array<A, 10> long_v3;
   long_v3.fill(long_A);
 
-  B b{.v3 = {&long_v3[0], long_v3.size()}};
+  B b{.v3 = {long_v3.data(), long_v3.size()}};
 
   auto results = transcode(Options<B>{.from = &b, .round_up_size = true});
 
