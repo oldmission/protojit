@@ -35,6 +35,7 @@ using namespace types;
   V(SetCallbackOp)              \
   V(DefaultOp)                  \
   V(UnitOp)                     \
+  V(AlignOp)                    \
   V(AllocateOp)                 \
   V(LengthOp)                   \
   V(StoreLengthOp)              \
@@ -693,6 +694,39 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
   Value val = _.create<GEPOp>(loc, pass->bytePtrType(), start, offset);
 
   _.replaceOp(op, val);
+  return success();
+}
+
+LogicalResult AlignOpLowering::matchAndRewrite(
+    AlignOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+  assert(op.alignment() == 1 || op.alignment() == 2 || op.alignment() == 4 ||
+         op.alignment() == 8);
+
+  auto buf = operands[0];
+
+  if (op.alignment() == 1) {
+    _.replaceOp(op, buf);
+    return success();
+  }
+
+  auto loc = op.getLoc();
+  auto buf_as_int =
+      _.create<PtrToIntOp>(loc, pass->wordType(), pass->getBufPtr(loc, _, buf));
+
+  // Compute ((ptr - 1) | (alignment - 1)) + 1 to align the pointer up
+  auto ptr_minus_one =
+      _.create<SubOp>(loc, buf_as_int, pass->buildWordConstant(loc, _, 1));
+  auto or_alignment_minus_one = _.create<LLVM::OrOp>(
+      loc, ptr_minus_one, pass->buildWordConstant(loc, _, op.alignment() - 1));
+  auto aligned = _.create<AddOp>(loc, or_alignment_minus_one,
+                                 pass->buildWordConstant(loc, _, 1));
+  auto diff = _.create<SubOp>(loc, aligned, buf_as_int);
+
+  auto alloc = _.create<AllocateOp>(loc, buf.getType(), buf, diff);
+
+  pass->effectAnalysis()->replaceOperation(op, alloc);
+  _.replaceOp(op, ValueRange{alloc});
+
   return success();
 }
 
