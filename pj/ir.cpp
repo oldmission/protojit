@@ -1,7 +1,6 @@
 #include "ir.hpp"
 
 #include <llvm/Support/ScopedPrinter.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/DialectImplementation.h>
 

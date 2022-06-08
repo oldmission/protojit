@@ -139,7 +139,7 @@ ValueType WireLayout::visit(VectorType type) {
                     .length_size = length_size,
                     .ref_offset = ref_offset,
                     .ref_size = ref_size,
-                    .reference_mode = pj::types::Vector::kOffset,
+                    .reference_mode = ReferenceMode::kOffset,
                     .inline_payload_offset = inline_payload_offset,
                     .inline_payload_size = inline_payload_size,
                     .partial_payload_offset = partial_payload_offset,

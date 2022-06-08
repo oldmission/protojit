@@ -1,6 +1,7 @@
-#include "protojit.hpp"
 #include "context.hpp"
 #include "plan.hpp"
+#include "portal.hpp"
+#include "runtime.h"
 
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/TargetSelect.h>

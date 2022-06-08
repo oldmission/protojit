@@ -42,13 +42,12 @@ void generateNamespaceEnd(const T& name, std::ostream& output) {
 // TODO: platform-specific
 std::array<std::string_view, 4> kIntTypes{"char", "short", "int", "long"};
 
-pj::Width generateIntTypeRef(pj::Width width, types::Int::Sign sign,
-                             std::ostream& output) {
+pj::Width generateIntTypeRef(pj::Width width, Sign sign, std::ostream& output) {
   assert(width.bytes() > 0);
-  if (sign == types::Int::kSignless) {
+  if (sign == Sign::kSignless) {
     // TODO: maybe use wchar_t?
   }
-  if (sign == types::Int::kUnsigned) {
+  if (sign == Sign::kUnsigned) {
     output << "unsigned ";
   }
   auto log = static_cast<uintptr_t>(std::ceil(std::log2(width.bytes())));
@@ -151,13 +150,13 @@ std::string buildTypeGeneratorStmt(mlir::Type type, std::ostream& output) {
     }
     output << ", /*sign=*/";
     switch (I->sign) {
-      case types::Int::kSigned:
+      case Sign::kSigned:
         output << "PJ_SIGN_SIGNED);\n";
         break;
-      case types::Int::kUnsigned:
+      case Sign::kUnsigned:
         output << "PJ_SIGN_UNSIGNED);\n";
         break;
-      case types::Int::kSignless:
+      case Sign::kSignless:
         output << "PJ_SIGN_SIGNLESS);\n";
         break;
       default:
@@ -227,18 +226,13 @@ void buildCStringArray(Span<llvm::StringRef> arr, std::string_view var,
   output << "};\n";
 }
 
-void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
-                     std::ostream& back) {
+void generateVariantDef(const ParsedProtoFile::Decl& decl, std::ostream& output,
+                        std::ostream& back, bool has_value, Width tag_width) {
+  if (decl.is_external) return;
+
   auto type = decl.type.cast<types::InlineVariantType>();
-
   auto nominal = type.template cast<types::NominalType>();
-  assert(nominal);
-
   auto name = nominal.name();
-
-  const bool has_value =
-      std::any_of(type->terms.begin(), type->terms.end(),
-                  [](auto& term) { return bool(term.type); });
 
   generateNamespaceBegin(name, output);
 
@@ -262,8 +256,9 @@ void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
   } else {
     output << "enum class Kind : ";
   }
-  pj::Width tag_width = generateIntTypeRef(compute_tag_width(type),
-                                           types::Int::Sign::kUnsigned, output);
+
+  generateIntTypeRef(tag_width, Sign::kUnsigned, output);
+
   output << " {\n";
   output << "undef = " << 0 << ",\n";
   for (auto& term : type->terms) {
@@ -277,6 +272,23 @@ void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
     output << "} tag;\n};\n";
   }
   generateNamespaceEnd(name, output);
+}
+
+void generateVariant(const ParsedProtoFile::Decl& decl, std::ostream& output,
+                     std::ostream& back) {
+  auto type = decl.type.cast<types::InlineVariantType>();
+
+  auto nominal = type.template cast<types::NominalType>();
+  assert(nominal);
+
+  auto name = nominal.name();
+
+  const bool has_value =
+      std::any_of(type->terms.begin(), type->terms.end(),
+                  [](auto& term) { return bool(term.type); });
+
+  pj::Width tag_width = compute_tag_width(type);
+  generateVariantDef(decl, output, back, has_value, tag_width);
 
   // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";
@@ -359,17 +371,19 @@ void generateStruct(const ParsedProtoFile::Decl& decl, std::ostream& output,
 
   auto name = nominal.name();
 
-  generateNamespaceBegin(name, output);
+  if (!decl.is_external) {
+    generateNamespaceBegin(name, output);
 
-  output << "struct " << std::string_view(name.back()) << " {\n";
+    output << "struct " << std::string_view(name.back()) << " {\n";
 
-  for (auto& field : type->fields) {
-    generateTypeRef(field.type, output);
-    output << " " << std::string_view(field.name) << ";\n";
+    for (auto& field : type->fields) {
+      generateTypeRef(field.type, output);
+      output << " " << std::string_view(field.name) << ";\n";
+    }
+    output << "};\n\n";
+
+    generateNamespaceEnd(name, output);
   }
-  output << "};\n\n";
-
-  generateNamespaceEnd(name, output);
 
   // Generate a BuildPJType specialization for this type.
   back << "namespace pj {\n";

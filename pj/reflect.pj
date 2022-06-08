@@ -1,0 +1,89 @@
+// NOTE: do not try to include the generated header 'reflect.pj.hpp' directly:
+// it has a cyclic dependency on 'protojit.hpp'. Just include 'protojit.hpp'
+// instead.
+
+space pj {
+
+enum Sign external {
+  kSigned;
+  kUnsigned;
+  kSignless;
+}
+
+struct Width external {
+  bits_: int64;
+}
+
+enum ReferenceMode external {
+  kPointer;
+  kOffset;
+}
+
+space reflect {
+
+type Name = char8[:][:];
+
+type Offset = int32;
+
+struct Int {
+  width: Width;
+  sign: Sign;
+}
+
+struct StructField {
+  type: Offset;
+  name: char8[:];
+  offset: Width;
+}
+
+struct Struct {
+  name: Name;
+  fields: StructField[:];
+  size: Width;
+}
+
+struct Term {
+  name: char8[:];
+  type: Offset;
+  tag: uint64;
+}
+
+struct InlineVariant {
+  name: Name;
+  terms: Term[:];
+  term_offset: Width;
+  tag_offset: Width;
+  tag_width: Width;
+}
+
+struct Array {
+  elem: Offset;
+  length: uint64;
+  elem_size: Width;
+}
+
+struct Vector {
+  elem: Offset;
+  max_length: int64;
+  length_offset: Width;
+  length_size: Width;
+  ref_offset: Width;
+  ref_size: Width;
+}
+
+variant Type {
+  Int: Int;
+  Struct: Struct;
+  InlineVariant: InlineVariant;
+  Array: Array;
+  Vector: Vector;
+}
+
+struct Proto {
+  head: int32;
+  pj_ver: uint32;
+  types: Type[:];
+}
+
+}  // space reflect
+}  // space pj
