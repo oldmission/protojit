@@ -277,8 +277,8 @@
      id="namedview83"
      showgrid="true"
      inkscape:zoom="2.8"
-     inkscape:cx="437.56326"
-     inkscape:cy="147.48792"
+     inkscape:cx="476.71394"
+     inkscape:cy="172.89304"
      inkscape:window-x="0"
      inkscape:window-y="73"
      inkscape:window-maximized="0"
@@ -683,7 +683,7 @@
        inkscape:connector-curvature="0" />
     <path
        style="fill:none;stroke:#d5d5d5;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;marker-end:url(#marker8539)"
-       d="m 557.09778,385.47839 c 0,12.37437 59.85153,28.01143 107.32871,28.01143 41.41625,0 86.94271,-8.90537 109.92368,-29.45396"
+       d="m 557.09778,385.47839 c 3.24002,12.09193 59.85153,28.01143 107.32871,28.01143 41.41625,0 86.94271,-8.90537 109.92368,-29.45396"
        id="path8527"
        inkscape:connector-curvature="0"
        sodipodi:nodetypes="csc" />
@@ -691,7 +691,7 @@
        sodipodi:nodetypes="csc"
        inkscape:connector-curvature="0"
        id="path8529"
-       d="m 557.09778,385.47839 c 0,12.37437 59.85153,28.01143 107.32871,28.01143 41.41625,0 151.46621,-10.16807 166.87103,-29.45396"
+       d="m 557.09778,385.47839 c 3.05754,11.41088 59.85153,28.01143 107.32871,28.01143 41.41625,0 151.46621,-10.16807 166.87103,-29.45396"
        style="fill:none;stroke:#d5d5d5;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;marker-end:url(#marker8639)" />
     <rect
        y="347.15973"
