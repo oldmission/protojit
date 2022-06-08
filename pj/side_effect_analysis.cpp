@@ -30,12 +30,16 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   root->walk([&](Operation* op) {
     if (!isa<SetCallbackOp>(op) && !isa<CallOp>(op) &&
         !isa<InvokeCallbackOp>(op) && !isa<ThrowOp>(op) &&
-        !isa<AllocateOp>(op)) {
+        !isa<AllocateOp>(op) && !isa<AlignOp>(op)) {
       return;
     }
 
     if (auto alloc = dyn_cast<AllocateOp>(op)) {
       if (!alloc.buf().getType().isa<BoundedBufferType>()) return;
+    }
+
+    if (auto align = dyn_cast<AlignOp>(op)) {
+      if (!align.buf().getType().isa<BoundedBufferType>()) return;
     }
 
     if (isa<DecodeCatchOp>(op->getParentOp()) ||

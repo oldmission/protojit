@@ -40,6 +40,11 @@ def TranscodePrimitiveOp : ProtoJit_Op<"transcodeprim"> {
   let arguments = (ins ValueType:$src, ValueType:$dst);
 }
 
+def AlignOp : ProtoJit_Op<"align"> {
+  let arguments = (ins BufferType:$buf, UI64Attr:$alignment);
+  let results = (outs BufferType);
+}
+
 def AllocateOp : ProtoJit_Op<"allocate"> {
   let arguments = (ins BufferType:$buf, Index:$len);
   let results = (outs BufferType);
