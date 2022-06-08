@@ -100,8 +100,8 @@ void GenSizeFunctionsPass::convertRegion(Region& region, bool round_up) {
 
   // Use a mark and sweep algorithm to remove any instructions that do not
   // directly feed into any of the final buffer return statements. The intention
-  // is to keep only AllocateOps and the control flow that determines which of
-  // them are executed.
+  // is to keep only AlignOps, AllocateOps and the control flow that determines
+  // which of them are executed.
   llvm::SmallVector<Operation*, 8> worklist;
   llvm::SmallSet<Operation*, 16> marked;
   region.walk([&](Operation* op) {

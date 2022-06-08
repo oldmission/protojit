@@ -637,23 +637,25 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
   // If dst is outline
   {
     _.setInsertionPointToStart(dst_inline_if.elseBlock());
-    _.create<StoreRefOp>(loc, dst, buf);
+
+    Value aligned_buf = _.create<AlignOp>(
+        loc, buf.getType(), buf, dst_type->elem.headAlignment().bytes());
+    _.create<StoreRefOp>(loc, dst, aligned_buf);
 
     auto ppl_count = buildIndex(loc, _, dst_type->ppl_count);
     auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
     auto outline_bytes = _.create<MulIOp>(
         loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
 
-    Value result_buf =
-        _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
-
+    Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
+                                            aligned_buf, outline_bytes);
     result_buf = generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Inline,
                                         dst, zero, VectorRegion::Partial,
-                                        ppl_count, buf, result_buf);
+                                        ppl_count, aligned_buf, result_buf);
     _.create<scf::YieldOp>(
         loc, generateVectorCopyLoop(
                  loc, _, src, ppl_count, VectorRegion::Inline, dst, zero,
-                 VectorRegion::Buffer, outline_count, buf, result_buf));
+                 VectorRegion::Buffer, outline_count, aligned_buf, result_buf));
   }
 
   _.restoreInsertionPoint(ip);
@@ -713,7 +715,10 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
 
   {  // dst is outline
     _.setInsertionPointToStart(dst_inline_if.elseBlock());
-    _.create<StoreRefOp>(loc, dst, buf);
+
+    Value aligned_buf = _.create<AlignOp>(
+        loc, buf.getType(), buf, dst_type->elem.headAlignment().bytes());
+    _.create<StoreRefOp>(loc, dst, aligned_buf);
 
     auto src_ppl_count = buildIndex(loc, _, src_type->ppl_count);
     auto dst_ppl_count = buildIndex(loc, _, dst_type->ppl_count);
@@ -725,18 +730,19 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
       auto outline_bytes = _.create<MulIOp>(
           loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
 
-      Value result_buf =
-          _.create<AllocateOp>(loc, buf.getType(), buf, outline_bytes);
+      Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
+                                              aligned_buf, outline_bytes);
       result_buf = generateVectorCopyLoop(
           loc, _, src, zero, VectorRegion::Partial, dst, zero,
-          VectorRegion::Partial, src_ppl_count, buf, result_buf);
+          VectorRegion::Partial, src_ppl_count, aligned_buf, result_buf);
       result_buf = generateVectorCopyLoop(
           loc, _, src, zero, VectorRegion::Reference, dst, src_ppl_count,
-          VectorRegion::Partial, dst_ppl_leftover, buf, result_buf);
+          VectorRegion::Partial, dst_ppl_leftover, aligned_buf, result_buf);
       _.create<scf::YieldOp>(
-          loc, generateVectorCopyLoop(
-                   loc, _, src, dst_ppl_leftover, VectorRegion::Reference, dst,
-                   zero, VectorRegion::Buffer, outline_count, buf, result_buf));
+          loc, generateVectorCopyLoop(loc, _, src, dst_ppl_leftover,
+                                      VectorRegion::Reference, dst, zero,
+                                      VectorRegion::Buffer, outline_count,
+                                      aligned_buf, result_buf));
     } else {
       auto src_ppl_leftover =
           buildIndex(loc, _, src_type->ppl_count - dst_type->ppl_count);
@@ -748,19 +754,19 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
           loc, buildIndex(loc, _, dst_type->elemSize().bytes()),
           dst_outline_count);
 
-      Value result_buf =
-          _.create<AllocateOp>(loc, buf.getType(), buf, dst_outline_bytes);
+      Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
+                                              aligned_buf, dst_outline_bytes);
       result_buf = generateVectorCopyLoop(
           loc, _, src, zero, VectorRegion::Partial, dst, zero,
-          VectorRegion::Partial, dst_ppl_count, buf, result_buf);
+          VectorRegion::Partial, dst_ppl_count, aligned_buf, result_buf);
       result_buf = generateVectorCopyLoop(
           loc, _, src, dst_ppl_count, VectorRegion::Partial, dst, zero,
-          VectorRegion::Buffer, src_ppl_leftover, buf, result_buf);
+          VectorRegion::Buffer, src_ppl_leftover, aligned_buf, result_buf);
       _.create<scf::YieldOp>(
           loc,
           generateVectorCopyLoop(loc, _, src, zero, VectorRegion::Reference,
                                  dst, src_ppl_leftover, VectorRegion::Buffer,
-                                 src_outline_count, buf, result_buf));
+                                 src_outline_count, aligned_buf, result_buf));
     }
   }
 
@@ -1060,12 +1066,17 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
   } else if (dst_type.isa<AnyType>()) {
-    auto buf = operands[2];
     auto reflected_type = reflect::reflectableTypeFor(src_type);
+
+    auto buf = operands[2];
+    Value aligned_buf = _.create<AlignOp>(
+        loc, buf.getType(), buf, reflected_type.headAlignment().bytes());
+
     auto reflected_dst =
-        _.create<ProjectOp>(loc, reflected_type, buf, Bytes(0));
+        _.create<ProjectOp>(loc, reflected_type, aligned_buf, Bytes(0));
+
     Value result_buf = _.create<AllocateOp>(
-        loc, buf.getType(), buf,
+        loc, aligned_buf.getType(), aligned_buf,
         pass->buildIndex(loc, _, reflected_type.headSize().bytes()));
     result_buf = _.create<TranscodeOp>(loc, result_buf.getType(), operands[0],
                                        reflected_dst, result_buf, op.path(),
