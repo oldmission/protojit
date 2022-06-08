@@ -1,6 +1,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/IR/BlockAndValueMapping.h>
@@ -8,6 +9,7 @@
 
 #include "defer.hpp"
 #include "ir.hpp"
+#include "reflect.hpp"
 #include "util.hpp"
 
 namespace pj {
@@ -77,7 +79,6 @@ struct GeneratePass
 
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
- private:
   mlir::Value buildIndex(mlir::Location loc, mlir::OpBuilder& _, size_t value) {
     return _.create<ConstantOp>(loc, _.getIntegerAttr(_.getIndexType(), value));
   }
@@ -1051,8 +1052,20 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     fn = pass->getOrCreateVectorTranscodeFn(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
-  } else {
-    return failure();
+  } else if (dst_type.isa<AnyType>()) {
+    auto buf = operands[2];
+    auto reflected_type = reflect::reflectableTypeFor(src_type);
+    auto reflected_dst =
+        _.create<ProjectOp>(loc, reflected_type, buf, Bytes(0));
+    Value result_buf = _.create<AllocateOp>(
+        loc, buf.getType(), buf,
+        pass->buildIndex(loc, _, reflected_type.headSize().bytes()));
+    result_buf = _.create<TranscodeOp>(loc, result_buf.getType(), operands[0],
+                                       reflected_dst, result_buf, op.path(),
+                                       op.handlers());
+    _.create<ReflectOp>(loc, reflected_dst, operands[1]);
+    _.replaceOp(op, result_buf);
+    return success();
   }
 
   auto call = _.create<mlir::CallOp>(loc, fn, operands);

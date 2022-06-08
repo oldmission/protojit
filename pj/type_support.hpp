@@ -40,6 +40,10 @@ inline bool operator<(const pj::types::Name a, const pj::types::Name b) {
 }  // namespace llvm
 
 namespace pj {
+namespace self {
+struct Type;
+}  // namespace self
+
 namespace types {
 
 struct ValueType;
@@ -166,7 +170,8 @@ struct StructuralTypeBase : public ValueType {
   }
 };
 
-enum class TypeDomain { kHost, kWire, kInternal };
+enum class TypeDomain { kHost, kWire, kInternal, kReflect };
+
 
 struct NominalTypeStorageBase : public ValueTypeStorage {
   virtual ~NominalTypeStorageBase() {}
@@ -209,6 +214,9 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
         break;
       case TypeDomain::kInternal:
         os << "internal";
+      case TypeDomain::kReflect:
+        os << "reflect";
+        break;
     }
 
     for (auto p : name_) {

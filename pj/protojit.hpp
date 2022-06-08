@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PROTOJIT_PROTOJIT_HPP
+#define PROTOJIT_PROTOJIT_HPP
 
 #include <array>
 #include <memory>
@@ -6,10 +7,11 @@
 
 #include "arch.hpp"
 #include "exceptions.hpp"
-#include "portal.hpp"
 #include "runtime.h"
 
 namespace pj {
+
+class Portal;
 
 namespace gen {
 
@@ -80,11 +82,6 @@ void addSizeFunction(PJContext* ctx, const std::string& name,
 
 std::unique_ptr<Portal> compile(PJContext* ctx);
 
-#if 0
-const Protocol* Negotiate(PJContext* scope, const ProtoSpec* recv,
-                          const ProtoSpec* send, NegotiateOptions opts);
-#endif
-
 template <typename T, size_t MinLength, intptr_t MaxLength>
 class ArrayView {
  public:
@@ -103,11 +100,17 @@ class ArrayView {
 
   ArrayView() : length(0) {}
 
+  template <
+      typename A = std::enable_if<!std::is_trivially_copy_assignable_v<T> &&
+                                      std::is_copy_assignable_v<T>,
+                                  ArrayView>>
   ArrayView& operator=(const ArrayView& o) {
     length = o.length;
     outline = o.outline;
     if (length <= MinLength) {
-      storage = o.storage;
+      for (intptr_t i = 0; i < length; ++i) {
+        storage[i] = o.storage[i];
+      }
     }
     return *this;
   }
@@ -115,9 +118,8 @@ class ArrayView {
   const T& operator[](uintptr_t i) const {
     if (length <= MinLength) {
       return storage[i];
-    } else {
-      return reinterpret_cast<const T*>(outline)[i];
     }
+    return reinterpret_cast<const T*>(outline)[i];
   }
 
   template <typename U>
@@ -128,17 +130,15 @@ class ArrayView {
   const T* begin() const {
     if (length <= MinLength) {
       return storage.begin();
-    } else {
-      return reinterpret_cast<const T*>(outline);
     }
+    return reinterpret_cast<const T*>(outline);
   }
 
   const T* end() const {
     if (length <= MinLength) {
       return storage.begin() + length;
-    } else {
-      return reinterpret_cast<const T*>(outline) + length;
     }
+    return reinterpret_cast<const T*>(outline) + length;
   }
 
   uint64_t size() const { return length; }
@@ -164,11 +164,7 @@ class ArrayView<T, 0, MaxLength> {
 
   ArrayView() : length(0) {}
 
-  ArrayView& operator=(const ArrayView& o) {
-    length = o.length;
-    outline = o.outline;
-    return *this;
-  }
+  ArrayView& operator=(const ArrayView& o) = default;
 
   const T& operator[](uintptr_t i) const {
     return reinterpret_cast<const T*>(outline)[i];
@@ -193,4 +189,34 @@ class ArrayView<T, 0, MaxLength> {
   friend struct gen::BuildPJType;
 };
 
+struct Any {
+ private:
+  const void* type_;
+  const void* data_;
+
+  template <typename U>
+  friend struct gen::BuildPJType;
+};
+
 }  // namespace pj
+
+#include "pj/reflect.pj.hpp"
+
+namespace pj {
+namespace gen {
+
+template <>
+struct BuildPJType<Any> {
+  static const void* build(PJContext* ctx) {
+    return PJCreateAnyType(
+        ctx, offsetof(Any, data_) << 3, sizeof(Any::data_) << 3,
+        offsetof(Any, type_) << 3, sizeof(Any::type_) << 3, sizeof(Any) << 3,
+        alignof(Any) << 3,
+        ::pj::gen::BuildPJType<::pj::reflect::Proto>::build(ctx));
+  }
+};
+
+}  // namespace gen
+}  // namespace pj
+
+#endif  // PROTOJIT_PROTOJIT_HPP

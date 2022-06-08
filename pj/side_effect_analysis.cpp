@@ -1,5 +1,6 @@
 #include <deque>
 
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 

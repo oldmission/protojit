@@ -44,27 +44,6 @@
 namespace pj {
 using namespace ir;
 
-ProtoJitContext::ProtoJitContext()
-    : builder_(&ctx_),
-      module_(mlir::ModuleOp::create(builder_.getUnknownLoc())) {
-  ctx_.getOrLoadDialect<pj::ir::ProtoJitDialect>();
-  ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
-  ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
-  ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
-
-  constexpr llvm::StringRef kUnitName = "<unit>";
-  auto unit = pj::types::StructType::get(&ctx_, pj::types::TypeDomain::kHost,
-                                         pj::Span<llvm::StringRef>{kUnitName});
-  unit.setTypeData({
-      .fields = pj::Span<pj::types::StructField>{nullptr, 0ul},
-      .size = pj::Bytes(0),
-      .alignment = pj::Bytes(0),
-  });
-  unit_type_ = unit;
-}
-
-ProtoJitContext::~ProtoJitContext() {}
-
 void ProtoJitContext::addEncodeFunction(std::string_view name, mlir::Type src,
                                         types::ProtocolType protocol,
                                         llvm::StringRef src_path) {
@@ -132,6 +111,10 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
 }
 
 std::unique_ptr<Portal> ProtoJitContext::compile() {
+  ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
+  ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
+  ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
+
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
                       "Before compilation:\n"

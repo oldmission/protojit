@@ -8,6 +8,19 @@
 
 namespace pj {
 
+namespace gen {
+template <typename T>
+struct BuildPJType;
+}  // namespace gen
+
+enum class ReferenceMode { kPointer, kOffset };
+
+enum class Sign {
+  kSigned,    // Implies sign-extension is used for conversion.
+  kUnsigned,  // Implies zero-extension is used for conversion.
+  kSignless,  // Implies conversion between different sizes is meaningless.
+};
+
 constexpr inline intptr_t kByte = 8;
 constexpr inline intptr_t kMaxCppIntSize = 8;
 constexpr inline intptr_t kNone = -1;
@@ -96,9 +109,10 @@ struct Width {
  private:
   friend Width Bits(intptr_t bits);
   friend Width Bytes(intptr_t bits);
+  friend pj::gen::BuildPJType<::pj::Width>;
 
   explicit Width(intptr_t bits) : bits_(bits) {}
-  intptr_t bits_;
+  int64_t bits_;
 };
 
 inline ::llvm::hash_code hash_value(const Width& w) {

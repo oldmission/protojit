@@ -1,6 +1,7 @@
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Conversion/SCFToStandard/SCFToStandard.h>
 #include <mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/SCF.h>
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
@@ -42,7 +43,8 @@ using namespace types;
   V(VectorIndexOp)              \
   V(CopyTagOp)                  \
   V(PoisonOp)                   \
-  V(SizeOp)
+  V(SizeOp)                     \
+  V(ReflectOp)
 
 namespace {
 struct LLVMGenPass
@@ -235,45 +237,87 @@ LogicalResult FuncOpLowering::matchAndRewrite(
   auto* ctx = _.getContext();
   auto loc = op.getLoc();
 
-  _.startRootUpdate(op);
+  // 1. Create a FuncOp with the new signature.
 
-  if (pass->effectAnalysis()->hasEffects(op)) {
-    // success
-    op.insertArgument(op.getNumArguments(), pass->ptrType(Bits(1)),
-                      DictionaryAttr::get(ctx));
-    // callback
-    op.insertArgument(op.getNumArguments(), pass->wordPtrType(),
-                      DictionaryAttr::get(ctx));
-
-    pass->setEffectDefs(op, op.getArgument(op.getNumArguments() - 2),
-                        op.getArgument(op.getNumArguments() - 1));
-  }
-
-  _.setInsertionPointToStart(&*op.body().begin());
+  llvm::SmallVector<mlir::Type, 4> new_fn_types;
+  llvm::SmallVector<DictionaryAttr, 4> new_fn_attrs;
 
   auto buf_args =
       pass->effectAnalysis()->flattenedBufferArguments(op.getName());
 
-  size_t arg_delta = 0;
-  for (auto arg : buf_args) {
-    auto arg_pos = arg + arg_delta++;
-    auto old_arg = op.getArgument(arg_pos);
+  NamedAttribute no_alias_attr{
+      mlir::Identifier::get(LLVM::LLVMDialect::getNoAliasAttrName(), ctx),
+      UnitAttr::get(ctx)};
 
-    op.insertArgument(arg_pos + 1, pass->bytePtrType(),
-                      DictionaryAttr::get(ctx));
-    op.setArgAttr(arg_pos + 1, LLVM::LLVMDialect::getNoAliasAttrName(),
-                  UnitAttr::get(ctx));
+  for (intptr_t i = 0, j = 0; i < op.getNumArguments(); ++i) {
+    if (j < buf_args.size() && i == buf_args[j]) {
+      // pointer
+      new_fn_types.push_back(pass->bytePtrType());
+      new_fn_attrs.push_back(DictionaryAttr::get(ctx, {no_alias_attr}));
 
-    op.insertArgument(arg_pos + 2, pass->wordType(), DictionaryAttr::get(ctx));
-
-    auto ptr = op.getArgument(arg_pos + 1);
-    auto size = op.getArgument(arg_pos + 2);
-
-    old_arg.replaceAllUsesWith(pass->buildBoundedBuf(loc, _, ptr, size));
-    op.eraseArgument(arg_pos);
+      // size
+      new_fn_types.push_back(pass->wordType());
+      new_fn_attrs.push_back(DictionaryAttr::get(ctx, {}));
+      ++j;
+    } else {
+      new_fn_types.push_back(op.getArgument(i).getType());
+      new_fn_attrs.push_back(DictionaryAttr::get(ctx, op.getArgAttrs(i)));
+    }
   }
 
-  _.finalizeRootUpdate(op);
+  if (pass->effectAnalysis()->hasEffects(op)) {
+    // success
+    new_fn_types.push_back(pass->ptrType(Bits(1)));
+    new_fn_attrs.push_back(DictionaryAttr::get(ctx, {}));
+
+    // callback
+    new_fn_types.push_back(pass->wordPtrType());
+    new_fn_attrs.push_back(DictionaryAttr::get(ctx, {}));
+  }
+
+  auto func = mlir::FuncOp::create(
+      loc, op.getName(),
+      _.getFunctionType(new_fn_types, op.getType().getResults()), {},
+      new_fn_attrs);
+  _.notifyOperationInserted(func);
+
+  auto *new_entry = func.addEntryBlock(), *old_entry = &op.getBlocks().front();
+
+  // 2. Update argument uses to refrence args from the new function.
+
+  if (pass->effectAnalysis()->hasEffects(op)) {
+    pass->setEffectDefs(op, func.getArgument(func.getNumArguments() - 2),
+                        func.getArgument(func.getNumArguments() - 1));
+  }
+
+  {
+    auto& fn_blocks = func.body().getBlocks();
+    auto& op_blocks = op.body().getBlocks();
+    fn_blocks.splice(fn_blocks.end(), op_blocks, ++op_blocks.begin(),
+                     op_blocks.end());
+  }
+
+  while (!old_entry->empty()) {
+    old_entry->front().moveBefore(new_entry, new_entry->end());
+  }
+
+  _.setInsertionPointToStart(new_entry);
+
+  for (intptr_t i = 0, j = 0, k = 0; i < op.getNumArguments(); ++i) {
+    if (j < buf_args.size() && i == buf_args[j]) {
+      auto old_arg = op.getArgument(i);
+      auto ptr = func.getArgument(k), size = func.getArgument(k + 1);
+      auto to = pass->buildBoundedBuf(loc, _, ptr, size);
+      _.replaceUsesOfBlockArgument(old_arg, to);
+      k += 2, ++j;
+    } else {
+      _.replaceUsesOfBlockArgument(op.getArgument(i), func.getArgument(k++));
+    }
+  }
+
+  _.eraseOp(op);
+  pass->module().push_back(func);
+  _.notifyOperationInserted(func);
   return success();
 }
 
@@ -283,6 +327,7 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
   auto source = operands[0];
   auto src_type = op.src().getType();
   auto result = op.getResult().getType();
+  auto loc = source.getLoc();
 
   if (src_type.isa<types::ValueType>() ||
       src_type.isa<types::RawBufferType>()) {
@@ -292,14 +337,20 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
     ASSERT(result.isa<types::ValueType>() ||
            result.isa<types::RawBufferType>());
 
-    auto loc = source.getLoc();
     Value val =
         _.create<GEPOp>(loc, pass->bytePtrType(), source,
                         pass->buildWordConstant(loc, _, op.offset().bytes()));
     _.replaceOp(op, val);
+  } else if (src_type.isa<types::BoundedBufferType>() &&
+             (result.isa<types::ValueType>() ||
+              result.isa<types::RawBufferType>())) {
+    auto [buf, __] = pass->buildBoundedBufferDestructuring(loc, _, source);
+    Value val =
+        _.create<GEPOp>(loc, pass->bytePtrType(), buf,
+                        pass->buildWordConstant(loc, _, op.offset().bytes()));
+    _.replaceOp(op, val);
   } else {
-    // TODO: handle bounded buffer
-    assert(false);
+    UNREACHABLE();
   }
 
   return success();
@@ -329,7 +380,7 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
 
     // Zero, sign extend, or truncate if necessary.
     if (src->width < dst->width) {
-      if (src->sign == Int::Sign::kSigned) {
+      if (src->sign == Sign::kSigned) {
         val = _.create<SExtOp>(loc, dst.toMLIR(), val);
       } else {
         val = _.create<ZExtOp>(loc, dst.toMLIR(), val);
@@ -611,8 +662,8 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
                                           type->ref_size);
       auto ref = _.create<LoadOp>(loc, ref_ptr);
 
-      if (type->reference_mode == Vector::kOffset) {
-        // TODO: bounds check on the offset in "adversarial mode"
+      if (type->reference_mode == ReferenceMode::kOffset) {
+        // TODO: bounds check on the offset
         start = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
                                 ValueRange{ref});
       } else {
@@ -717,7 +768,7 @@ LogicalResult StoreRefOpLowering::matchAndRewrite(
   auto ref_ptr = pass->buildOffsetPtr(loc, _, operands[0], type->ref_offset,
                                       type->ref_size);
 
-  if (type->reference_mode == Vector::kPointer) {
+  if (type->reference_mode == ReferenceMode::kPointer) {
     assert(type->ref_size == pass->wordSize());
     _.create<StoreOp>(loc, buf_as_int, ref_ptr);
   } else {
@@ -841,7 +892,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
           pass->buildBoundedBufferDestructuring(loc, _, operands[i]);
       new_operands.push_back(buf_ptr);
       new_operands.push_back(buf_size);
-      ++j;
+      j++;
     } else {
       new_operands.push_back(operands[i]);
     }
@@ -960,6 +1011,19 @@ LogicalResult SizeOpLowering::matchAndRewrite(
   return success();
 }
 
+LogicalResult ReflectOpLowering::matchAndRewrite(
+    ReflectOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  // TODO:
+  // 1. Create binary representation of the source schema in the host's self
+  // representation.
+  // 2. Save the schema in the constant pool and get a pointer to it.
+  // 3. Save pointers to the schema and object in the destination.
+
+  _.eraseOp(op);
+  return success();
+}
+
 void LLVMGenPass::runOnOperation() {
   auto* ctx = &getContext();
 
@@ -985,6 +1049,7 @@ void LLVMGenPass::runOnOperation() {
   if (failed(
           applyFullConversion(getOperation(), target, std::move(patterns)))) {
     signalPassFailure();
+    return;
   }
 
   getOperation().walk([](LLVMFuncOp op) {

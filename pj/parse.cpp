@@ -3,6 +3,7 @@
 #include <pegtl.hpp>
 #include <pegtl/contrib/analyze.hpp>
 
+#include "arch.hpp"
 #include "protogen.hpp"
 #include "span.hpp"
 #include "types.hpp"
@@ -36,9 +37,9 @@ struct ParseState {
   types::ValueType type;
 
   // Populated after parsing Len, MinLen, and MaxLen rules.
-  intptr_t array_len = kNone;
-  intptr_t array_min_len = kNone;
-  intptr_t array_max_len = kNone;
+  uint64_t array_len = kNone;
+  int64_t array_min_len = kNone;
+  int64_t array_max_len = kNone;
 
   // Set by ExternalDecl, cleared by StructDecl.
   bool is_external = false;
@@ -162,7 +163,7 @@ using RB = tok<'}'>;
 struct struct_key : pad<TAO_PEGTL_KEYWORD("struct"), space> {};
 struct variant_key : pad<TAO_PEGTL_KEYWORD("variant"), space> {};
 
-template <intptr_t kPrefix, types::Int::Sign sign, typename ActionInput>
+template <intptr_t kPrefix, Sign sign, typename ActionInput>
 static void parseInt(const ActionInput& in, ParseState* state) {
   assert(in.size() > kPrefix);
   const char* num_start = in.begin() + kPrefix;
@@ -178,17 +179,17 @@ static void parseInt(const ActionInput& in, ParseState* state) {
 
 struct UIntType : seq<string<'u', 'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(UIntType) { parseInt<4, types::Int::Sign::kUnsigned>(in, state); }
+BEGIN_ACTION(UIntType) { parseInt<4, Sign::kUnsigned>(in, state); }
 END_ACTION()
 
 struct IntType : seq<string<'i', 'n', 't'>, num> {};
 
-BEGIN_ACTION(IntType) { parseInt<3, types::Int::Sign::kSigned>(in, state); }
+BEGIN_ACTION(IntType) { parseInt<3, Sign::kSigned>(in, state); }
 END_ACTION()
 
 struct CharType : seq<string<'c', 'h', 'a', 'r'>, num> {};
 
-BEGIN_ACTION(CharType) { parseInt<4, types::Int::Sign::kSignless>(in, state); }
+BEGIN_ACTION(CharType) { parseInt<4, Sign::kSignless>(in, state); }
 END_ACTION()
 
 struct Identifier : identifier {};
@@ -449,15 +450,17 @@ static void handleVariant(const ActionInput& in, ParseState* state,
       .name = {},
       .type = type,
       .is_enum = is_enum,
+      .is_external = __ is_external,
   });
 
   __ fields.clear();
   __ field_order.clear();
   __ explicit_tags.clear();
+  __ is_external = false;
 }
 
-struct VariantDecl
-    : if_must<KEYWORD("variant"), Id, LB, star<VariantFieldDecl>, RB> {};
+struct VariantDecl : if_must<KEYWORD("variant"), Id, opt<ExternalDecl>, LB,
+                             star<VariantFieldDecl>, RB> {};
 
 BEGIN_ACTION(VariantDecl) { handleVariant(in, state, /*is_enum=*/false); }
 END_ACTION()
@@ -475,7 +478,8 @@ BEGIN_ACTION(EnumFieldDecl) {
 }
 END_ACTION()
 
-struct EnumDecl : if_must<KEYWORD("enum"), Id, LB, star<EnumFieldDecl>, RB> {};
+struct EnumDecl : if_must<KEYWORD("enum"), Id, opt<ExternalDecl>, LB,
+                          star<EnumFieldDecl>, RB> {};
 
 BEGIN_ACTION(EnumDecl) { handleVariant(in, state, /*is_enum=*/true); }
 END_ACTION()

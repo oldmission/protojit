@@ -151,11 +151,11 @@ def VectorIndexOp : ProtoJit_Op<"vecindex", [NoSideEffect]> {
 }
 
 // Construct a generic representation of a value into an AnyType dst.
+// 'src' must be of "reflectable" type.
 //
 // Buffer is handled simiarly to 'Transcode.'
 def ReflectOp : ProtoJit_Op<"reflect"> {
-  let arguments = (ins ValueType:$src, ProtoJitAnyType:$dst, BufferType:$buf);
-  let results = (outs BufferType);
+  let arguments = (ins ValueType:$src, ProtoJitAnyType:$dst);
 }
 
 // Terminates execution and causes decoding to return a null buffer without

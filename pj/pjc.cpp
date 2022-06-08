@@ -5,7 +5,6 @@
 
 #include "llvm/Support/CommandLine.h"
 
-#include "ir.hpp"
 #include "protogen.hpp"
 
 namespace cl = llvm::cl;
