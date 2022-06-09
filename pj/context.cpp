@@ -43,7 +43,7 @@
 #include "runtime.hpp"
 #include "span.hpp"
 
-#define DISABLE_LIBC
+// #define DISABLE_LIBC
 
 namespace pj {
 using namespace ir;
@@ -94,7 +94,7 @@ Portal* ProtoJitContext::schemaPortal() {
       loc, "schema_size", schema_host, schema_wire,
       types::PathAttr::none(&ctx_), false));
 
-  schema_portal_ = compile();
+  schema_portal_ = compile(0);
   return schema_portal_.get();
 }
 
@@ -206,7 +206,7 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
   return machine;
 }
 
-std::unique_ptr<Portal> ProtoJitContext::compile() {
+std::unique_ptr<Portal> ProtoJitContext::compile(size_t opt_level) {
   ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
@@ -302,9 +302,10 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
         machine.get()->getTargetIRAnalysis()));
 
     llvm::PassManagerBuilder builder;
-    builder.OptLevel = 3;
+    builder.OptLevel = opt_level;
     builder.Inliner = llvm::createFunctionInliningPass(
-        /*optLevel=*/3, /*sizeLevel=*/0, /*DisableInlineHotCallSite=*/false);
+        /*optLevel=*/opt_level, /*sizeLevel=*/0,
+        /*DisableInlineHotCallSite=*/false);
     builder.LoopVectorize = true;
     builder.SLPVectorize = true;
 
@@ -334,40 +335,42 @@ std::unique_ptr<Portal> ProtoJitContext::compile() {
                       "==================================================\n";
       llvm::errs() << *llvm_module << "\n");
 
-  {
-    llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
-    funcPM.doInitialization();
-    funcPM.add(llvm::createCopyExtendingPass(*machine));
-    for (auto& func : *llvm_module) {
-      funcPM.run(func);
+  if (opt_level >= 3) {
+    {
+      llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
+      funcPM.doInitialization();
+      funcPM.add(llvm::createCopyExtendingPass(*machine));
+      for (auto& func : *llvm_module) {
+        funcPM.run(func);
+      }
+      funcPM.doFinalization();
     }
-    funcPM.doFinalization();
-  }
 
-  LLVM_DEBUG(
-      llvm::errs() << "==================================================\n"
+    LLVM_DEBUG(llvm::errs()
+                   << "==================================================\n"
                       "After LLVM optimization (extending):\n"
                       "==================================================\n";
-      llvm::errs() << *llvm_module << "\n");
+               llvm::errs() << *llvm_module << "\n");
 
-  {
-    llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
-    funcPM.doInitialization();
-    funcPM.add(llvm::createCopyCoalescingPass(*machine));
-    funcPM.add(llvm::createCFGSimplificationPass());
-    funcPM.add(llvm::createEarlyCSEPass());
-    funcPM.add(llvm::createAggressiveDCEPass());
-    for (auto& func : *llvm_module) {
-      funcPM.run(func);
+    {
+      llvm::legacy::FunctionPassManager funcPM(llvm_module.get());
+      funcPM.doInitialization();
+      funcPM.add(llvm::createCopyCoalescingPass(*machine));
+      funcPM.add(llvm::createCFGSimplificationPass());
+      funcPM.add(llvm::createEarlyCSEPass());
+      funcPM.add(llvm::createAggressiveDCEPass());
+      for (auto& func : *llvm_module) {
+        funcPM.run(func);
+      }
+      funcPM.doFinalization();
     }
-    funcPM.doFinalization();
-  }
 
-  LLVM_DEBUG(
-      llvm::errs() << "==================================================\n"
+    LLVM_DEBUG(llvm::errs()
+                   << "==================================================\n"
                       "After LLVM optimization (coalescing):\n"
                       "==================================================\n";
-      llvm::errs() << *llvm_module << "\n");
+               llvm::errs() << *llvm_module << "\n");
+  }
 
   llvm::SmallVector<char, 0x1000> out;
 

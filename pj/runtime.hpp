@@ -1,11 +1,13 @@
 #pragma once
 
+#include <tuple>
+#include <vector>
+
+#include "portal.hpp"
 #include "protojit.hpp"
 #include "runtime.h"
 
 namespace pj {
-
-class Portal;
 
 PJContext* getContext();
 

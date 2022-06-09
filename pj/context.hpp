@@ -36,7 +36,7 @@ struct ProtoJitContext {
                        types::ProtocolType protocol, llvm::StringRef src_path,
                        bool round_up);
 
-  std::unique_ptr<Portal> compile();
+  std::unique_ptr<Portal> compile(size_t opt_level = 3);
 
   pj::types::ValueType unitType() const { return unit_type_; }
 

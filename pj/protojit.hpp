@@ -2,16 +2,19 @@
 #define PROTOJIT_PROTOJIT_HPP
 
 #include <array>
+#include <cassert>
 #include <memory>
 #include <optional>
 
-#include "arch.hpp"
-#include "exceptions.hpp"
+#include "arch_base.hpp"
 #include "runtime.h"
 
 namespace pj {
 
 namespace gen {
+
+template <typename T>
+struct BuildPJType;
 
 template <typename T>
 struct ProtocolHead {};

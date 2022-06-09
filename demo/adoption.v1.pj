@@ -1,0 +1,59 @@
+space v1 {
+
+type Months = uint8;
+type Pounds = uint8;
+type Name = char8[12:];
+
+enum DogBreed {
+  GOLDEN_RETRIEVER;
+  LABRADOR_RETRIEVER;
+  BEAGLE;
+}
+
+struct Dog {
+  // Multiple breeds indicates a mix.
+  breed: DogBreed[1:];
+}
+
+enum CatCoat {
+  SHORT;
+  LONG;
+}
+
+struct Cat {
+  coat: CatCoat;
+}
+
+variant Specifics {
+  dog: Dog;
+  cat: Cat;
+}
+
+enum Sex {
+  MALE;
+  FEMALE;
+}
+
+struct Animal {
+  specifics: Specifics;
+  name: Name;
+  age: Months;
+  weight: Pounds;
+  sex: Sex;
+}
+
+struct Date {
+  year: uint16;
+  month: uint8;
+  date: uint8;
+}
+
+struct Adoption {
+  animal: Animal;
+  date: Date;
+  fee: uint8;
+}
+
+protocol AdoptionProto : Adoption @ animal.specifics._;
+
+}
