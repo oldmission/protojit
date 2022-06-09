@@ -74,6 +74,7 @@ cc_library(
         "types.cpp",
     ],
     hdrs = [
+        "arch_base.hpp",
         "arch.hpp",
         "defer.hpp",
         "enums.cpp.inc",
@@ -139,7 +140,6 @@ cc_library(
         "copy_extending.cpp",
         "gdb.cpp",
         "generate_ir.cpp",
-        "lib.cpp",
         "llvm_extra.cpp",
         "llvm_gen2.cpp",
         "llvm_utils.cpp",
@@ -197,13 +197,15 @@ cc_library(
     name = "runtime",
     srcs = [
         "context.cpp",
+        "context.hpp",
+        "lib.cpp",
+        "portal.cpp",
+        "portal_impl.hpp",
         "protojit.cpp",
         "runtime.cpp",
     ],
     hdrs = [
-        "context.hpp",
         "portal.hpp",
-        "portal_impl.hpp",
         "runtime.hpp",
         "runtime.h",
     ],
@@ -222,6 +224,7 @@ cc_shared_library(
     static_deps = [
         ":core",
         ":compiler",
+        ":plan",
         ":reflect",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
