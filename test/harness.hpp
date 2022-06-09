@@ -110,14 +110,9 @@ class PJGenericTest
 
     const auto portal = compile(ctx);
 
-    const auto size_fn =
-        portal->ResolveTarget<uintptr_t (*)(const Src*)>("size");
-    const auto encode_fn =
-        portal->ResolveTarget<void (*)(const Src*, char*)>("encode");
-    const auto decode_fn =
-        portal->ResolveTarget<std::pair<const char*, uintptr_t> (*)(
-            const char*, Dst*, std::pair<char*, uintptr_t>, const void*)>(
-            "decode");
+    const auto size_fn = portal->GetSizeFunction<Src>("size");
+    const auto encode_fn = portal->GetEncodeFunction<Src>("encode");
+    const auto decode_fn = portal->GetDecodeFunction<Dst>("decode");
 
     Results results;
     results.enc_size = size_fn(options.from);

@@ -103,8 +103,7 @@ uint64_t ProtoJitContext::getProtoSize(types::ProtocolType proto) {
   reflect::Protocol reflected = reflect::reflect(alloc, proto);
 
   const auto size_fn =
-      schemaPortal()->ResolveTarget<uint64_t (*)(const reflect::Protocol*)>(
-          "schema_size", true);
+      schemaPortal()->GetSizeFunction<reflect::Protocol>("schema_size", true);
   assert(size_fn);
   return size_fn(&reflected);
 }
@@ -113,9 +112,8 @@ void ProtoJitContext::encodeProto(types::ProtocolType proto, char* buf) {
   llvm::BumpPtrAllocator alloc;
   reflect::Protocol reflected = reflect::reflect(alloc, proto);
 
-  const auto encode_fn =
-      schemaPortal()->ResolveTarget<void (*)(const reflect::Protocol*, char*)>(
-          "schema_encode", true);
+  const auto encode_fn = schemaPortal()->GetEncodeFunction<reflect::Protocol>(
+      "schema_encode", true);
   assert(encode_fn);
   encode_fn(&reflected, buf);
 }
@@ -123,13 +121,11 @@ void ProtoJitContext::encodeProto(types::ProtocolType proto, char* buf) {
 types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
   reflect::Protocol reflected;
 
-  using DecodeFnT = std::pair<const char*, uint64_t> (*)(
-      const char*, reflect::Protocol*, std::pair<char*, uint64_t>, const void*);
-  const auto decode_fn =
-      schemaPortal()->ResolveTarget<DecodeFnT>("schema_decode", true);
+  const auto decode_fn = schemaPortal()->GetDecodeFunction<reflect::Protocol>(
+      "schema_decode", true);
   assert(decode_fn);
 
-  uint64_t dec_size = 1024;
+  uint64_t dec_size = 8192;
   while (true) {
     auto dec_buffer = std::make_unique<char[]>(dec_size);
     auto [remaining_buf, _] = decode_fn(
