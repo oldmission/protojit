@@ -83,6 +83,7 @@ pj_test(
     name = "test_any",
     srcs = ["test_any.cpp"],
     protos = ["any.pj"],
+    deps = [":test_ints_pj"],
 )
 
 # TODO: restore test

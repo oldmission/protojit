@@ -18,13 +18,22 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
         .inline_length = vec->wire_min_length,
         .short_type = VectorType::get(
             &ctx_,
-            Vector{.elem = vec->elem,
-                   .max_length = static_cast<int64_t>(vec->wire_min_length),
-                   .wire_min_length = vec->wire_min_length}),
-        .long_type =
-            VectorType::get(&ctx_, Vector{.elem = vec->elem,
-                                          .max_length = vec->max_length,
-                                          .wire_min_length = 0}),
+            Vector{
+                .elem = vec->elem,
+                .max_length = static_cast<int64_t>(vec->wire_min_length),
+                .wire_min_length = vec->wire_min_length,
+                .elem_width =
+                    RoundUp(vec->elem.headSize(), vec->elem.headAlignment()),
+            }),
+        .long_type = VectorType::get(
+            &ctx_,
+            Vector{
+                .elem = vec->elem,
+                .max_length = vec->max_length,
+                .wire_min_length = 0,
+                .elem_width =
+                    RoundUp(vec->elem.headSize(), vec->elem.headAlignment()),
+            }),
         .path = PathAttr::fromString(&ctx_, "_")};
   }
 

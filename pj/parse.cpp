@@ -235,7 +235,11 @@ static void parseInt(const ActionInput& in, ParseState* state) {
   DEBUG_ONLY(auto result =) std::from_chars(num_start, in.end(), bits);
   assert(result.ptr == in.end());
 
-  types::Int data{.width = Bits(bits), .sign = sign};
+  types::Int data{
+      .width = Bits(bits),
+      .alignment = Bits(bits),
+      .sign = sign,
+  };
   validate(data, in.position());
 
   __ type = types::IntType::get(&__ ctx, data);
@@ -281,7 +285,15 @@ BEGIN_ACTION(TypeRef) {
 }
 END_ACTION()
 
-struct NonArrayType : sor<UIntType, IntType, CharType, TypeRef> {};
+struct AnyType : KEYWORD("any") {};
+
+BEGIN_ACTION(AnyType) {
+  assert(!__ type);
+  __ type = types::AnyType::get(&__ ctx, types::Any{});
+}
+END_ACTION()
+
+struct NonArrayType : sor<UIntType, IntType, CharType, AnyType, TypeRef> {};
 
 struct Len : num {};
 struct FixedArrayModifier : seq<tok<'['>, Len, tok<']'>> {};
@@ -900,6 +912,7 @@ struct LanguageDecl : if_must<KEYWORD("language"), Id, space_or_comment,
 BEGIN_ACTION(LanguageDecl) {
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kLanguage,
+      .language_space = __ space,
       .language = __ popId(),
       .language_text = __ language_text,
   });

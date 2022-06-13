@@ -3,12 +3,9 @@
 #include <cassert>
 #include <cinttypes>
 
-namespace pj {
+#include "traits.hpp"
 
-namespace gen {
-template <typename T>
-struct BuildPJType;
-}  // namespace gen
+namespace pj {
 
 enum class ReferenceMode { kPointer, kOffset };
 

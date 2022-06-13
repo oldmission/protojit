@@ -7,6 +7,9 @@
 #include <llvm/IR/Type.h>
 #include <llvm/IR/Value.h>
 
+#include "pj/reflect.pj.hpp"
+#include "types.hpp"
+
 #ifndef NDEBUG
 __attribute__((visibility("default"))) void dump(mlir::Operation* op) {
   op->dump();
@@ -33,5 +36,12 @@ __attribute__((visibility("default"))) void dumpMapping(
   for (auto& pair : *mapping) {
     std::cerr << pair.first << " -> " << pair.second << "\n";
   }
+}
+__attribute__((visibility("default"))) void printTree(
+    pj::types::ValueType type) {
+  type.printTree(llvm::errs());
+}
+__attribute__((visibility("default"))) auto getType(size_t ptr) {
+  return *reinterpret_cast<pj::reflect::Type*>(ptr);
 }
 #endif

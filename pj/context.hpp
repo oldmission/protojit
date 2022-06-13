@@ -42,6 +42,7 @@ struct ProtoJitContext {
 
   void precompile(std::string_view filename, bool pic = false,
                   size_t opt_level = 3);
+
   std::unique_ptr<Portal> compile(size_t opt_level = 3);
 
   // TODO: make these private after removing old compile API.

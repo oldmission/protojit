@@ -41,3 +41,8 @@ struct CollectionB {
   owners: char8[:12][3:10];
   items: ItemB[5:];
 }
+
+struct TestAlignment {
+  str: char8[:];
+  wstr: char16[:];
+}

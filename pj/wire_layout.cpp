@@ -132,23 +132,26 @@ ValueType WireLayout::visit(VectorType type) {
       (min_length > 0 || ppl_count > 0) ? el_align : Bytes(1);
 
   return VectorType::get(
-      &ctx_, Vector{.elem = elem,
-                    .min_length = min_length,
-                    .max_length = type->max_length,
-                    .wire_min_length = min_length,
-                    .ppl_count = ppl_count,
-                    .length_offset = length_offset,
-                    .length_size = length_size,
-                    .ref_offset = ref_offset,
-                    .ref_size = ref_size,
-                    .reference_mode = ReferenceMode::kOffset,
-                    .inline_payload_offset = inline_payload_offset,
-                    .inline_payload_size = inline_payload_size,
-                    .partial_payload_offset = partial_payload_offset,
-                    .partial_payload_size = partial_payload_size,
-                    .size = size,
-                    .alignment = alignment,
-                    .outlined_payload_alignment = el_align});
+      &ctx_, Vector{
+                 .elem = elem,
+                 .min_length = min_length,
+                 .max_length = type->max_length,
+                 .wire_min_length = min_length,
+                 .ppl_count = ppl_count,
+                 .length_offset = length_offset,
+                 .length_size = length_size,
+                 .ref_offset = ref_offset,
+                 .ref_size = ref_size,
+                 .reference_mode = ReferenceMode::kOffset,
+                 .inline_payload_offset = inline_payload_offset,
+                 .inline_payload_size = inline_payload_size,
+                 .partial_payload_offset = partial_payload_offset,
+                 .partial_payload_size = partial_payload_size,
+                 .size = size,
+                 .alignment = alignment,
+                 .outlined_payload_alignment = el_align,
+                 .elem_width = RoundUp(elem.headSize(), elem.headAlignment()),
+             });
 }
 
 ValueType WireLayout::visit(ProtocolType type) {

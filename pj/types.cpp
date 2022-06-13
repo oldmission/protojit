@@ -142,15 +142,8 @@ bool Vector::isBinaryCompatibleWith(const Vector& other) const {
 }
 
 bool Any::isBinaryCompatibleWith(const Any& other) const {
-  // TODO: should this method ever return true? The only current application of
-  // checking binary compatibility is for wire types, and Any never exists on
-  // the wire.
-  return data_ref_width == other.data_ref_width &&
-         data_ref_offset == other.data_ref_offset &&
-         type_ref_width == other.type_ref_width &&
-         type_ref_offset == other.type_ref_offset && size == other.size &&
-         alignment == other.alignment &&
-         self.isBinaryCompatibleWith(other.self);
+  // Any types cannot appear on the wire.
+  return false;
 }
 
 bool Protocol::isBinaryCompatibleWith(const Protocol& other) const {

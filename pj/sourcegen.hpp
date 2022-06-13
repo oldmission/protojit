@@ -20,7 +20,7 @@ class SourceGenerator {
   // Recursively add subtypes if not added for wire types.
   void addWireProtocol(const SourceId& name, types::ProtocolType proto);
   void addComposite(types::ValueType type, bool is_external = false);
-  void addText(const std::string& text);
+  void addText(const SourceId& space, const std::string& text);
 
   void addPortal(const SourceId& ns, const Portal& portal,
                  ParsedProtoFile::Protocol proto);
@@ -83,18 +83,19 @@ class SourceGenerator {
   std::string getUniqueName() { return "_" + std::to_string(counter_++); }
 
   template <typename Name>
-  void beginNamespaceOf(const Name& name) {
+  void beginNamespaceOf(const Name& name, bool is_namespace_name = false) {
     for (std::string_view space : outer_namespace_) {
       stream() << "namespace " << space << "{\n";
     }
-    for (size_t i = 0; i < name.size() - 1; ++i) {
+    for (intptr_t i = 0; i < name.size() - !is_namespace_name; ++i) {
       stream() << "namespace " << std::string_view(name[i]) << "{\n";
     }
   }
 
   template <typename Name>
-  void endNamespaceOf(const Name& name) {
-    for (size_t i = 0; i < outer_namespace_.size() + name.size() - 1; ++i) {
+  void endNamespaceOf(const Name& name, bool is_namespace_name = false) {
+    for (size_t i = 0;
+         i < outer_namespace_.size() + name.size() - !is_namespace_name; ++i) {
       stream() << "}\n";
     }
     stream() << "\n";
@@ -151,6 +152,7 @@ class SourceGenerator {
   std::unordered_set<const void*> generated_;
   std::vector<std::string> entrypoints_;
   std::set<SourceId, SourceIdLess> protos_;
+  bool need_any_ = false;
 
   SourceId outer_namespace_;
   size_t counter_;

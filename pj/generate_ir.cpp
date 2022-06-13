@@ -77,6 +77,11 @@ struct GeneratePass
                                             VectorType from, VectorType to,
                                             mlir::Type buf_type);
 
+  mlir::FuncOp getOrCreateReflectFn(mlir::Location loc,
+                                    OpBuilder::Listener* listener,
+                                    ValueType from, AnyType to,
+                                    mlir::Type buf_type);
+
   mlir::ModuleOp module() { return mlir::ModuleOp(getOperation()); }
 
   mlir::Value buildIndex(mlir::Location loc, mlir::OpBuilder& _, size_t value) {
@@ -156,7 +161,7 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
     }
 
     // Types don't always print all the details involved in their uniquing.
-    auto suffixes = used_names_[name];
+    auto& suffixes = used_names_[name];
     uint32_t suffix = 0;
     while (suffixes.count(suffix)) {
       suffix = std::rand();
@@ -164,6 +169,8 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
     suffixes.insert(suffix);
     os << "_" << suffix;
   }
+
+  ASSERT(!module().lookupSymbol(name));
 
   // TODO: mark the function with some attribute (something like static?) so
   // LLVM knows it can throw away the body if all callsites are inlined.
@@ -645,7 +652,7 @@ mlir::Value GeneratePass::transcodeInlineVector(mlir::Location loc,
     auto ppl_count = buildIndex(loc, _, dst_type->ppl_count);
     auto outline_count = _.create<SubIOp>(loc, copy_length, ppl_count);
     auto outline_bytes = _.create<MulIOp>(
-        loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
+        loc, buildIndex(loc, _, dst_type->elem_width.bytes()), outline_count);
 
     Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
                                             aligned_buf, outline_bytes);
@@ -730,7 +737,7 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
           buildIndex(loc, _, dst_type->ppl_count - src_type->ppl_count);
       auto outline_count = _.create<SubIOp>(loc, copy_length, dst_ppl_count);
       auto outline_bytes = _.create<MulIOp>(
-          loc, buildIndex(loc, _, dst_type->elemSize().bytes()), outline_count);
+          loc, buildIndex(loc, _, dst_type->elem_width.bytes()), outline_count);
 
       Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
                                               aligned_buf, outline_bytes);
@@ -753,7 +760,7 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
       auto src_outline_count =
           _.create<SubIOp>(loc, copy_length, src_ppl_count);
       auto dst_outline_bytes = _.create<MulIOp>(
-          loc, buildIndex(loc, _, dst_type->elemSize().bytes()),
+          loc, buildIndex(loc, _, dst_type->elem_width.bytes()),
           dst_outline_count);
 
       Value result_buf = _.create<AllocateOp>(loc, aligned_buf.getType(),
@@ -774,6 +781,49 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
 
   _.restoreInsertionPoint(ip);
   return dst_inline_if.getResult(0);
+}
+
+mlir::FuncOp GeneratePass::getOrCreateReflectFn(mlir::Location loc,
+                                                OpBuilder::Listener* listener,
+                                                ValueType from, AnyType to,
+                                                mlir::Type buf_type) {
+  auto* ctx = &getContext();
+  auto key =
+      FnKey{from, to, PathAttr::none(ctx), ArrayAttr::get(ctx, {}), buf_type};
+  auto func = getOrCreateFn(loc, listener, "xcd", key);
+
+  if (!func.isDeclaration()) {
+    return func;
+  }
+
+  auto* entry_block = func.addEntryBlock();
+  auto _ = mlir::OpBuilder::atBlockBegin(entry_block);
+  _.setListener(listener);
+
+  Value src = func.getArgument(0), dst = func.getArgument(1),
+        buf = func.getArgument(2);
+
+  auto reflected_type = reflect::reflectableTypeFor(
+      from, ReflectDomainAttr::unique(_.getContext()));
+
+  Value aligned_buf = _.create<AlignOp>(loc, buf.getType(), buf,
+                                        reflected_type.headAlignment().bytes());
+
+  auto reflected_dst =
+      _.create<ProjectOp>(loc, reflected_type, aligned_buf, Bytes(0));
+
+  Value result_buf = _.create<AllocateOp>(
+      loc, aligned_buf.getType(), aligned_buf,
+      buildIndex(loc, _, reflected_type.headSize().bytes()));
+
+  result_buf = _.create<TranscodeOp>(
+      loc, result_buf.getType(), src, reflected_dst, result_buf,
+      PathAttr::get(ctx), ArrayAttr::get(ctx, {}));
+
+  _.create<ReflectOp>(loc, reflected_dst, dst);
+  _.create<ReturnOp>(loc, result_buf);
+
+  return func;
 }
 
 mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
@@ -1084,26 +1134,9 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     fn = pass->getOrCreateVectorTranscodeFn(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
-  } else if (dst_type.isa<AnyType>()) {
-    auto reflected_type = reflect::reflectableTypeFor(
-        src_type, ReflectDomainAttr::unique(_.getContext()));
-
-    auto buf = operands[2];
-    Value aligned_buf = _.create<AlignOp>(
-        loc, buf.getType(), buf, reflected_type.headAlignment().bytes());
-
-    auto reflected_dst =
-        _.create<ProjectOp>(loc, reflected_type, aligned_buf, Bytes(0));
-
-    Value result_buf = _.create<AllocateOp>(
-        loc, aligned_buf.getType(), aligned_buf,
-        pass->buildIndex(loc, _, reflected_type.headSize().bytes()));
-    result_buf = _.create<TranscodeOp>(loc, result_buf.getType(), operands[0],
-                                       reflected_dst, result_buf, op.path(),
-                                       op.handlers());
-    _.create<ReflectOp>(loc, reflected_dst, operands[1]);
-    _.replaceOp(op, result_buf);
-    return success();
+  } else if (auto any = dst_type.dyn_cast<AnyType>()) {
+    fn = pass->getOrCreateReflectFn(loc, _.getListener(), src_type, any,
+                                    op.getResult().getType());
   }
 
   auto call = _.create<mlir::CallOp>(loc, fn, operands);

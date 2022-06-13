@@ -72,6 +72,7 @@ struct ParsedProtoFile {
 
     bool is_external = false;
 
+    SourceId language_space;
     std::string language;
     std::string language_text;
   };

@@ -1,6 +1,7 @@
 #include "pj/reflect.hpp"
 #include "pj/array_ref.hpp"
 #include "pj/protojit.hpp"
+#include "pj/reflect.pj.hpp"
 
 namespace pj {
 
@@ -131,15 +132,15 @@ types::ValueType unreflect(const Unit& type, int32_t index,
   return types::UnitType::get(&ctx);
 }
 
-Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
-  auto* result = alloc.Allocate<span<pj_char>>(name.size());
+QualifiedName reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
+  auto* result = alloc.Allocate<offset_span<pj_char>>(name.size());
   for (size_t i = 0; i < name.size(); ++i) {
     result[i] = {name[i].data(), name[i].size()};
   }
   return {result, name.size()};
 }
 
-ArrayRefConverter<llvm::StringRef> unreflectName(Name name) {
+ArrayRefConverter<llvm::StringRef> unreflectName(QualifiedName name) {
   return {name.begin(), name.size(), [](auto str) {
             return llvm::StringRef{str.begin(), str.size()};
           }};
@@ -227,21 +228,23 @@ void reflect(types::VectorType type, llvm::BumpPtrAllocator& alloc,
   const int32_t elem = reflect(type->elem, alloc, pool, cache);
   const int32_t elem_offset = elem - pool.size();
   pool.emplace_back(  //
-      Type::Vector, Vector{
-                        .elem = elem_offset,
-                        .min_length = type->min_length,
-                        .max_length = type->max_length,
-                        .ppl_count = type->ppl_count,
-                        .length_offset = type->length_offset,
-                        .length_size = type->length_size,
-                        .ref_offset = type->ref_offset,
-                        .ref_size = type->ref_size,
-                        .reference_mode = type->reference_mode,
-                        .inline_payload_offset = type->inline_payload_offset,
-                        .partial_payload_offset = type->partial_payload_offset,
-                        .size = type->size,
-                        .alignment = type->alignment,
-                    });
+      Type::Vector,   //
+      Vector{
+          .elem = elem_offset,
+          .elem_width = type->elem_width,
+          .min_length = type->min_length,
+          .max_length = type->max_length,
+          .ppl_count = type->ppl_count,
+          .length_offset = type->length_offset,
+          .length_size = type->length_size,
+          .ref_offset = type->ref_offset,
+          .ref_size = type->ref_size,
+          .reference_mode = type->reference_mode,
+          .inline_payload_offset = type->inline_payload_offset,
+          .partial_payload_offset = type->partial_payload_offset,
+          .size = type->size,
+          .alignment = type->alignment,
+      });
 }
 
 types::ValueType unreflect(const Vector& type, int32_t index,
@@ -266,16 +269,16 @@ types::ValueType unreflect(const Vector& type, int32_t index,
             });
 }
 
-Path reflectPath(types::PathAttr path, llvm::BumpPtrAllocator& alloc) {
+QualifiedName reflectPath(types::PathAttr path, llvm::BumpPtrAllocator& alloc) {
   auto vec = path.getValue();
-  auto* result = alloc.Allocate<span<pj_char>>(vec.size());
+  auto* result = alloc.Allocate<offset_span<pj_char>>(vec.size());
   for (size_t i = 0; i < vec.size(); ++i) {
     result[i] = {vec[i].data(), vec[i].size()};
   }
   return {result, vec.size()};
 }
 
-types::PathAttr unreflectPath(Path path, mlir::MLIRContext& ctx) {
+types::PathAttr unreflectPath(QualifiedName path, mlir::MLIRContext& ctx) {
   ArrayRefConverter<llvm::StringRef> conv{
       path.begin(), path.size(), [](auto str) {
         return llvm::StringRef{str.begin(), str.size()};
@@ -311,7 +314,7 @@ TermAttribute* reflectTermAttributes(ArrayRef<types::TermAttribute> attrs,
 }
 
 ArrayRef<types::TermAttribute> unreflectTermAttributes(
-    span<TermAttribute> attrs, mlir::MLIRContext& ctx,
+    offset_span<TermAttribute> attrs, mlir::MLIRContext& ctx,
     llvm::BumpPtrAllocator& alloc) {
   auto* attrs_alloc = alloc.Allocate<types::TermAttribute>(attrs.size());
   auto* attrs_it = attrs_alloc;
@@ -364,7 +367,7 @@ Term* reflectTerms(ArrayRef<types::Term> terms, llvm::BumpPtrAllocator& alloc,
   return terms_alloc;
 }
 
-ArrayRef<types::Term> unreflectTerms(span<Term> terms, int32_t index,
+ArrayRef<types::Term> unreflectTerms(offset_span<Term> terms, int32_t index,
                                      mlir::MLIRContext& ctx,
                                      llvm::BumpPtrAllocator& alloc,
                                      types::WireDomainAttr domain,
@@ -457,12 +460,12 @@ types::ValueType unreflect(const OutlineVariant& type, int32_t index,
 
 types::ValueType reflectableTypeFor(types::ValueType type,
                                     types::ReflectDomainAttr domain) {
-  if (type.isa<types::IntType>()) {
+  if (type.isa<types::IntType>() || type.isa<types::UnitType>()) {
     return type;
   }
   if (auto array = type.dyn_cast<types::ArrayType>()) {
-    types::Array ary{array};
-    ary.elem = reflectableTypeFor(ary.elem, domain);
+    types::Array ary = types::Array(array);
+    ary.elem = reflectableTypeFor(array->elem, domain);
     return types::ArrayType::get(array.getContext(), ary);
   }
   if (auto vec = type.dyn_cast<types::VectorType>()) {
@@ -487,6 +490,7 @@ types::ValueType reflectableTypeFor(types::ValueType type,
             .size = Bytes(16),
             .alignment = Bytes(8),
             .outlined_payload_alignment = elem.headAlignment(),
+            .elem_width = RoundUp(elem.headSize(), elem.headAlignment()),
         });
   }
   if (auto str = type.dyn_cast<types::StructType>()) {

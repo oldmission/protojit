@@ -77,18 +77,21 @@ cc_library(
     ],
     hdrs = [
         "arch.hpp",
-        "span.hpp",
         "arch_base.hpp",
+        "array.hpp",
+        "array_ref.hpp",
         "defer.hpp",
         "exceptions.hpp",
         "integer.hpp",
         "ir.hpp",
+        "offset_span.hpp",
         "protojit.hpp",
-        "array_ref.hpp",
+        "span.hpp",
         "traits.hpp",
         "type_domain.hpp",
         "type_support.hpp",
         "types.hpp",
+        "unit.hpp",
         "util.hpp",
     ],
     deps = [
@@ -130,9 +133,7 @@ cc_binary(
         "validate.cpp",
         "validate.hpp",
     ],
-    linkopts = [
-        "-lstdc++fs",
-    ],
+    linkopts = ["-lstdc++fs"],
     deps = [
         ":core",
         ":plan",
@@ -145,7 +146,7 @@ genrule(
     srcs = ["reflect.pj"],
     outs = ["reflect.pj.hpp"],
     cmd = "$(location //pj:pjc) $(location reflect.pj) --hpp $@",
-    tools = ["//pj:pjc"],
+    tools = [":pjc"],
 )
 
 cc_library(
@@ -155,14 +156,13 @@ cc_library(
         "reflect.pj.hpp",
     ],
     hdrs = [
+        "any.hpp",
         "reflect.hpp",
         "runtime.h",
         "runtime.hpp",
     ],
     linkopts = ["-lstdc++fs"],
-    deps = [
-        ":core",
-    ],
+    deps = [":core"],
 )
 
 cc_library(
@@ -186,6 +186,8 @@ cc_library(
         "llvm_extra_conversions.cpp.inc",
         "llvm_utils.hpp",
         "passes.hpp",
+        "portal.hpp",
+        "portal_impl.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
     ],
@@ -214,8 +216,6 @@ cc_library(
     srcs = [
         "context.cpp",
         "context.hpp",
-        "portal.hpp",
-        "portal_impl.hpp",
         "runtime.cpp",
         "schema/reflect.pj.v0_1.hpp",
         "schema/versions.hpp",

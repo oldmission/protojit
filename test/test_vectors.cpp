@@ -261,4 +261,26 @@ TEST_F(PJTest, VectorOfStructsSame) {
   }
 }
 
+TEST_F(PJTest, SizingAlignment) {
+  char str[5] = {'A', 'B', 'C', 'D', 'E'};
+  wchar_t wstr[5] = {'A', 'B', 'C', 'D', 'E'};
+
+  TestAlignment src{.str = {str, 5}, .wstr = {wstr, 5}};
+  TestAlignment dst;
+
+  auto proto = ctx->fromMemory(gen::BuildPJType<TestAlignment>::build(
+      ctx->get(), PJGetWireDomain(ctx->get())));
+
+  auto results = transcode(Options<TestAlignment>{
+      .from = &src,
+      .to = &dst,
+      .expect_dec_buffer = true,
+      .proto = proto,
+  });
+
+  EXPECT_EQ(results.enc_size, 48);
+  EXPECT_EQ(src.str.size(), 5);
+  EXPECT_EQ(dst.wstr.size(), 5);
+}
+
 }  // namespace pj
