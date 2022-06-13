@@ -60,21 +60,29 @@ const PJDomain* PJGetWireDomain(PJContext* ctx) {
 }
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
-                                 Bits data_ref_width, Bits type_ref_offset,
-                                 Bits type_ref_width, Bits size, Bits alignment,
+                                 Bits data_ref_width, Bits protocol_ref_offset,
+                                 Bits protocol_ref_width, Bits offset_offset,
+                                 Bits offset_width, Bits size, Bits alignment,
                                  const void* self_type) {
+  auto* ctx = &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_;
   auto any = pj::types::Any{
       .data_ref_width = pj::Bits(data_ref_width),
       .data_ref_offset = pj::Bits(data_ref_offset),
-      .type_ref_width = pj::Bits(type_ref_width),
-      .type_ref_offset = pj::Bits(type_ref_offset),
+      .protocol_ref_width = pj::Bits(protocol_ref_width),
+      .protocol_ref_offset = pj::Bits(protocol_ref_offset),
+      .offset_width = pj::Bits(offset_width),
+      .offset_offset = pj::Bits(offset_offset),
       .size = pj::Bits(size),
       .alignment = pj::Bits(alignment),
-      .self = mlir::Type::getFromOpaquePointer(self_type)
-                  .cast<pj::types::ValueType>(),
+      .self = pj::types::ProtocolType::get(
+          ctx,
+          pj::types::Protocol{
+              .head = mlir::Type::getFromOpaquePointer(self_type)
+                          .cast<pj::types::ValueType>(),
+              .buffer_offset = pj::Bytes(0),
+          }),
   };
-  auto any_type = pj::types::AnyType::get(
-      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_, any);
+  auto any_type = pj::types::AnyType::get(ctx, any);
   return reinterpret_cast<const PJAnyType*>(any_type.getAsOpaquePointer());
 }
 
@@ -220,11 +228,12 @@ const PJVectorType* PJCreateVectorType(
     Bits inline_payload_size, Bits partial_payload_offset,
     Bits partial_payload_size, Bits size, Bits alignment,
     Bits outlined_payload_alignment) {
+  auto elem =
+      mlir::Type::getFromOpaquePointer(type).cast<pj::types::ValueType>();
   auto vector_type = pj::types::VectorType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
       pj::types::Vector{
-          .elem = mlir::Type::getFromOpaquePointer(type)
-                      .cast<pj::types::ValueType>(),
+          .elem = elem,
           .min_length = min_length,
           .max_length = max_length,
           .wire_min_length = wire_min_length,
@@ -240,7 +249,9 @@ const PJVectorType* PJCreateVectorType(
           .partial_payload_size = pj::Bits(partial_payload_size),
           .size = pj::Bits(size),
           .alignment = pj::Bits(alignment),
-          .outlined_payload_alignment = pj::Bits(outlined_payload_alignment)});
+          .outlined_payload_alignment = pj::Bits(outlined_payload_alignment),
+          .elem_width = RoundUp(elem.headSize(), elem.headAlignment()),
+      });
   return reinterpret_cast<const PJVectorType*>(
       vector_type.getAsOpaquePointer());
 }

@@ -649,9 +649,6 @@ struct Vector {
   bool isBinaryCompatibleWith(const Vector& other) const;
 
   Width headSize() const { return size; }
-  Width elemSize() const {
-    return RoundUp(elem.headSize(), elem.headAlignment());
-  }
 
   // Alignment must be at least as large as the element type's alignment
   // if min_length > 0.
@@ -663,6 +660,7 @@ struct Vector {
   Width outlined_payload_alignment;
 
   // Set during internment.
+  Width elem_width;
   bool has_max_size = false;
   bool hasMaxSize() const { return has_max_size; }
   ChildVector children() const {
@@ -677,27 +675,28 @@ struct Vector {
       os << ", ref: u" << ref_size.bits() << " @ " << ref_offset.bits();
       if (ppl_count > 0) {
         os << ", ppl: " << elem << "[" << ppl_count;
-        if (elemSize() != elem.headSize()) {
-          os << "|" << elemSize().bits();
+        if (elem_width != elem.headSize()) {
+          os << "|" << elem_width.bits();
         }
         os << "] @ " << partial_payload_offset.bits();
       }
     }
     if (min_length > 0) {
       os << ", inline: " << elem << "[" << min_length;
-      if (elemSize() != elem.headSize()) {
-        os << "|" << elemSize().bits();
+      if (elem_width != elem.headSize()) {
+        os << "|" << elem_width.bits();
       }
       os << "] @ " << inline_payload_offset.bits();
     }
   }
 
   bool operator==(const Vector& V) const {
-    return elem == V.elem && min_length == V.min_length &&
-           wire_min_length == V.wire_min_length && max_length == V.max_length &&
-           ppl_count == V.ppl_count && length_offset == V.length_offset &&
-           length_size == V.length_size && ref_offset == V.ref_offset &&
-           ref_size == V.ref_size && reference_mode == V.reference_mode &&
+    return elem == V.elem && elem_width == V.elem_width &&
+           min_length == V.min_length && wire_min_length == V.wire_min_length &&
+           max_length == V.max_length && ppl_count == V.ppl_count &&
+           length_offset == V.length_offset && length_size == V.length_size &&
+           ref_offset == V.ref_offset && ref_size == V.ref_size &&
+           reference_mode == V.reference_mode &&
            inline_payload_offset == V.inline_payload_offset &&
            inline_payload_size == V.inline_payload_size &&
            partial_payload_offset == V.partial_payload_offset &&
@@ -710,8 +709,8 @@ struct Vector {
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Vector& V) {
   os << V.elem << "[" << V.wire_min_length << ":" << V.max_length;
 
-  if (V.elemSize() != V.elem.headSize()) {
-    os << "|" << V.elemSize();
+  if (V.elem_width != V.elem.headSize()) {
+    os << "|" << V.elem_width;
   }
 
   os << "]";
@@ -726,7 +725,7 @@ inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Vector& V) {
 inline ::llvm::hash_code hash_value(const Vector& V) {
   using ::llvm::hash_value;
   return llvm::hash_combine(
-      hash_value(V.elem), hash_value(V.min_length),
+      hash_value(V.elem), hash_value(V.elem_width), hash_value(V.min_length),
       hash_value(V.wire_min_length), hash_value(V.max_length),
       hash_value(V.ppl_count), hash_value(V.length_offset),
       hash_value(V.length_size), hash_value(V.ref_offset),
@@ -738,6 +737,7 @@ inline ::llvm::hash_code hash_value(const Vector& V) {
 }
 
 inline Vector type_intern(mlir::TypeStorageAllocator& allocator, Vector V) {
+  ASSERT(V.elem_width.IsNotNone());
   V.has_max_size = (V.max_length >= 0) ? V.elem.hasMaxSize() : false;
   return V;
 }
@@ -757,13 +757,17 @@ struct VectorType
 // value of an unknown type from a counterparty and traverse the value in its
 // original form.
 //
-// An instance of AnyType can only exist in memory.
+// An instance of AnyType can only exist in memory, so data_ref_width and
+// type_ref_width must be equal to the host word size.
 struct Any {
   Width data_ref_width;
   Width data_ref_offset;
 
-  Width type_ref_width;
-  Width type_ref_offset;
+  Width protocol_ref_width;
+  Width protocol_ref_offset;
+
+  Width offset_width;
+  Width offset_offset;
 
   Width size;
   Width alignment;
@@ -773,8 +777,10 @@ struct Any {
   bool operator==(const Any& other) const {
     return data_ref_width == other.data_ref_width &&
            data_ref_offset == other.data_ref_offset &&
-           type_ref_width == other.type_ref_width &&
-           type_ref_offset == other.type_ref_offset && size == other.size &&
+           protocol_ref_width == other.protocol_ref_width &&
+           protocol_ref_offset == other.protocol_ref_offset &&
+           offset_width == other.offset_width &&
+           offset_offset == other.offset_offset && size == other.size &&
            alignment == other.alignment && self == other.self;
   }
 
@@ -796,7 +802,8 @@ inline ::llvm::hash_code hash_value(const Any& A) {
   using ::llvm::hash_value;
   return llvm::hash_combine(
       hash_value(A.data_ref_width), hash_value(A.data_ref_offset),
-      hash_value(A.type_ref_width), hash_value(A.type_ref_offset),
+      hash_value(A.protocol_ref_width), hash_value(A.protocol_ref_offset),
+      hash_value(A.offset_width), hash_value(A.offset_offset),
       hash_value(A.size), hash_value(A.alignment), hash_value(A.self));
 }
 

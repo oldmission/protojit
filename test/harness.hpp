@@ -69,6 +69,7 @@ class PJGenericTest
     uintptr_t enc_size;
     uintptr_t dec_buffer_size;
     std::unique_ptr<char[]> dec_buffer;
+    runtime::Portal portal;
   };
 
   template <typename SrcT, typename DstT = SrcT>
@@ -82,6 +83,7 @@ class PJGenericTest
     std::string tag_path = "";
     bool round_up_size = false;
     bool expect_dec_buffer = false;  // We expect the decode buffer to be used.
+    runtime::Protocol proto;
   };
 
   template <typename OptionsT>
@@ -89,7 +91,10 @@ class PJGenericTest
     using Src = typename OptionsT::Src;
     using Dst = typename OptionsT::Dst;
 
-    auto protocol = ctx->plan<Src>(no_tag ? "" : options.tag_path);
+    runtime::Protocol protocol = options.proto;
+    if (!protocol) {
+      protocol = ctx->plan<Src>(no_tag ? "" : options.tag_path);
+    }
 
     ctx->addEncodeFunction<Src>("encode", protocol,
                                 no_src_path ? "" : options.src_path);
@@ -98,22 +103,21 @@ class PJGenericTest
                               no_src_path ? "" : options.src_path,
                               options.round_up_size);
 
-    const auto portal = ctx->compile();
+    Results results{.portal = ctx->compile()};
 
-    const auto size_fn = portal.getSizeFunction<Src>("size");
-    const auto encode_fn = portal.getEncodeFunction<Src>("encode");
-    const auto decode_fn = portal.getDecodeFunction<Dst>("decode");
+    const auto size_fn = results.portal.template getSizeFunction<Src>("size");
+    const auto encode_fn =
+        results.portal.template getEncodeFunction<Src>("encode");
+    const auto decode_fn =
+        results.portal.template getDecodeFunction<Dst>("decode");
 
-    Results results;
     results.enc_size = size_fn(options.from);
     results.dec_buffer_size = 0;
     if (options.to != nullptr) {
+      auto enc_buffer = std::make_unique<char[]>(results.enc_size);
+      encode_fn(options.from, enc_buffer.get());
       while (true) {
-        auto enc_buffer = std::make_unique<char[]>(results.enc_size);
         results.dec_buffer = std::make_unique<char[]>(results.dec_buffer_size);
-
-        encode_fn(options.from, enc_buffer.get());
-
         auto bbuf = decode_fn(
             enc_buffer.get(), options.to,
             {.ptr = results.dec_buffer.get(),

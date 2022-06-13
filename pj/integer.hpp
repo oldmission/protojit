@@ -46,7 +46,7 @@ struct wrapped_type<pj_uint8> {
 
 template <>
 struct wrapped_type<pj_wchar> {
-  using type = char;
+  using type = wchar_t;
 };
 
 template <>

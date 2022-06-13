@@ -11,6 +11,11 @@
 #include "defer.hpp"
 #include "ir.hpp"
 #include "llvm_extra.hpp"
+#include "pj/reflect.pj.hpp"
+#include "portal.hpp"
+#include "protojit.hpp"
+#include "reflect.hpp"
+#include "runtime.hpp"
 #include "side_effect_analysis.hpp"
 #include "util.hpp"
 
@@ -87,12 +92,12 @@ struct LLVMGenPass
     return mlir::IntegerAttr::get(intType(wordSize()), value);
   }
 
-  mlir::Value buildWordConstant(mlir::Location& loc, mlir::OpBuilder& _,
+  mlir::Value buildWordConstant(const mlir::Location& loc, mlir::OpBuilder& _,
                                 size_t value) {
     return buildIntConstant(loc, _, wordSize(), value);
   }
 
-  mlir::Value buildIntConstant(mlir::Location& loc, mlir::OpBuilder& _,
+  mlir::Value buildIntConstant(const mlir::Location& loc, mlir::OpBuilder& _,
                                Width width, size_t value) {
     return _.create<mlir::ConstantOp>(loc, intType(width),
                                       intAttr(width, value));
@@ -237,7 +242,7 @@ Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
     return buf;
   }
   if (buf.getType() == dummyBufType()) {
-    return _.create<LLVM::NullOp>(loc, bytePtrType());
+    return _.create<LLVM::IntToPtrOp>(loc, bytePtrType(), buf);
   }
   UNREACHABLE();
 }
@@ -698,8 +703,12 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
 
       if (type->reference_mode == ReferenceMode::kOffset) {
         // TODO: bounds check on the offset
+        auto offset_from_base =
+            _.create<AddIOp>(loc, ref,
+                             pass->buildIntConstant(loc, _, type->ref_size,
+                                                    type->ref_offset.bytes()));
         start = _.create<GEPOp>(loc, pass->bytePtrType(), operands[0],
-                                ValueRange{ref});
+                                ValueRange{offset_from_base});
       } else {
         assert(type->ref_size == pass->wordSize());
         start = _.create<IntToPtrOp>(loc, pass->bytePtrType(), ref);
@@ -713,7 +722,7 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
   Value offset = _.create<MulOp>(
       loc, operands[1],
       pass->buildWordConstant(
-          loc, _, op.vec().getType().cast<VectorType>()->elemSize().bytes()));
+          loc, _, op.vec().getType().cast<VectorType>()->elem_width.bytes()));
   Value val = _.create<GEPOp>(loc, pass->bytePtrType(), start, offset);
 
   _.replaceOp(op, val);
@@ -849,9 +858,14 @@ LogicalResult StoreRefOpLowering::matchAndRewrite(
     assert(type->ref_size == pass->wordSize());
     _.create<StoreOp>(loc, buf_as_int, ref_ptr);
   } else {
-    auto vec_as_int = _.create<PtrToIntOp>(loc, pass->wordType(), operands[0]);
+    Value offset_base_as_int =
+        _.create<PtrToIntOp>(loc, pass->wordType(), operands[0]);
+    offset_base_as_int =
+        _.create<AddIOp>(loc, offset_base_as_int,
+                         pass->buildIntConstant(loc, _, pass->wordSize(),
+                                                type->ref_offset.bytes()));
     auto offset =
-        _.create<SubOp>(loc, pass->wordType(), buf_as_int, vec_as_int);
+        _.create<SubOp>(loc, pass->wordType(), buf_as_int, offset_base_as_int);
     // TODO: debug assert that this fits within ref_size
     auto offset_trunc =
         _.create<TruncOp>(loc, pass->intType(type->ref_size), offset);
@@ -1098,11 +1112,83 @@ LogicalResult SizeOpLowering::matchAndRewrite(
 LogicalResult ReflectOpLowering::matchAndRewrite(
     ReflectOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
-  // TODO:
-  // 1. Create binary representation of the source schema in the host's self
+  auto dst_any = op.dst().getType().cast<AnyType>();
+
+  // Create binary representation of the source schema in the host's self
   // representation.
-  // 2. Save the schema in the constant pool and get a pointer to it.
-  // 3. Save pointers to the schema and object in the destination.
+  llvm::BumpPtrAllocator alloc;
+  auto rf_proto = reflect::reflect(
+      alloc,
+      types::ProtocolType::get(_.getContext(),
+                               Protocol{
+                                   .head = op.src().getType().cast<ValueType>(),
+                                   .buffer_offset = Bytes(0),
+                               }));
+  llvm::SmallVector<char, 0> buf;
+  {
+    auto re_ctx = runtime::Context();
+    auto host_repr =
+        op.dst().getType().cast<AnyType>()->self.cast<ProtocolType>();
+    runtime::Protocol protocol{
+        reinterpret_cast<const PJProtocol*>(host_repr.getAsOpaquePointer())};
+    re_ctx.addSizeFunction<reflect::Protocol>("size", protocol, "",
+                                              /*round_up_size=*/true);
+    re_ctx.addEncodeFunction<reflect::Protocol>("encode", protocol,
+                                                /*path=*/"");
+    auto portal = re_ctx.compile();
+
+    const auto size_fn = portal.getSizeFunction<reflect::Protocol>("size");
+    const auto encode_fn =
+        portal.getEncodeFunction<reflect::Protocol>("encode");
+
+    buf.resize(size_fn(&rf_proto));
+    encode_fn(&rf_proto, buf.data());
+  }
+
+  // Save the schema in the constant pool and get a pointer to it.
+  auto schema_type = LLVMArrayType::get(pass->intType(Bytes(1)), buf.size());
+  auto schema_cst = pass->buildGlobalConstant(
+      op.getLoc(), _.getListener(), schema_type,
+      DenseIntElementsAttr::get(
+          RankedTensorType::get(static_cast<int64_t>(buf.size()),
+                                _.getIntegerType(8)),
+          buf));
+
+  Value schema_ptr = _.create<LLVM::AddressOfOp>(
+      op.getLoc(), LLVMPointerType::get(schema_type), schema_cst.getName());
+
+  // Save pointers to the schema and object in the destination.
+  // TODO: verify data_ref_width and type_ref_width
+  Value save_data_ptr =
+      _.create<GEPOp>(op.getLoc(), pass->bytePtrType(), operands[1],
+                      pass->buildWordConstant(
+                          op.getLoc(), _, dst_any->data_ref_offset.bytes()));
+
+  save_data_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(pass->bytePtrType()), save_data_ptr);
+
+  Value save_schema_ptr = _.create<GEPOp>(
+      op.getLoc(), pass->bytePtrType(), operands[1],
+      pass->buildWordConstant(op.getLoc(), _,
+                              dst_any->protocol_ref_offset.bytes()));
+
+  save_schema_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(schema_ptr.getType()), save_schema_ptr);
+
+  Value save_offset_ptr = _.create<GEPOp>(
+      op.getLoc(), pass->bytePtrType(), operands[1],
+      pass->buildWordConstant(op.getLoc(), _, dst_any->offset_offset.bytes()));
+
+  save_offset_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(pass->intType(dst_any->offset_width)),
+      save_offset_ptr);
+
+  _.create<StoreOp>(op.getLoc(), operands[0], save_data_ptr);
+  _.create<StoreOp>(op.getLoc(), schema_ptr, save_schema_ptr);
+  _.create<StoreOp>(op.getLoc(),
+                    pass->buildIntConstant(
+                        op.getLoc(), _, dst_any->offset_width, rf_proto.head),
+                    save_offset_ptr);
 
   _.eraseOp(op);
   return success();

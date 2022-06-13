@@ -67,6 +67,10 @@ llvm::StringRef SourceGenerator::classNameFor(types::ValueType type) {
     return named.name().back();
   }
 
+  if (type.isa<types::AnyType>()) {
+    return "Any";
+  }
+
   if (type.isa<types::ArrayType>()) {
     return "array";
   }
@@ -88,6 +92,12 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
 
   if (auto named = type.dyn_cast<types::NominalType>()) {
     printName(named.name());
+    return;
+  }
+
+  if (type.isa<types::AnyType>()) {
+    os << "pj::Any";
+    need_any_ = true;
     return;
   }
 
@@ -821,7 +831,12 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
 }
 
-void SourceGenerator::addText(const std::string& text) { defs_ << text; }
+void SourceGenerator::addText(const SourceId& space, const std::string& text) {
+  region_ = Region::kDefs;
+  beginNamespaceOf(space, true);
+  defs_ << text;
+  endNamespaceOf(space, true);
+}
 
 void SourceGenerator::addPrecompilation(const SourceId& name,
                                         const Portal& portal,
@@ -980,6 +995,10 @@ void SourceGenerator::generate(
 
   for (auto& import : imports) {
     output << "#include \"" << import.c_str() << ".hpp\"\n";
+  }
+
+  if (need_any_) {
+    output << "#include \"pj/any.hpp\"\n";
   }
 
   output << defs_.str();

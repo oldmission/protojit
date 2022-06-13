@@ -1,5 +1,28 @@
-// Any tests
-
 struct Int32 {
   i: int32;
+}
+
+struct WrapperI {
+  x: int64;
+  i: Int32;
+}
+
+struct WrapperA {
+  i: any;
+  x: int64;
+}
+
+variant Var1 {
+  x: int32;
+  y: int64;
+}
+
+variant Var2 {
+  x: int32;
+  y: any;
+}
+
+variant Var3 {
+  x;
+  y: int32;
 }

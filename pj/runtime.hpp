@@ -4,10 +4,22 @@
 #include <tuple>
 #include <vector>
 
+#include "pj/reflect.pj.hpp"
 #include "protojit.hpp"
 #include "runtime.h"
 
 namespace pj {
+
+template <typename T, typename S>
+using DecodeHandler = void (*)(const T* msg, S* state);
+
+template <typename T>
+using SizeFunction = uintptr_t (*)(const T*);
+template <typename T>
+using EncodeFunction = void (*)(const T*, char*);
+template <typename T, typename S>
+using DecodeFunction = BoundedBuffer (*)(const char*, T*, BoundedBuffer,
+                                         DecodeHandler<T, S>[], S*);
 
 namespace runtime {
 
@@ -56,16 +68,18 @@ class Portal {
 
 class Protocol {
  public:
+  Protocol() {}
   Protocol(const Protocol& proto) : proto_(proto.proto_) {}
+  Protocol(const PJProtocol* proto) : proto_(proto) {}
 
   bool isBinaryCompatibleWith(Protocol other) const {
     return PJIsBinaryCompatible(proto_, other.proto_);
   }
 
- private:
-  Protocol(const PJProtocol* proto) : proto_(proto) {}
+  operator bool() const { return proto_; }
 
-  const PJProtocol* proto_;
+ private:
+  const PJProtocol* proto_ = nullptr;
   friend class Context;
 };
 
@@ -91,6 +105,10 @@ class Context {
     const void* head =
         gen::BuildPJType<Head>::build(ctx_, PJGetHostDomain(ctx_));
     return Protocol{PJPlanProtocol(ctx_, head, tag_path.c_str())};
+  }
+
+  Protocol fromMemory(const void* type) {
+    return Protocol{PJCreateProtocolType(ctx_, type, 0)};
   }
 
   uint64_t getProtoSize(Protocol proto) {
@@ -145,6 +163,8 @@ class Context {
   }
 
   Portal compile() { return Portal(PJCompile(ctx_)); }
+
+  PJContext* get() { return ctx_; }
 
  private:
   PJContext* ctx_;

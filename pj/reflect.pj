@@ -2,6 +2,10 @@
 // it has a cyclic dependency on 'protojit.hpp'. Just include 'protojit.hpp'
 // instead.
 
+language cpp """
+  #include "pj/offset_span.hpp"
+"""
+
 space pj {
 
 enum Sign external {
@@ -21,11 +25,14 @@ enum ReferenceMode external {
 
 space reflect {
 
-type Name = char8[:][:];
-
 type Offset = int32;
+type Name external = char8[:];
+type QualifiedName external = Name[:];
 
-type Path = char8[:][:];
+language cpp """
+  using Name = offset_span<pj_char>;
+  using QualifiedName = offset_span<Name>;
+"""
 
 struct Int {
   width: Width;
@@ -37,13 +44,18 @@ struct Unit {}
 
 struct StructField {
   type: Offset;
-  name: char8[:];
+  name: Name;
   offset: Width;
 }
 
+type StructFields external = StructField[:];
+language cpp """
+  using StructFields = offset_span<pj::reflect::StructField>;
+"""
+
 struct Struct {
-  name: Name;
-  fields: StructField[:];
+  name: QualifiedName;
+  fields: StructFields;
   size: Width;
   alignment: Width;
 }
@@ -56,7 +68,7 @@ enum VectorSplitType {
 struct VectorSplit {
   type: VectorSplitType;
   inline_length: uint64;
-  path: Path;
+  path: QualifiedName;
   // TODO: add booleans
   is_default: uint8;
 }
@@ -66,16 +78,26 @@ variant TermAttribute {
   vector_split: VectorSplit;
 }
 
+type TermAttributeVector external = TermAttribute[:];
+language cpp """
+  using TermAttributeVector = offset_span<TermAttribute>;
+"""
+
 struct Term {
-  name: char8[:];
+  name: Name;
   type: Offset;
   tag: uint64;
-  attributes: TermAttribute[:];
+  attributes: TermAttributeVector;
 }
 
+type TermVector external = Term[:];
+language cpp """
+  using TermVector = offset_span<Term>;
+"""
+
 struct InlineVariant {
-  name: Name;
-  terms: Term[:];
+  name: QualifiedName;
+  terms: TermVector;
   default_term: uint64;
   term_offset: Width;
   term_size: Width;
@@ -86,8 +108,8 @@ struct InlineVariant {
 }
 
 struct OutlineVariant {
-  name: Name;
-  terms: Term[:];
+  name: QualifiedName;
+  terms: TermVector;
   default_term: uint64;
   tag_width: Width;
   tag_alignment: Width;
@@ -104,6 +126,7 @@ struct Array {
 
 struct Vector {
   elem: Offset;
+  elem_width: Width;
   min_length: uint64;
   max_length: int64;
   ppl_count: int64;
@@ -128,11 +151,16 @@ variant Type {
   Vector: Vector;
 }
 
+type TypeVector external = Type[:];
+language cpp """
+  using TypeVector = offset_span<Type>;
+"""
+
 struct Protocol {
   pj_version: int32;
   head: int32;
   buffer_offset: Width;
-  types: Type[:];
+  types: TypeVector;
 }
 
 protocol Schema : Protocol;

@@ -97,17 +97,18 @@ int main(int argc, char** argv) {
     sourcegen.addWireProtocol(name, planned);
   } else {
     for (auto& decl : parsed_file.decls) {
-      auto type = decl.type.cast<pj::types::ValueType>();
       switch (decl.kind) {
         case pj::ParsedProtoFile::DeclKind::kType:
-          sourcegen.addTypedef(decl.name, type);
+          sourcegen.addTypedef(decl.name,
+                               decl.type.cast<pj::types::ValueType>());
           break;
         case pj::ParsedProtoFile::DeclKind::kComposite:
-          sourcegen.addComposite(type, decl.is_external);
+          sourcegen.addComposite(decl.type.cast<pj::types::ValueType>(),
+                                 decl.is_external);
           break;
         case pj::ParsedProtoFile::DeclKind::kLanguage:
           if (decl.language == "cpp") {
-            sourcegen.addText(decl.language_text);
+            sourcegen.addText(decl.language_space, decl.language_text);
           }
           break;
       }

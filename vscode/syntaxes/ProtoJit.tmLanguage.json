@@ -8,7 +8,7 @@
       "name": "keyword.other"
     },
     {
-      "match": "\\bint\\d+\\b|\\buint\\d+\\b|\\bchar\\d+",
+      "match": "\\bint\\d+\\b|\\buint\\d+\\b|\\bany\\b|\\bchar\\d+",
       "name": "storage.type"
     },
     {

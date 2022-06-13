@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <tuple>
 
-#include "protojit.hpp"
+#include "runtime.hpp"
 
 namespace pj {
 
