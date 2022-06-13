@@ -11,6 +11,9 @@
 #include "defer.hpp"
 #include "ir.hpp"
 #include "llvm_extra.hpp"
+#include "portal.hpp"
+#include "protojit.hpp"
+#include "reflect.hpp"
 #include "side_effect_analysis.hpp"
 #include "util.hpp"
 
@@ -87,12 +90,12 @@ struct LLVMGenPass
     return mlir::IntegerAttr::get(intType(wordSize()), value);
   }
 
-  mlir::Value buildWordConstant(mlir::Location& loc, mlir::OpBuilder& _,
+  mlir::Value buildWordConstant(const mlir::Location& loc, mlir::OpBuilder& _,
                                 size_t value) {
     return buildIntConstant(loc, _, wordSize(), value);
   }
 
-  mlir::Value buildIntConstant(mlir::Location& loc, mlir::OpBuilder& _,
+  mlir::Value buildIntConstant(const mlir::Location& loc, mlir::OpBuilder& _,
                                Width width, size_t value) {
     return _.create<mlir::ConstantOp>(loc, intType(width),
                                       intAttr(width, value));
@@ -1085,11 +1088,63 @@ LogicalResult SizeOpLowering::matchAndRewrite(
 LogicalResult ReflectOpLowering::matchAndRewrite(
     ReflectOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
-  // TODO:
-  // 1. Create binary representation of the source schema in the host's self
+  auto dst_any = op.dst().getType().cast<AnyType>();
+
+  // Create binary representation of the source schema in the host's self
   // representation.
-  // 2. Save the schema in the constant pool and get a pointer to it.
-  // 3. Save pointers to the schema and object in the destination.
+  llvm::BumpPtrAllocator alloc;
+  auto rf_proto = reflect::reflect(alloc, op.src().getType().cast<ValueType>());
+  llvm::SmallVector<char, 0> buf;
+  {
+    auto re_ctx = runtime::Context();
+    auto host_repr =
+        op.dst().getType().cast<AnyType>()->self.cast<ProtocolType>();
+    runtime::Protocol protocol{
+        reinterpret_cast<const PJProtocol*>(host_repr.getAsOpaquePointer())};
+    re_ctx.addSizeFunction<reflect::Protocol>("size", protocol, "",
+                                              /*round_up_size=*/true);
+    re_ctx.addEncodeFunction<reflect::Protocol>("encode", protocol,
+                                                /*path=*/"");
+    auto portal = re_ctx.compile();
+
+    const auto size_fn = portal.getSizeFunction<reflect::Protocol>("size");
+    const auto encode_fn =
+        portal.getEncodeFunction<reflect::Protocol>("encode");
+
+    buf.resize(size_fn(&rf_proto));
+    encode_fn(&rf_proto, buf.data());
+  }
+
+  // Save the schema in the constant pool and get a pointer to it.
+  auto schema_type = LLVMArrayType::get(pass->intType(Bytes(1)), buf.size());
+  auto schema_cst = pass->buildGlobalConstant(
+      op.getLoc(), _.getListener(), schema_type,
+      DenseIntElementsAttr::get(
+          RankedTensorType::get(static_cast<int64_t>(buf.size()),
+                                _.getIntegerType(8)),
+          buf));
+
+  Value schema_ptr = _.create<LLVM::AddressOfOp>(
+      op.getLoc(), LLVMPointerType::get(schema_type), schema_cst.getName());
+
+  // Save pointers to the schema and object in the destination.
+  // TODO: verify data_ref_width and type_ref_width
+  Value save_data_ptr =
+      _.create<GEPOp>(op.getLoc(), pass->bytePtrType(), operands[1],
+                      pass->buildWordConstant(
+                          op.getLoc(), _, dst_any->data_ref_offset.bytes()));
+  save_data_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(pass->bytePtrType()), operands[1]);
+
+  Value save_schema_ptr =
+      _.create<GEPOp>(op.getLoc(), pass->bytePtrType(), operands[1],
+                      pass->buildWordConstant(
+                          op.getLoc(), _, dst_any->type_ref_offset.bytes()));
+  save_schema_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(schema_ptr.getType()), save_schema_ptr);
+
+  _.create<StoreOp>(op.getLoc(), operands[0], save_data_ptr);
+  _.create<StoreOp>(op.getLoc(), schema_ptr, save_schema_ptr);
 
   _.eraseOp(op);
   return success();

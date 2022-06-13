@@ -730,7 +730,8 @@ struct VectorType
 // value of an unknown type from a counterparty and traverse the value in its
 // original form.
 //
-// An instance of AnyType can only exist in memory.
+// An instance of AnyType can only exist in memory, so data_ref_width and
+// type_ref_width must be equal to the host word size.
 struct Any {
   Width data_ref_width;
   Width data_ref_offset;

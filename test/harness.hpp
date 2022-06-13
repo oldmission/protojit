@@ -69,6 +69,7 @@ class PJGenericTest
     uintptr_t enc_size;
     uintptr_t dec_buffer_size;
     std::unique_ptr<char[]> dec_buffer;
+    runtime::Portal portal;
   };
 
   template <typename SrcT, typename DstT = SrcT>
@@ -98,15 +99,16 @@ class PJGenericTest
                               no_src_path ? "" : options.src_path,
                               options.round_up_size);
 
-    const auto portal = ctx->compile();
+    Results results{.portal = ctx->compile()};
 
-    const auto size_fn = portal.getSizeFunction<Src>("size");
-    const auto encode_fn = portal.getEncodeFunction<Src>("encode");
-    const auto decode_fn = portal.getDecodeFunction<Dst>("decode");
+    const auto size_fn = results.portal.template getSizeFunction<Src>("size");
+    const auto encode_fn =
+        results.portal.template getEncodeFunction<Src>("encode");
+    const auto decode_fn =
+        results.portal.template getDecodeFunction<Dst>("decode");
 
-    Results results;
     results.enc_size = size_fn(options.from);
-    results.dec_buffer_size = 0;
+    results.dec_buffer_size = 4;  // SAMIR_TODO2
     if (options.to != nullptr) {
       while (true) {
         auto enc_buffer = std::make_unique<char[]>(results.enc_size);

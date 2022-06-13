@@ -69,17 +69,17 @@ types::ValueType unreflect(const Type& type, int32_t index,
 
 static constexpr uint32_t kProtojitMajorVersion = 0;
 
-Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
+Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ValueType head) {
   std::vector<Type> pool;
   std::unordered_map<const void*, int32_t> cache;
-  const int32_t head_offset = reflect(protocol->head, alloc, pool, cache);
+  const int32_t head_offset = reflect(head, alloc, pool, cache);
   auto* pool_alloc = alloc.Allocate<Type>(pool.size());
   std::copy(pool.begin(), pool.end(), pool_alloc);
 
   const auto proto = Protocol{
       .pj_version = kProtojitMajorVersion,
       .head = head_offset,
-      .buffer_offset = protocol->buffer_offset,
+      .buffer_offset = Bytes(0),
       .types = {pool_alloc, pool.size()},
   };
 

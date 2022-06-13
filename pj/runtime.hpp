@@ -57,14 +57,13 @@ class Portal {
 class Protocol {
  public:
   Protocol(const Protocol& proto) : proto_(proto.proto_) {}
+  Protocol(const PJProtocol* proto) : proto_(proto) {}
 
   bool isBinaryCompatibleWith(Protocol other) const {
     return PJIsBinaryCompatible(proto_, other.proto_);
   }
 
  private:
-  Protocol(const PJProtocol* proto) : proto_(proto) {}
-
   const PJProtocol* proto_;
   friend class Context;
 };

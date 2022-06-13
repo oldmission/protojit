@@ -183,6 +183,8 @@ cc_library(
         "llvm_extra_conversions.cpp.inc",
         "llvm_utils.hpp",
         "passes.hpp",
+        "portal.hpp",
+        "portal_impl.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
         "span.hpp",
@@ -212,8 +214,6 @@ cc_library(
     srcs = [
         "context.cpp",
         "context.hpp",
-        "portal.hpp",
-        "portal_impl.hpp",
         "runtime.cpp",
         "schema/reflect.pj.v0_1.hpp",
         "schema/versions.hpp",

@@ -63,6 +63,7 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
                                  Bits type_ref_width, Bits size, Bits alignment,
                                  const void* self_type) {
+  auto* ctx = &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_;
   auto any = pj::types::Any{
       .data_ref_width = pj::Bits(data_ref_width),
       .data_ref_offset = pj::Bits(data_ref_offset),
@@ -70,11 +71,15 @@ const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
       .type_ref_offset = pj::Bits(type_ref_offset),
       .size = pj::Bits(size),
       .alignment = pj::Bits(alignment),
-      .self = mlir::Type::getFromOpaquePointer(self_type)
-                  .cast<pj::types::ValueType>(),
+      .self = pj::types::ProtocolType::get(
+          ctx,
+          pj::types::Protocol{
+              .head = mlir::Type::getFromOpaquePointer(self_type)
+                          .cast<pj::types::ValueType>(),
+              .buffer_offset = pj::Bytes(0),
+          }),
   };
-  auto any_type = pj::types::AnyType::get(
-      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_, any);
+  auto any_type = pj::types::AnyType::get(ctx, any);
   return reinterpret_cast<const PJAnyType*>(any_type.getAsOpaquePointer());
 }
 
