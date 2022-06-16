@@ -46,7 +46,8 @@ using namespace types;
   V(PoisonOp)                   \
   V(SizeOp)                     \
   V(ReflectOp)                  \
-  V(AssumeOp)
+  V(AssumeOp)                   \
+  V(DefineProtocolOp)
 
 namespace {
 struct LLVMGenPass
@@ -1096,6 +1097,22 @@ LogicalResult AssumeOpLowering::matchAndRewrite(
     ir::AssumeOp op, ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   _.create<LLVM::AssumeOp>(op.getLoc(), operands[0]);
+  _.eraseOp(op);
+  return success();
+}
+
+LogicalResult DefineProtocolOpLowering::matchAndRewrite(
+    ir::DefineProtocolOp op, ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto proto_cst_type =
+      LLVMArrayType::get(pass->intType(Bytes(1)), op.proto().size());
+  auto proto_cst_attr = DenseIntElementsAttr::get(
+      RankedTensorType::get(static_cast<int64_t>(op.proto().size()),
+                            _.getIntegerType(8)),
+      op.proto());
+  _.setInsertionPointToStart(pass->module().getBody());
+  _.create<LLVM::GlobalOp>(op.getLoc(), proto_cst_type, /*isConstant=*/false,
+                           LLVM::Linkage::External, op.name(), proto_cst_attr);
   _.eraseOp(op);
   return success();
 }

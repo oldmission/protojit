@@ -238,3 +238,7 @@ def SizeFunctionOp : ProtoJit_Op<"sizefunc"> {
     BoolAttr:$round_up
   );
 }
+
+def DefineProtocolOp : ProtoJit_Op<"defproto"> {
+  let arguments = (ins StrAttr:$name, StrAttr:$proto);
+}
