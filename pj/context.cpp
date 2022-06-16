@@ -166,6 +166,14 @@ void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
       types::PathAttr::fromString(&ctx_, src_path), round_up));
 }
 
+void ProtoJitContext::addProtocolDefinition(std::string_view name,
+                                            llvm::StringRef proto_data) {
+  // TODO: use a more interesting location
+  auto loc = builder_.getUnknownLoc();
+  module_->push_back(builder_.create<DefineProtocolOp>(
+      loc, kUserFunctionPrefix + std::string{name}, proto_data));
+}
+
 #define DEBUG_TYPE "pj.compile"
 
 static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
