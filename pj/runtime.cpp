@@ -38,6 +38,14 @@ pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
       .cast<pj::types::ProtocolType>();
 }
 
+PJContext* PJGetContext() {
+  return reinterpret_cast<PJContext*>(new pj::ProtoJitContext());
+}
+
+void PJFreeContext(PJContext* ctx) {
+  delete reinterpret_cast<pj::ProtoJitContext*>(ctx);
+}
+
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
                                  Bits type_ref_width, Bits size, Bits alignment,
@@ -291,3 +299,60 @@ void PJAddSizeFunction(PJContext* ctx_, const char* name, const void* src_,
   auto protocol = ConvertProtocol(protocol_);
   ctx->addSizeFunction(name, src, protocol, src_path, round_up);
 }
+
+void PJPrecompile(PJContext* ctx, const char* filename) {
+  reinterpret_cast<pj::ProtoJitContext*>(ctx)->precompile(filename);
+}
+
+const PJPortal* PJCompile(PJContext* ctx) {
+  auto portal = reinterpret_cast<pj::ProtoJitContext*>(ctx)->compile();
+  auto* handle = reinterpret_cast<const PJPortal*>(portal.release());
+  return handle;
+}
+
+SizeFunction PJGetSizeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)->GetSizeFunction<void>(
+      name);
+}
+
+EncodeFunction PJGetEncodeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)->GetEncodeFunction<void>(
+      name);
+}
+
+DecodeFunction PJGetDecodeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)
+      ->GetDecodeFunction<void, BoundedBuffer>(name);
+}
+
+void PJFreePortal(const PJPortal* portal) {
+  delete reinterpret_cast<const pj::Portal*>(portal);
+}
+
+namespace pj {
+
+PJContext* getContext() { return PJGetContext(); }
+
+void freeContext(PJContext* ctx) { PJFreeContext(ctx); }
+
+uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto) {
+  return PJGetProtoSize(ctx, proto);
+}
+
+void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf) {
+  PJEncodeProto(ctx, proto, buf);
+}
+
+const PJProtocol* decodeProto(PJContext* ctx, const char* buf) {
+  return PJDecodeProto(ctx, buf);
+}
+
+void precompile(PJContext* ctx, const std::string& filename) {
+  return PJPrecompile(ctx, filename.c_str());
+}
+
+std::unique_ptr<Portal> compile(PJContext* ctx) {
+  return reinterpret_cast<ProtoJitContext*>(ctx)->compile();
+}
+
+}  // namespace pj

@@ -25,17 +25,9 @@ const PJProtocol* planProtocol(PJContext* ctx) {
   return plan<Head>(ctx, gen::ProtocolHead<Proto>::tag());
 }
 
-uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto) {
-  return PJGetProtoSize(ctx, proto);
-}
-
-void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf) {
-  PJEncodeProto(ctx, proto, buf);
-}
-
-const PJProtocol* decodeProto(PJContext* ctx, const char* buf) {
-  return PJDecodeProto(ctx, buf);
-}
+uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto);
+void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf);
+const PJProtocol* decodeProto(PJContext* ctx, const char* buf);
 
 template <typename Src>
 void addEncodeFunction(PJContext* ctx, const std::string& name,
@@ -66,6 +58,8 @@ void addSizeFunction(PJContext* ctx, const std::string& name,
   PJAddSizeFunction(ctx, name.c_str(), gen::BuildPJType<Src>::build(ctx),
                     protocol, src_path.c_str(), round_up);
 }
+
+void precompile(PJContext* ctx, const std::string& filename);
 
 std::unique_ptr<Portal> compile(PJContext* ctx);
 

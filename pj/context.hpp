@@ -2,16 +2,17 @@
 
 #include <memory>
 
+#include <llvm/IR/Module.h>
+
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 
+#include "portal.hpp"
 #include "types.hpp"
 #include "util.hpp"
 
 namespace pj {
-
-class Portal;
 
 struct ProtoJitContext {
   ProtoJitContext();
@@ -36,6 +37,7 @@ struct ProtoJitContext {
                        types::ProtocolType protocol, llvm::StringRef src_path,
                        bool round_up);
 
+  void precompile(std::string_view filename, size_t opt_level = 3);
   std::unique_ptr<Portal> compile(size_t opt_level = 3);
 
   // TODO: make these private after removing old compile API.
@@ -46,6 +48,9 @@ struct ProtoJitContext {
  private:
   void resetModule();
   Portal* schemaPortal();
+
+  std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
+  compileToLLVM(size_t opt_level);
 
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);
 

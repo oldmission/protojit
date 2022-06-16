@@ -29,6 +29,24 @@ typedef struct PJOutlineVariantType PJOutlineVariantType;
 typedef struct PJArrayType PJArrayType;
 typedef struct PJVectorType PJVectorType;
 typedef struct PJProtocol PJProtocol;
+typedef struct PJPortal PJPortal;
+
+struct BoundedBuffer {
+  char* ptr;
+  uint64_t size;
+};
+
+// Takes the decoded object and an additional state parameter.
+typedef void (*Handler)(const void*, const void*);
+
+typedef uintptr_t (*SizeFunction)(const void*);
+typedef void (*EncodeFunction)(const void*, char*);
+typedef BoundedBuffer (*DecodeFunction)(const char*, void*, BoundedBuffer,
+                                        Handler[], const void*);
+
+PJContext* PJGetContext();
+
+void PJFreeContext(PJContext* ctx);
 
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
@@ -98,6 +116,15 @@ void PJAddDecodeFunction(PJContext* ctx, const char* name,
 void PJAddSizeFunction(PJContext* ctx, const char* name, const void* src,
                        const PJProtocol* protocol, const char* src_path,
                        bool round_up);
+
+void PJPrecompile(PJContext* ctx, const char* filename);
+const PJPortal* PJCompile(PJContext* ctx);
+
+SizeFunction PJGetSizeFunction(const PJPortal* portal, const char* name);
+EncodeFunction PJGetEncodeFunction(const PJPortal* portal, const char* name);
+DecodeFunction PJGetDecodeFunction(const PJPortal* portal, const char* name);
+
+void PJFreePortal(const PJPortal* portal);
 
 #ifdef __cplusplus
 }  // extern "C"
