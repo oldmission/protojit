@@ -11,8 +11,8 @@ namespace pj {
 
 class SourceGenerator {
  public:
-  SourceGenerator(const ArchDetails& arch, const SourceId& outer_namespace)
-      : arch_(arch), outer_namespace_(outer_namespace), counter_(0) {}
+  SourceGenerator(const SourceId& outer_namespace)
+      : outer_namespace_(outer_namespace), counter_(0) {}
 
   void addTypedef(const SourceId& name, types::ValueType type);
   void addProtocolHead(const SourceId& name, types::ValueType type,
@@ -138,7 +138,6 @@ class SourceGenerator {
   std::stringstream builders_;
   std::unordered_set<const void*> generated_;
 
-  ArchDetails arch_;
   SourceId outer_namespace_;
   size_t counter_;
 };

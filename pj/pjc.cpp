@@ -74,8 +74,7 @@ int main(int argc, char** argv) {
   auto& parsed_file = parse_scope.parsed_files.at(path);
 
   // TODO: support cross-compilation
-  pj::SourceGenerator sourcegen{pj::ArchDetails::Host(),
-                                decodeScopedName(OuterNamespace.getValue())};
+  pj::SourceGenerator sourcegen{decodeScopedName(OuterNamespace.getValue())};
 
   const auto& proto = GenerateProtocol.getValue();
   if (!proto.empty()) {
