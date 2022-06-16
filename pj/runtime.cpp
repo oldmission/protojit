@@ -270,15 +270,14 @@ void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,
 
 void PJAddDecodeFunction(PJContext* ctx_, const char* name,
                          const PJProtocol* protocol_, const void* dest_,
-                         uintptr_t num_handlers, const PJHandler* handlers_[]) {
+                         uintptr_t num_handlers, const char* handlers_[]) {
   auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
   auto protocol = ConvertProtocol(protocol_);
   auto dest = mlir::Type::getFromOpaquePointer(dest_);
 
-  std::vector<std::pair<std::string, const void*>> handlers;
+  std::vector<std::string> handlers;
   for (uintptr_t i = 0; i < num_handlers; ++i) {
-    handlers.push_back(std::make_pair(std::string{handlers_[i]->name},
-                                      handlers_[i]->function));
+    handlers.push_back(handlers_[i]);
   }
 
   ctx->addDecodeFunction(name, protocol, dest, handlers);

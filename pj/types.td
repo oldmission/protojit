@@ -48,7 +48,10 @@ def ProtocolType :
     Type<CPred<"$_self.isa<::pj::types::ProtocolType>()">, "protocol">;
 
 def UserStateType :
-    Type<CPred<"$_self.isa<pj::ir::UserStateType>()">, "user state">;
+    Type<CPred<"$_self.isa<pj::types::UserStateType>()">, "user state">;
+
+def HandlersArrayType :
+    Type<CPred<"$_self.isa<pj::types::HandlersArrayType>()">, "handlers array">;
 
 def ProtoJitAnyType :
     Type<CPred<"$_self.isa<::pj::types::AnyType>()">, "any">;

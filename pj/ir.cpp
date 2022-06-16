@@ -17,6 +17,8 @@ ProtoJitDialect::~ProtoJitDialect() {}
 void ProtoJitDialect::printType(Type type, DialectAsmPrinter& p) const {
   if (type.isa<UserStateType>()) {
     p << "userstate";
+  } else if (type.isa<HandlersArrayType>()) {
+    p << "handlers";
   } else if (type.isa<ValueType>()) {
     type.cast<ValueType>().print(p.getStream());
   } else if (type.isa<BoundedBufferType>()) {
@@ -39,7 +41,7 @@ void ProtoJitDialect::printAttribute(Attribute attr,
   } else if (auto handler = attr.dyn_cast<DispatchHandlerAttr>()) {
     auto& os = p.getStream();
     handler.path().print(os);
-    os << " -> " << handler.address();
+    os << "=" << handler.index();
   } else {
     UNREACHABLE();
   }
@@ -49,9 +51,10 @@ ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
     : Dialect(getDialectNamespace(), ctx, TypeID::get<ProtoJitDialect>()) {
   addAttributes<WidthAttr, PathAttr, DispatchHandlerAttr>();
 
-  addTypes<UserStateType, IntType, UnitType, StructType, InlineVariantType,
-           OutlineVariantType, ArrayType, VectorType, AnyType, ProtocolType,
-           BoundedBufferType, RawBufferType, DummyBufferType>();
+  addTypes<HandlersArrayType, UserStateType, UnitType, IntType, StructType,
+           InlineVariantType, OutlineVariantType, ArrayType, VectorType,
+           AnyType, ProtocolType, BoundedBufferType, RawBufferType,
+           DummyBufferType>();
 
   addOperations<
 #define GET_OP_LIST

@@ -843,7 +843,7 @@ struct BoundedBufferType
 };
 
 struct DispatchHandlerStorage : public mlir::AttributeStorage {
-  using KeyTy = std::pair<PathAttr, const void*>;
+  using KeyTy = std::pair<PathAttr, uint64_t>;
 
   DispatchHandlerStorage(KeyTy key) : key(key) {}
 
@@ -873,7 +873,7 @@ struct DispatchHandlerAttr
 
   void print(llvm::raw_ostream& os) const;
   PathAttr path() const { return getImpl()->key.first; }
-  const void* address() const { return getImpl()->key.second; }
+  uint64_t index() const { return getImpl()->key.second; }
 };
 
 void printType(llvm::raw_ostream& os, mlir::Type type);
@@ -912,6 +912,17 @@ struct UserStateType : public mlir::Type::TypeBase<UserStateType, mlir::Type,
   mlir::Type toLLVM() const;
 
   static UserStateType get(mlir::MLIRContext* ctx) { return Base::get(ctx); }
+};
+
+struct HandlersArrayType
+    : public mlir::Type::TypeBase<HandlersArrayType, mlir::Type,
+                                  mlir::TypeStorage> {
+  using Base::Base;
+  mlir::Type toLLVM() const;
+
+  static HandlersArrayType get(mlir::MLIRContext* ctx) {
+    return Base::get(ctx);
+  }
 };
 
 }  // namespace types

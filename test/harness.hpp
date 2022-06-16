@@ -64,8 +64,9 @@ class PJGenericTest
     handlers[I] = [callback](const void* buf) {
       return callback(*reinterpret_cast<const T*>(buf));
     };
-    branches.push_back(std::make_pair(
-        term, reinterpret_cast<const void*>(&handleDispatch<I>)));
+    branches.push_back(term);
+    fn_ptrs.push_back(
+        const_cast<void*>(reinterpret_cast<const void*>(&handleDispatch<I>)));
   }
 
   struct Results {
@@ -127,13 +128,15 @@ class PJGenericTest
         auto [buf, remaining_size] = decode_fn(
             enc_buffer.get(), options.to,
             std::make_pair(results.dec_buffer.get(), results.dec_buffer_size),
+            reinterpret_cast<void (**)(const Dst*, const void*)>(
+                fn_ptrs.data()),
             &handlers);
 
         if (buf == nullptr) {
           EXPECT_TRUE(options.expect_dec_buffer);
 
           // Horribly inefficient, but it ensures that any off-by-one error in
-          // the decoding size check will be caught by ASAN
+          // the decoding size check will be caught by ASAN.
           results.dec_buffer_size += 1;
           continue;
         }
@@ -147,7 +150,8 @@ class PJGenericTest
     return results;
   }
 
-  std::vector<std::pair<std::string, const void*>> branches;
+  std::vector<std::string> branches;
+  std::vector<void*> fn_ptrs;
   std::vector<std::function<void(const void*)>> handlers;
   std::set<std::string> waiting_matches;
   bool no_tag;

@@ -120,7 +120,7 @@ bool NominalType::classof(mlir::Type val) {
 
 void DispatchHandlerAttr::print(llvm::raw_ostream& os) const {
   path().print(os);
-  os << reinterpret_cast<uintptr_t>(address());
+  os << "=" << index();
 }
 
 bool ValueType::isEnum() const {

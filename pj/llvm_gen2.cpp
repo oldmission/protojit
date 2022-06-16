@@ -187,6 +187,7 @@ struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
       : mlir::LLVMTypeConverter(ctx), pass(pass) {
     addConversion([=](ValueType type) { return pass->bytePtrType(); });
     addConversion([=](UserStateType type) { return pass->bytePtrType(); });
+    addConversion([=](HandlersArrayType type) { return pass->wordPtrType(); });
     addConversion(
         [=](BoundedBufferType type) { return pass->boundedBufType(); });
     addConversion([=](RawBufferType type) { return pass->rawBufType(); });
@@ -226,9 +227,11 @@ Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
                              Value buf) {
   if (buf.getType() == boundedBufType()) {
     return buildBoundedBufferDestructuring(loc, _, buf).first;
-  } else if (buf.getType() == rawBufType()) {
+  }
+  if (buf.getType() == rawBufType()) {
     return buf;
-  } else if (buf.getType() == dummyBufType()) {
+  }
+  if (buf.getType() == dummyBufType()) {
     return _.create<LLVM::NullOp>(loc, bytePtrType());
   }
   UNREACHABLE();
@@ -573,7 +576,7 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
 
   llvm::SmallVector<Type, 2> dispatch_args = {
       operands[0].getType(),
-      operands[1].getType(),
+      operands[2].getType(),
   };
   auto void_ty = LLVM::LLVMVoidType::get(_.getContext());
   auto dispatch_fn_type = LLVM::LLVMFunctionType::get(void_ty, dispatch_args);
@@ -583,7 +586,7 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
 
   Value callback = _.create<LLVM::LoadOp>(loc, callback_store);
 
-  // Check if the callback is set
+  // Check if the callback is set.
   auto zero = _.create<LLVM::ConstantOp>(
       loc, callback.getType(), _.getIntegerAttr(_.getIntegerType(64), 0));
   auto cond =
@@ -598,10 +601,17 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
                            ValueRange{});
 
   _.setInsertionPointToStart(call_block);
+
+  // Handler indices stored in the slot are +1, so 0 represents no handler.
+  callback =
+      _.create<LLVM::SubOp>(loc, callback, pass->buildWordConstant(loc, _, 1));
+  callback =
+      _.create<LLVM::GEPOp>(loc, pass->wordPtrType(), operands[1], callback);
+  callback = _.create<LLVM::LoadOp>(loc, callback);
   callback = _.create<LLVM::IntToPtrOp>(loc, dispatch_type, callback);
   auto call = _.create<LLVM::CallOp>(
       loc, TypeRange{LLVM::LLVMVoidType::get(_.getContext())},
-      ValueRange{callback, operands[0], operands[1]});
+      ValueRange{callback, operands[0], operands[2]});
   ASSERT(call.verify().succeeded());
   _.create<LLVM::BrOp>(loc, ValueRange{}, end_block);
 
@@ -629,7 +639,10 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
   auto [__, callback_store] = pass->getEffectDefsFor(op);
 
-  auto target = pass->buildWordConstant(loc, _, op.target().getZExtValue());
+  // SAMIR_TODO2: change handler index type to size_t or intptr_t
+
+  // We set the handler index +1 so that 0 denotes no handler being set.
+  auto target = pass->buildWordConstant(loc, _, op.target().getZExtValue() + 1);
   _.create<LLVM::StoreOp>(loc, target, callback_store);
 
   _.eraseOp(op);

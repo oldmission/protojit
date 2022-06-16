@@ -128,21 +128,17 @@ void read(PJContext* ctx) {
   const PJProtocol* proto = readSchemaFromFile(ctx, SchemaFile.getValue());
   std::cout << "Read optimized protocol from schema file" << std::endl;
 
-  void (*handle_cat)(Head*, const void*) = [](Head* adoption, const void*) {
+  void (*handle_cat)(const Head*, const void*) = [](const Head* adoption,
+                                                    const void*) {
     std::cout << "Got cat adoption message" << std::endl;
   };
-  void (*handle_dog)(Head*, const void*) = [](Head* adoption, const void*) {
+  void (*handle_dog)(const Head*, const void*) = [](const Head* adoption,
+                                                    const void*) {
     std::cout << "Got dog adoption message" << std::endl;
   };
 
-  pj::addDecodeFunction<Head>(
-      ctx, "decode", proto, /*handlers=*/
-      {
-          std::make_pair("animal.specifics.cat",
-                         reinterpret_cast<const void*>(handle_cat)),
-          std::make_pair("animal.specifics.dog",
-                         reinterpret_cast<const void*>(handle_dog)),
-      });
+  pj::addDecodeFunction<Head>(ctx, "decode", proto, /*handlers=*/
+                              {"animal.specifics.cat", "animal.specifics.dog"});
 
   auto portal = pj::compile(ctx);
   std::cout << "Compiled decode function" << std::endl;
@@ -168,10 +164,14 @@ void read(PJContext* ctx) {
     // Decode the message, increasing the size of the decode buffer if
     // necessary.
     Head dst{.animal = {.specifics = {.value = {.cat = {}}}}};
+
+    using HandlerT = void (*)(const Head*, const void*);
+    HandlerT handlers[2] = {handle_cat, handle_dog};
+
     while (true) {
-      auto [remaining_buf, _] =
-          decode(data_buf.data() + 8, &dst,
-                 std::make_pair(dec_buf.data(), dec_buf.size()), nullptr);
+      auto [remaining_buf, _] = decode(
+          data_buf.data() + 8, &dst,
+          std::make_pair(dec_buf.data(), dec_buf.size()), handlers, nullptr);
       if (remaining_buf != nullptr) break;
       dec_buf.resize(dec_buf.size() * 2);
     }

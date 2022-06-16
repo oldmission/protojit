@@ -98,7 +98,7 @@ struct GeneratePass
                      const Term* src_term,
                      llvm::SmallVector<const Term*, 1> dst_terms, Value src,
                      Value dst, Value& buffer,
-                     llvm::StringMap<const void*>& handler_map);
+                     llvm::StringMap<uint64_t>& handler_map);
 
   mlir::Value generateVectorCopyLoop(mlir::Location loc, mlir::OpBuilder& _,
                                      Value src, Value src_start,
@@ -231,7 +231,7 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                                  const Term* src_term,
                                  llvm::SmallVector<const Term*, 1> dst_terms,
                                  Value src, Value dst, Value& buffer,
-                                 llvm::StringMap<const void*>& handler_map) {
+                                 llvm::StringMap<uint64_t>& handler_map) {
   auto* ctx = _.getContext();
 
   if (!dst_terms.empty()) {
@@ -289,8 +289,7 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
       it != handler_map.end()) {
     assert(dst_terms.size() <= 1);
     _.create<SetCallbackOp>(
-        loc, mlir::IntegerAttr::get(mlir::IndexType::get(ctx),
-                                    reinterpret_cast<int64_t>(it->second)));
+        loc, mlir::IntegerAttr::get(mlir::IndexType::get(ctx), it->second));
   }
 }
 
@@ -350,7 +349,7 @@ mlir::FuncOp GeneratePass::getOrCreateStructTranscodeFn(
       if (!handler.path().startsWith(to_field->name)) continue;
       field_handlers.emplace_back(DispatchHandlerAttr::get(
           ctx, std::make_pair(handler.path().into(to_field->name),
-                              handler.address())));
+                              handler.index())));
     }
 
     auto handlers_attr = mlir::ArrayAttr::get(ctx, field_handlers);
@@ -405,10 +404,10 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     it->second.emplace_back(&term);
   }
 
-  llvm::StringMap<const void*> handler_map;
+  llvm::StringMap<uint64_t> handler_map;
   for (auto& attr : handlers) {
     auto handler = attr.cast<DispatchHandlerAttr>();
-    handler_map.insert({handler.path().getValue()[0], handler.address()});
+    handler_map.insert({handler.path().getValue()[0], handler.index()});
   }
 
   llvm::SmallVector<std::pair<intptr_t, mlir::Block*>, 4> blocks;
@@ -902,12 +901,13 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
   const auto& proto = op.src().cast<ProtocolType>();
 
   // Create a function with the given name, accepting a protocol, destination
-  // type, buffer, and user-state pointer. The function contains a single
-  // DecodeOp.
+  // type, buffer, handler array, and user-state pointer. The function contains
+  // a single DecodeOp.
   auto func = mlir::FuncOp::create(
       loc, op.name(),
       _.getFunctionType(
           {op.src(), op.dst(), types::BoundedBufferType::get(getContext()),
+           HandlersArrayType::get(getContext()),
            UserStateType::get(getContext())},
           types::BoundedBufferType::get(getContext())));
 
@@ -937,7 +937,8 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
                                     func.getArgument(1), func.getArgument(2),
                                     PathAttr::none(ctx), op.handlers());
 
-  _.create<InvokeCallbackOp>(loc, func.getArgument(1), func.getArgument(3));
+  _.create<InvokeCallbackOp>(loc, func.getArgument(1), func.getArgument(3),
+                             func.getArgument(4));
 
   _.create<YieldOp>(loc, buf);
 
