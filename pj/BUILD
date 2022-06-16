@@ -202,7 +202,6 @@ cc_library(
         "lib.cpp",
         "portal.cpp",
         "portal_impl.hpp",
-        "protojit.cpp",
         "runtime.cpp",
     ],
     hdrs = [

@@ -169,10 +169,10 @@ void read(PJContext* ctx) {
     HandlerT handlers[2] = {handle_cat, handle_dog};
 
     while (true) {
-      auto [remaining_buf, _] = decode(
-          data_buf.data() + 8, &dst,
-          std::make_pair(dec_buf.data(), dec_buf.size()), handlers, nullptr);
-      if (remaining_buf != nullptr) break;
+      auto bbuf = decode(data_buf.data() + 8, &dst,
+                         {.ptr = dec_buf.data(), .size = dec_buf.size()},
+                         handlers, nullptr);
+      if (bbuf.ptr != nullptr) break;
       dec_buf.resize(dec_buf.size() * 2);
     }
   } while (fs.peek() != std::char_traits<char>::eof());

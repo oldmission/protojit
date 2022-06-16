@@ -125,14 +125,12 @@ class PJGenericTest
 
         encode_fn(options.from, enc_buffer.get());
 
-        auto [buf, remaining_size] = decode_fn(
+        auto bbuf = decode_fn(
             enc_buffer.get(), options.to,
-            std::make_pair(results.dec_buffer.get(), results.dec_buffer_size),
-            reinterpret_cast<void (**)(const Dst*, const void*)>(
-                fn_ptrs.data()),
-            &handlers);
+            {.ptr = results.dec_buffer.get(), .size = results.dec_buffer_size},
+            reinterpret_cast<Portal::Handler<Dst>*>(fn_ptrs.data()), &handlers);
 
-        if (buf == nullptr) {
+        if (bbuf.ptr == nullptr) {
           EXPECT_TRUE(options.expect_dec_buffer);
 
           // Horribly inefficient, but it ensures that any off-by-one error in
@@ -140,7 +138,7 @@ class PJGenericTest
           results.dec_buffer_size += 1;
           continue;
         }
-        if (remaining_size == results.dec_buffer_size) {
+        if (bbuf.size == results.dec_buffer_size) {
           results.dec_buffer = nullptr;
         }
         break;
