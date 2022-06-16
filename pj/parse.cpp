@@ -15,12 +15,27 @@ using namespace tao::pegtl;
 
 namespace pj {
 
+template <typename Path>
+std::string getPathAsString(const Path& path) {
+  std::string str;
+  bool first = true;
+  for (auto& piece : path) {
+    if (!first) {
+      str += ".";
+    }
+    first = false;
+    str += piece;
+  }
+  return str;
+}
+
 struct ParseState {
   ParsingScope& parse_scope;
   mlir::MLIRContext& ctx;
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
+  std::vector<ParsedProtoFile::Interface>& interfaces;
 
   // Updated after parsing a 'FieldDecl' rule.
   // Cleared when done with a struct/variant decl.
@@ -53,15 +68,35 @@ struct ParseState {
   // specified.
   uint64_t explicit_tag = 0;
 
-  // Populated after parsing TagPathDecl.
-  // Cleared after parsing ProtoDecl.
-  types::PathAttr tag_path;
+  // Populated after parsing PathDecl.
+  // Cleared after parsing ProtoDecl, SizerDecl, EncoderDecl, or DecoderDecl.
+  // The meaning is interpreted as tag_path for ProtoDecl, as src_path for
+  // SizerDecl and EncoderDecl, and as handlers for DecoderDecl.
+  std::vector<types::PathAttr> paths;
 
   SourceId space;
 
   // Populated after parsing Id and ScopedId.
   // Cleared by popId() and popScopedId().
   std::vector<std::vector<std::string>> ids = {{}};
+
+  // Populated after parsing RoundUpDecl.
+  // Cleared by SizerDecl.
+  bool round_up = false;
+
+  // Populated after parsing SizerDecl, EncoderDecl, and DecoderDecl,
+  // respectively.
+  // Cleared by InterfaceDecl.
+  std::vector<ParsedProtoFile::Interface::Sizer> sizers;
+  std::vector<ParsedProtoFile::Interface::Encoder> encoders;
+  std::vector<ParsedProtoFile::Interface::Decoder> decoders;
+
+  // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
+  // asserts if there is more than one entry.
+  types::PathAttr getSinglePath() {
+    assert(paths.size() <= 1);
+    return paths.empty() ? types::PathAttr::none(&ctx) : paths[0];
+  }
 
   std::string popId() {
     assert(ids.size() > 1);
@@ -111,7 +146,8 @@ struct ParseState {
       id_vec.clear();
     }
     if (error_on_failure) {
-      throw parse_error("Cannot resolve ID.", in.position());
+      throw parse_error("Cannot resolve type " + getPathAsString(id),
+                        in.position());
     }
     return {};
   }
@@ -524,20 +560,69 @@ BEGIN_ACTION(ImportDecl) {
 }
 END_ACTION()
 
-struct TagPath : seq<star<seq<identifier, tok<'.'>>>, tok<'_'>> {};
+struct Path : seq<star<seq<identifier, tok<'.'>>>, identifier> {};
 
-BEGIN_ACTION(TagPath) {
-  assert(__ tag_path.empty());
-  __ tag_path = types::PathAttr::fromString(
+BEGIN_ACTION(Path) {
+  __ paths.push_back(types::PathAttr::fromString(
       &__ ctx,
-      {in.begin(), static_cast<size_t>(std::distance(in.begin(), in.end()))});
+      {in.begin(), static_cast<size_t>(std::distance(in.begin(), in.end()))}));
 }
 END_ACTION()
 
-struct TagPathDecl : opt<if_must<tok<'@'>, TagPath>> {};
+struct PathDecl : opt<if_must<tok<'@'>, Path>> {};
+
+// Validate that path_attr points to a variant via struct fields starting from
+// head. If check_term is set, additionally validates that the final piece in
+// path_attr actually corresponds to a term in the variant.
+template <typename ActionInput>
+void checkVariantPath(const ActionInput& in, types::ValueType head,
+                      types::PathAttr path_attr, bool check_term) {
+  const auto& path = path_attr.getValue();
+  auto path_str = getPathAsString(path);
+  auto cur = head;
+  for (uintptr_t i = 0; i < path.size() - 1; ++i) {
+    const std::string& term = path[i].str();
+
+    if (!cur.isa<types::StructType>()) {
+      throw parse_error("Path " + path_str + " requests field '" + term +
+                            "' in non-struct type",
+                        in.position());
+      break;
+    }
+
+    auto struct_type = cur.cast<types::StructType>();
+    auto it =
+        std::find_if(struct_type->fields.begin(), struct_type->fields.end(),
+                     [&term](const types::StructField& field) {
+                       return field.name == term;
+                     });
+    if (it == struct_type->fields.end()) {
+      throw parse_error("Unrecognized term '" + term + "' in path " + path_str,
+                        in.position());
+    }
+
+    cur = it->type;
+  }
+
+  if (auto var = cur.dyn_cast<types::InlineVariantType>()) {
+    if (check_term) {
+      auto it = std::find_if(
+          var->terms.begin(), var->terms.end(),
+          [&](const types::Term& t) { return t.name == path.back(); });
+      if (it == var->terms.end()) {
+        throw parse_error("Path " + getPathAsString(path) +
+                              " does not match any term in the variant",
+                          in.position());
+      }
+    }
+    return;
+  }
+
+  throw parse_error("Path does not point to a variant type", in.position());
+}
 
 struct ProtoDecl
-    : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, TagPathDecl, tok<';'>> {};
+    : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, PathDecl, tok<';'>> {};
 
 BEGIN_ACTION(ProtoDecl) {
   auto head_name = __ popScopedId();
@@ -551,54 +636,138 @@ BEGIN_ACTION(ProtoDecl) {
 
   auto head = __ resolveType(in, head_name);
 
-  // Validate that the tag path points to a variant via struct fields
-  if (!__ tag_path.empty()) {
-    mlir::Type cur = head;
-    const auto& path = __ tag_path.getValue();
-    for (uintptr_t i = 0; i < path.size() - 1; ++i) {
-      const std::string& term = path[i].str();
-
-      if (!cur.isa<types::StructType>()) {
-        throw parse_error("Protocol tag path requests field '" + term +
-                              "' in non-struct type",
-                          in.position());
-        break;
-      }
-
-      auto struct_type = cur.cast<types::StructType>();
-      auto it =
-          std::find_if(struct_type->fields.begin(), struct_type->fields.end(),
-                       [&term](const types::StructField& field) {
-                         return field.name == term;
-                       });
-      if (it == struct_type->fields.end()) {
-        throw parse_error(
-            "Unrecognized term '" + term + "' in protocol tag path",
-            in.position());
-      }
-
-      cur = it->type;
-    }
-
-    if (!cur.isa<types::VariantType>()) {
-      throw parse_error("Protocol tag path does not point to a variant type",
+  auto tag_path = __ getSinglePath();
+  if (!tag_path.empty()) {
+    const auto& path = tag_path.getValue();
+    if (path.back() != "_") {
+      throw parse_error("Tag path must end with _ following variant term",
                         in.position());
     }
+    checkVariantPath(in, head, tag_path, /*check_term=*/false);
   }
 
   __ decls.emplace_back(ParsedProtoFile::Decl{
       .kind = ParsedProtoFile::DeclKind::kProtocol,
       .name = protocol_name,
       .type = head,
-      .tag_path = __ tag_path,
+      .tag_path = tag_path,
   });
 
-  __ tag_path = types::PathAttr::none(&__ ctx);
+  __ paths.clear();
+}
+END_ACTION()
+
+struct RoundUpDecl : KEYWORD("round_up") {};
+
+BEGIN_ACTION(RoundUpDecl) { __ round_up = true; }
+END_ACTION()
+
+struct SizerDecl;
+struct EncoderDecl;
+
+template <typename Decl, typename ActionInput>
+void handleSizerOrEncoderDecl(const ActionInput& in, ParseState* state) {
+  static_assert(std::is_same_v<Decl, SizerDecl> ||
+                std::is_same_v<Decl, EncoderDecl>);
+
+  auto src = __ popScopedId();
+  // Check that the src type exists.
+  auto src_type = __ resolveType(in, src);
+
+  auto name = __ popId();
+
+  auto src_path = __ getSinglePath();
+  if (!src_path.empty()) {
+    checkVariantPath(in, src_type, src_path, /*check_term=*/true);
+  }
+
+  if constexpr (std::is_same_v<Decl, SizerDecl>) {
+    __ sizers.push_back({
+        .name = name,
+        .src = src,
+        .src_path = src_path,
+        .round_up = __ round_up,
+    });
+  } else {
+    __ encoders.push_back({
+        .name = name,
+        .src = src,
+        .src_path = src_path,
+    });
+  }
+
+  __ paths.clear();
+  if constexpr (std::is_same_v<Decl, SizerDecl>) {
+    __ round_up = false;
+  }
+}
+
+struct SizerDecl : if_must<KEYWORD("sizer"), Id, opt<RoundUpDecl>, tok<':'>,
+                           ScopedId, opt<PathDecl>, tok<';'>> {};
+
+BEGIN_ACTION(SizerDecl) { handleSizerOrEncoderDecl<SizerDecl>(in, state); }
+END_ACTION()
+
+struct EncoderDecl : if_must<KEYWORD("encoder"), Id, tok<':'>, ScopedId,
+                             opt<PathDecl>, tok<';'>> {};
+
+BEGIN_ACTION(EncoderDecl) { handleSizerOrEncoderDecl<EncoderDecl>(in, state); }
+END_ACTION()
+
+struct HandlersDecl : if_must<LB, KEYWORD("handlers"), tok<'['>, Path,
+                              star<seq<tok<','>, Path>>, opt<tok<','>>,
+                              tok<']'>, tok<';'>, RB> {};
+
+struct DecoderDecl : if_must<KEYWORD("decoder"), Id, tok<':'>, ScopedId,
+                             opt<HandlersDecl>, tok<';'>> {};
+
+BEGIN_ACTION(DecoderDecl) {
+  auto dst = __ popScopedId();
+  // Check that the dst type exists.
+  auto dst_type = __ resolveType(in, dst);
+
+  for (auto handler : __ paths) {
+    checkVariantPath(in, dst_type, handler, /*check_term=*/true);
+  }
+
+  // Check for duplicates
+  for (auto it = __ paths.begin(); it != __ paths.end(); ++it) {
+    if (std::find(std::next(it), __ paths.end(), *it) != __ paths.end()) {
+      throw parse_error(
+          "Duplicate handler term " + getPathAsString(it->getValue()),
+          in.position());
+    }
+  }
+
+  __ decoders.push_back({
+      .name = __ popId(),
+      .dst = dst,
+      .handlers = __ paths,
+  });
+
+  __ paths.clear();
+}
+END_ACTION()
+
+struct InterfaceDecl
+    : if_must<KEYWORD("interface"), Id, LB,
+              star<sor<SizerDecl, EncoderDecl, DecoderDecl>>, RB> {};
+
+BEGIN_ACTION(InterfaceDecl) {
+  __ interfaces.push_back({
+      .sizers = __ sizers,
+      .encoders = __ encoders,
+      .decoders = __ decoders,
+  });
+
+  __ sizers.clear();
+  __ encoders.clear();
+  __ decoders.clear();
 }
 END_ACTION()
 
 struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
-                     TypeDecl, SpaceDecl> {};
+                     TypeDecl, SpaceDecl, InterfaceDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 
@@ -623,7 +792,7 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
-      .tag_path = types::PathAttr::none(&scope.ctx),
+      .interfaces = parsed.interfaces,
   };
   file_input in(path);
   parse<ParseFile, ParseAction>(in, &state);
