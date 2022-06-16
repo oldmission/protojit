@@ -176,11 +176,10 @@ def SetCallbackOp : ProtoJit_Op<"setcallback"> {
 // Can only appear in the body of DecodeCatchOp.
 //
 // This is the only op in PJ IR which cannot be re-ordered with other ops.
-// The arguments may be ValueType and UserState type in ProtoJIT IR, or
-// llvm.ptr during LLVM lowering. In either case the arguments are understood
-// to be two word-sized pointers arguments to the callee.
 def InvokeCallbackOp : ProtoJit_Op<"invoke"> {
-  let arguments = (ins AnyType:$arg, AnyType:$state);
+  let arguments = (
+    ins ValueType:$obj, HandlersArrayType:$handlers, UserStateType:$state
+  );
 }
 
 // Catches buffer exhaustion exceptions thrown during decoding.

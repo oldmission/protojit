@@ -46,15 +46,13 @@ void addEncodeFunction(PJContext* ctx, const std::string& name,
 }
 
 template <typename Dest>
-void addDecodeFunction(
-    PJContext* ctx, const std::string& name, const PJProtocol* protocol,
-    const std::vector<std::pair<std::string, const void*>>& handlers) {
-  std::vector<PJHandler> storage;
-  std::vector<const PJHandler*> handlers_arr;
-  storage.reserve(handlers.size());
-  for (const auto& [name, function] : handlers) {
-    storage.push_back(PJHandler{.name = name.c_str(), .function = function});
-    handlers_arr.push_back(&storage.back());
+void addDecodeFunction(PJContext* ctx, const std::string& name,
+                       const PJProtocol* protocol,
+                       const std::vector<std::string>& handlers) {
+  std::vector<const char*> handlers_arr;
+  handlers_arr.reserve(handlers.size());
+  for (const auto& name : handlers) {
+    handlers_arr.push_back(name.c_str());
   }
   PJAddDecodeFunction(ctx, name.c_str(), protocol,
                       gen::BuildPJType<Dest>::build(ctx), handlers.size(),

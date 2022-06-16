@@ -16,8 +16,10 @@ class Portal {
   template <typename T>
   using EncodeFunction = void (*)(const T*, char*);
   template <typename T>
+  using Handler = void (*)(const T*, const void*);
+  template <typename T>
   using DecodeFunction = BoundedBuffer (*)(const char*, T*, BoundedBuffer,
-                                           const void*);
+                                           Handler<T>[], const void*);
 
   Portal() {}
   virtual ~Portal() {}

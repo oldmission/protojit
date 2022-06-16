@@ -30,11 +30,6 @@ typedef struct PJArrayType PJArrayType;
 typedef struct PJVectorType PJVectorType;
 typedef struct PJProtocol PJProtocol;
 
-typedef struct PJHandler {
-  const char* name;
-  const void* function;
-} PJHandler;
-
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
 
@@ -98,7 +93,7 @@ void PJAddEncodeFunction(PJContext* ctx, const char* name, const void* src,
 
 void PJAddDecodeFunction(PJContext* ctx, const char* name,
                          const PJProtocol* protocol, const void* dest,
-                         uintptr_t num_handlers, const PJHandler* handlers[]);
+                         uintptr_t num_handlers, const char* handlers[]);
 
 void PJAddSizeFunction(PJContext* ctx, const char* name, const void* src,
                        const PJProtocol* protocol, const char* src_path,

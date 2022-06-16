@@ -118,8 +118,9 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
   uint64_t dec_size = 8192;
   while (true) {
     auto dec_buffer = std::make_unique<char[]>(dec_size);
-    auto [remaining_buf, _] = decode_fn(
-        buf, &reflected, std::make_pair(dec_buffer.get(), dec_size), nullptr);
+    auto [remaining_buf, _] =
+        decode_fn(buf, &reflected, std::make_pair(dec_buffer.get(), dec_size),
+                  nullptr, nullptr);
     if (remaining_buf == nullptr) {
       dec_size *= 2;
       continue;
@@ -140,14 +141,14 @@ void ProtoJitContext::addEncodeFunction(std::string_view name, mlir::Type src,
 
 void ProtoJitContext::addDecodeFunction(
     std::string_view name, types::ProtocolType src, mlir::Type dst,
-    const std::vector<std::pair<std::string, const void*>>& handlers) {
+    const std::vector<std::string>& handlers) {
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
 
   llvm::SmallVector<mlir::Attribute> handler_attrs;
-  for (const auto& hand : handlers) {
+  for (const auto& hand : llvm::enumerate(handlers)) {
     handler_attrs.push_back(types::DispatchHandlerAttr::get(
-        &ctx_, types::PathAttr::fromString(&ctx_, hand.first), hand.second));
+        &ctx_, types::PathAttr::fromString(&ctx_, hand.value()), hand.index()));
   }
 
   module_->push_back(builder_.create<DecodeFunctionOp>(
