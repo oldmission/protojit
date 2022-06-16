@@ -34,7 +34,33 @@ struct ParsedProtoFile {
     bool is_external = false;
   };
 
+  struct Interface {
+    struct Sizer {
+      std::string name;
+      const SourceId src;
+      types::PathAttr src_path;
+      bool round_up;
+    };
+
+    struct Encoder {
+      std::string name;
+      const SourceId src;
+      types::PathAttr src_path;
+    };
+
+    struct Decoder {
+      std::string name;
+      const SourceId dst;
+      std::vector<types::PathAttr> handlers;
+    };
+
+    std::vector<Sizer> sizers;
+    std::vector<Encoder> encoders;
+    std::vector<Decoder> decoders;
+  };
+
   std::vector<Decl> decls;
+  std::vector<Interface> interfaces;
   std::vector<std::filesystem::path> imports;
 };
 
