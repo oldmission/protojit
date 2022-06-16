@@ -93,16 +93,17 @@ v2::Adoption SampleDogV2{
     .fee = 100,
 };
 
-void writeSchemaToFile(PJContext* ctx, const PJProtocol* proto,
+void writeSchemaToFile(pj::runtime::Context& ctx, const PJProtocol* proto,
                        const std::string& file) {
   std::vector<char> buf;
-  buf.resize(pj::getProtoSize(ctx, proto));
-  pj::encodeProto(ctx, proto, buf.data());
+  buf.resize(ctx.getProtoSize(proto));
+  ctx.encodeProto(proto, buf.data());
 
   std::ofstream{file}.write(buf.data(), buf.size());
 }
 
-const PJProtocol* readSchemaFromFile(PJContext* ctx, const std::string& file) {
+const PJProtocol* readSchemaFromFile(pj::runtime::Context& ctx,
+                                     const std::string& file) {
   std::vector<char> buf;
   std::ifstream fs{file};
 
@@ -113,7 +114,7 @@ const PJProtocol* readSchemaFromFile(PJContext* ctx, const std::string& file) {
     size += fs.gcount();
   } while (!fs.eof());
 
-  return pj::decodeProto(ctx, buf.data());
+  return ctx.decodeProto(buf.data());
 }
 
 template <Ver V>
@@ -121,7 +122,7 @@ using Protocol =
     std::conditional_t<V == Ver::v1, v1::AdoptionProto, v2::AdoptionProto>;
 
 template <Ver V>
-void read(PJContext* ctx) {
+void read(pj::runtime::Context& ctx) {
   using Proto = Protocol<V>;
   using Head = typename pj::gen::ProtocolHead<Proto>::Head;
 
@@ -137,13 +138,13 @@ void read(PJContext* ctx) {
     std::cout << "Got dog adoption message" << std::endl;
   };
 
-  pj::addDecodeFunction<Head>(ctx, "decode", proto, /*handlers=*/
+  ctx.addDecodeFunction<Head>("decode", proto, /*handlers=*/
                               {"animal.specifics.cat", "animal.specifics.dog"});
 
-  auto portal = pj::compile(ctx);
+  auto portal = ctx.compile();
   std::cout << "Compiled decode function" << std::endl;
 
-  const auto decode = portal->GetDecodeFunction<Head>("decode");
+  const auto decode = portal.getDecodeFunction<Head>("decode");
 
   std::vector<char> data_buf;
   data_buf.resize(1024);
@@ -169,45 +170,45 @@ void read(PJContext* ctx) {
     HandlerT handlers[2] = {handle_cat, handle_dog};
 
     while (true) {
-      auto [remaining_buf, _] = decode(
-          data_buf.data() + 8, &dst,
-          std::make_pair(dec_buf.data(), dec_buf.size()), handlers, nullptr);
-      if (remaining_buf != nullptr) break;
+      auto bbuf = decode(data_buf.data() + 8, &dst,
+                         {.ptr = dec_buf.data(), .size = dec_buf.size()},
+                         handlers, nullptr);
+      if (bbuf.ptr != nullptr) break;
       dec_buf.resize(dec_buf.size() * 2);
     }
   } while (fs.peek() != std::char_traits<char>::eof());
 }
 
 template <Ver V>
-void write(PJContext* ctx) {
+void write(pj::runtime::Context& ctx) {
   using Proto = Protocol<V>;
   using Head = typename pj::gen::ProtocolHead<Proto>::Head;
 
-  const PJProtocol* proto = pj::planProtocol<Proto>(ctx);
+  const PJProtocol* proto = ctx.planProtocol<Proto>();
   std::cout << "Planned optimized protocol" << std::endl;
   writeSchemaToFile(ctx, proto, SchemaFile.getValue());
   std::cout << "Outputted schema to file" << std::endl;
 
   // Specialized functions generated for each of cat and dog because it is known
   // at compile-time which of the two we'll be encoding.
-  pj::addSizeFunction<Head>(ctx, "size_cat", proto,
+  ctx.addSizeFunction<Head>("size_cat", proto,
                             /*src_path=*/"animal.specifics.cat",
                             /*round_up=*/false);
-  pj::addSizeFunction<Head>(ctx, "size_dog", proto,
+  ctx.addSizeFunction<Head>("size_dog", proto,
                             /*src_path=*/"animal.specifics.dog",
                             /*round_up=*/false);
-  pj::addEncodeFunction<Head>(ctx, "encode_cat", proto,
+  ctx.addEncodeFunction<Head>("encode_cat", proto,
                               /*src_path=*/"animal.specifics.cat");
-  pj::addEncodeFunction<Head>(ctx, "encode_dog", proto,
+  ctx.addEncodeFunction<Head>("encode_dog", proto,
                               /*src_path=*/"animal.specifics.dog");
 
-  auto portal = pj::compile(ctx);
+  auto portal = ctx.compile();
   std::cout << "Compiled size and encode functions" << std::endl;
 
-  const auto size_cat = portal->GetSizeFunction<Head>("size_cat");
-  const auto size_dog = portal->GetSizeFunction<Head>("size_dog");
-  const auto encode_cat = portal->GetEncodeFunction<Head>("encode_cat");
-  const auto encode_dog = portal->GetEncodeFunction<Head>("encode_dog");
+  const auto size_cat = portal.getSizeFunction<Head>("size_cat");
+  const auto size_dog = portal.getSizeFunction<Head>("size_dog");
+  const auto encode_cat = portal.getEncodeFunction<Head>("encode_cat");
+  const auto encode_dog = portal.getEncodeFunction<Head>("encode_dog");
 
   auto [cat, dog] = [&]() {
     if constexpr (V == Ver::v1) {
@@ -238,7 +239,7 @@ int main(int argc, char** argv) {
   cl::HideUnrelatedOptions(DemoOptionsCategory);
   cl::ParseCommandLineOptions(argc, argv);
 
-  PJContext* ctx = pj::getContext();
+  pj::runtime::Context ctx;
 
   if (Mode.getValue() == RunMode::kRead) {
     if (Version.getValue() == Ver::v1) {
@@ -253,6 +254,4 @@ int main(int argc, char** argv) {
       write<Ver::v2>(ctx);
     }
   }
-
-  pj::freeContext(ctx);
 }

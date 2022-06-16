@@ -3,6 +3,7 @@
 #include "context.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
+#include "runtime.hpp"
 #include "span.hpp"
 #include "types.hpp"
 
@@ -36,6 +37,14 @@ pj::Sign ConvertSign(PJSign sign) {
 pj::types::ProtocolType ConvertProtocol(const PJProtocol* p) {
   return mlir::Type::getFromOpaquePointer(reinterpret_cast<const void*>(p))
       .cast<pj::types::ProtocolType>();
+}
+
+PJContext* PJGetContext() {
+  return reinterpret_cast<PJContext*>(new pj::ProtoJitContext());
+}
+
+void PJFreeContext(PJContext* ctx) {
+  delete reinterpret_cast<pj::ProtoJitContext*>(ctx);
 }
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
@@ -290,4 +299,33 @@ void PJAddSizeFunction(PJContext* ctx_, const char* name, const void* src_,
   auto src = mlir::Type::getFromOpaquePointer(src_);
   auto protocol = ConvertProtocol(protocol_);
   ctx->addSizeFunction(name, src, protocol, src_path, round_up);
+}
+
+void PJPrecompile(PJContext* ctx, const char* filename) {
+  reinterpret_cast<pj::ProtoJitContext*>(ctx)->precompile(filename);
+}
+
+const PJPortal* PJCompile(PJContext* ctx) {
+  auto portal = reinterpret_cast<pj::ProtoJitContext*>(ctx)->compile();
+  auto* handle = reinterpret_cast<const PJPortal*>(portal.release());
+  return handle;
+}
+
+SizeFunction PJGetSizeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)->GetSizeFunction<void>(
+      name);
+}
+
+EncodeFunction PJGetEncodeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)->GetEncodeFunction<void>(
+      name);
+}
+
+DecodeFunction PJGetDecodeFunction(const PJPortal* portal, const char* name) {
+  return reinterpret_cast<const pj::Portal*>(portal)
+      ->GetDecodeFunction<void, BoundedBuffer>(name);
+}
+
+void PJFreePortal(const PJPortal* portal) {
+  delete reinterpret_cast<const pj::Portal*>(portal);
 }
