@@ -102,7 +102,7 @@ bool OutlineVariantOffsetGeneration::run(Protocol& proto) {
   if (outline_) {
     auto proto_align = proto.head.headAlignment().bytes();
     auto term_align = outline_->term_alignment.bytes();
-    assert(proto_align >= term_align && proto_align % term_align == 0);
+    ASSERT(proto_align >= term_align && proto_align % term_align == 0);
 
     auto old_size = proto.head.headSize();
     auto new_size = RoundUp(old_size, outline_->term_alignment);
