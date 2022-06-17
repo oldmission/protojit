@@ -3,7 +3,6 @@
 #include <tuple>
 #include <vector>
 
-#include "portal_types.hpp"
 #include "protojit.hpp"
 #include "runtime.h"
 
@@ -42,7 +41,7 @@ class Portal {
 
   template <typename T>
   auto getDecodeFunction(const char* name) const {
-    return reinterpret_cast<DecodeFunction<T, ::pj::BoundedBuffer>>(
+    return reinterpret_cast<DecodeFunction<T, void>>(
         PJGetDecodeFunction(portal_, name));
   }
 
@@ -88,12 +87,6 @@ class Context {
     const void* head =
         gen::BuildPJType<Head>::build(ctx_, PJGetHostDomain(ctx_));
     return Protocol{PJPlanProtocol(ctx_, head, tag_path.c_str())};
-  }
-
-  template <typename Proto>
-  Protocol planProtocol() {
-    using Head = typename gen::ProtocolHead<Proto>::Head;
-    return plan<Head>(gen::ProtocolHead<Proto>::tag());
   }
 
   uint64_t getProtoSize(Protocol proto) {

@@ -44,11 +44,11 @@ static_assert(offsetof(BoundedBuffer, ptr) == 0);
 static_assert(offsetof(BoundedBuffer, size) == sizeof(void*));
 
 // Takes the decoded object and an additional state parameter.
-typedef void (*Handler)(const void*, const void*);
+typedef void (*Handler)(const void*, void*);
 typedef uintptr_t (*SizeFunction)(const void*);
 typedef void (*EncodeFunction)(const void*, char*);
 typedef BoundedBuffer (*DecodeFunction)(const char*, void*, BoundedBuffer,
-                                        Handler[], const void*);
+                                        Handler[], void*);
 
 PJContext* PJGetContext();
 

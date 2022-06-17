@@ -19,6 +19,13 @@ patterns:
             \\bexternal\\b|\
             \\benum\\b|\
             \\bimport\\b|\
+            \\bportal\\b|\
+            \\bsizer\\b|\
+            \\bencoder\\b|\
+            \\bdecoder\\b|\
+            \\bprecomp\\b|\
+            \\bhandlers\\b|\
+            \\bjit\\b|\
             \\bprotocol"
     name: keyword.other
   - match: "\\bint\\d+\\b|\

@@ -4,7 +4,7 @@
   "scopeName": "source.protojit",
   "patterns": [
     {
-      "match": "\\bstruct\\b|\\bvariant\\b|\\btype\\b|\\bspace\\b|\\bexternal\\b|\\benum\\b|\\bimport\\b|\\bprotocol",
+      "match": "\\bstruct\\b|\\bvariant\\b|\\btype\\b|\\bspace\\b|\\bexternal\\b|\\benum\\b|\\bimport\\b|\\bportal\\b|\\bsizer\\b|\\bencoder\\b|\\bdecoder\\b|\\bprecomp\\b|\\bhandlers\\b|\\bjit\\b|\\bprotocol",
       "name": "keyword.other"
     },
     {

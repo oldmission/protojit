@@ -640,8 +640,6 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
   auto loc = op.getLoc();
   auto [__, callback_store] = pass->getEffectDefsFor(op);
 
-  // SAMIR_TODO2: change handler index type to size_t or intptr_t
-
   // We set the handler index +1 so that 0 denotes no handler being set.
   auto target = pass->buildWordConstant(loc, _, op.target().getZExtValue() + 1);
   _.create<LLVM::StoreOp>(loc, target, callback_store);

@@ -15,4 +15,3 @@ struct UInt32 {
 struct UInt64 {
   i: uint64;
 }
-

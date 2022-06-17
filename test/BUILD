@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//:site.bzl", "pj_test")
+load("//:site.bzl", "pj_lib", "pj_test")
 
 cc_library(
     name = "test_base",
@@ -13,32 +13,32 @@ cc_library(
 pj_test(
     name = "test_ints",
     srcs = ["test_ints.cpp"],
-    protos = ["ints.pj"],
+    proto = "ints.pj",
 )
 
 pj_test(
     name = "test_structs",
     srcs = ["test_structs.cpp"],
-    protos = ["structs.pj"],
+    proto = "structs.pj",
 )
 
 pj_test(
     name = "test_variants",
-    srcs = ["test_variants.cpp"],
-    protos = ["variants.pj"],
     size = "medium",
+    srcs = ["test_variants.cpp"],
+    proto = "variants.pj",
 )
 
 pj_test(
     name = "test_arrays",
     srcs = ["test_arrays.cpp"],
-    protos = ["arrays.pj"],
+    proto = "arrays.pj",
 )
 
 pj_test(
     name = "test_spaces",
     srcs = ["test_spaces.cpp"],
-    protos = ["spaces.pj"],
+    proto = "spaces.pj",
 )
 
 pj_test(
@@ -48,41 +48,73 @@ pj_test(
         "spaces.pj.hpp",
         "test_imports.cpp",
     ],
+    proto = "imports.pj",
     proto_deps = [
         "ints.pj",
         "spaces.pj",
     ],
-    protos = ["imports.pj"],
+    deps = [
+        "test_ints_lib",
+        "test_spaces_lib",
+    ],
 )
 
 pj_test(
     name = "test_vectors",
-    srcs = ["test_vectors.cpp"],
-    protos = ["vectors.pj"],
     size = "medium",
+    srcs = ["test_vectors.cpp"],
+    proto = "vectors.pj",
 )
 
 pj_test(
     name = "test_sizing",
     srcs = ["test_sizing.cpp"],
-    protos = ["sizing.pj"],
+    proto = "sizing.pj",
 )
 
 pj_test(
     name = "test_hoisting",
-    srcs = ["test_hoisting.cpp"],
-    protos = ["hoisting.pj"],
     size = "medium",
+    srcs = ["test_hoisting.cpp"],
+    proto = "hoisting.pj",
 )
 
-pj_test(
-    name = "test_protocols",
-    srcs = ["test_protocols.cpp"],
-    protos = ["protocols.pj", "protocols2.pj"],
+pj_lib(
+    name = "protocols1",
+    proto = "protocols.pj",
+)
+
+pj_lib(
+    name = "protocols2",
+    proto = "protocols2.pj",
 )
 
 pj_test(
     name = "test_any",
     srcs = ["test_any.cpp"],
-    protos = ["any.pj"],
+    proto = "any.pj",
+)
+
+# TODO: restore test
+# cc_test(
+#     name = "test_protocols",
+#     srcs = ["test_protocols.cpp"],
+#     deps = [
+#         "protocols1",
+#         "protocols2",
+#         "test_base",
+#     ],
+# )
+
+pj_test(
+    name = "test_portals",
+    srcs = [
+        "ints.pj.hpp",
+        "test_portals.cpp",
+    ],
+    proto = "portals.pj",
+    proto_deps = ["ints.pj"],
+    deps = [
+        "test_ints_lib",
+    ],
 )

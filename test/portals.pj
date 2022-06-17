@@ -1,0 +1,11 @@
+import test.ints;
+
+protocol Proto : Int32;
+
+portal TestPortal {
+  sizer size : Int32;
+  encoder encode : Int32;
+  decoder decode : Int32;
+
+  precomp Precomp(Proto);
+}

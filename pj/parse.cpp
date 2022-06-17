@@ -35,7 +35,7 @@ struct ParseState {
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
-  std::vector<ParsedProtoFile::Interface>& interfaces;
+  std::map<SourceId, ParsedProtoFile::Portal>& portals;
 
   // Updated after parsing a 'FieldDecl' rule.
   // Cleared when done with a struct/variant decl.
@@ -86,12 +86,14 @@ struct ParseState {
 
   // Populated after parsing SizerDecl, EncoderDecl, and DecoderDecl,
   // respectively.
-  // Cleared by InterfaceDecl.
-  std::vector<ParsedProtoFile::Interface::Sizer> sizers;
-  std::vector<ParsedProtoFile::Interface::Encoder> encoders;
-  std::vector<ParsedProtoFile::Interface::Decoder> decoders;
+  // Cleared by PortalDecl.
+  std::vector<ParsedProtoFile::Portal::Sizer> sizers;
+  std::vector<ParsedProtoFile::Portal::Encoder> encoders;
+  std::vector<ParsedProtoFile::Portal::Decoder> decoders;
+
   std::string iface_jit_class_name;
-  std::string iface_precomp_class_name;
+
+  std::vector<std::pair<std::string, SourceId>> precomps;
 
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
@@ -131,6 +133,22 @@ struct ParseState {
   template <typename I>
   types::ValueType resolveType(const I& in, const SourceId& id,
                                bool error_on_failure = true) {
+    auto result = resolve(in, id, parse_scope.type_defs, error_on_failure);
+    return result ? result->second : types::ValueType{};
+  }
+
+  template <typename I>
+  std::optional<
+      std::pair<SourceId, std::pair<types::ValueType, types::PathAttr>>>
+  resolveProtocol(const I& in, const SourceId& id,
+                  bool error_on_failure = true) {
+    return resolve(in, id, parse_scope.protocol_defs, error_on_failure);
+  }
+
+  template <typename I, typename M>
+  auto resolve(const I& in, const SourceId& id, const M& map,
+               bool error_on_failure = true)
+      -> std::optional<typename M::value_type> {
     std::vector<llvm::StringRef> id_vec;
     id_vec.reserve(space.size() + id_vec.size());
     for (intptr_t i = space.size(); i >= 0; --i) {
@@ -141,9 +159,8 @@ struct ParseState {
         id_vec.push_back(p);
       }
 
-      if (auto it = parse_scope.type_defs.find(id_vec);
-          it != parse_scope.type_defs.end()) {
-        return it->second;
+      if (auto it = map.find(id_vec); it != map.end()) {
+        return *it;
       }
       id_vec.clear();
     }
@@ -621,15 +638,16 @@ void checkVariantPath(const ActionInput& in, types::ValueType head,
 }
 
 struct ProtoDecl
-    : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, PathDecl, tok<';'>> {};
+    : if_must<KEYWORD("protocol"), Id, tok<':'>, ScopedId, PathDecl, tok<';'>> {
+};
 
 BEGIN_ACTION(ProtoDecl) {
   auto head_name = __ popScopedId(false);
   auto protocol_name = __ popScopedId();
 
-  if (__ resolveType(in, protocol_name, false)) {
+  if (__ resolveProtocol(in, protocol_name, /*error_on_failure=*/false)) {
     throw parse_error("Protocol name " + protocol_name.back() +
-                          " re-defines existing type name",
+                          " re-defines existing protocol",
                       in.position());
   }
 
@@ -649,8 +667,11 @@ BEGIN_ACTION(ProtoDecl) {
       .kind = ParsedProtoFile::DeclKind::kProtocol,
       .name = protocol_name,
       .type = head,
-      .tag_path = tag_path,
+      .path = tag_path,
   });
+
+  __ parse_scope.protocol_defs.emplace(protocol_name,
+                                       std::make_pair(head, tag_path));
 
   __ paths.clear();
 }
@@ -751,47 +772,63 @@ END_ACTION()
 struct JitClassDecl : if_must<KEYWORD("jit"), Id, tok<';'>> {};
 BEGIN_ACTION(JitClassDecl) {
   if (!__ iface_jit_class_name.empty()) {
-    throw parse_error("Multiple jit declarations in interface", in.position());
+    throw parse_error("Multiple jit declarations in portal", in.position());
   }
   __ iface_jit_class_name = __ popId();
 }
 END_ACTION()
 
-struct PrecompClassDecl : if_must<KEYWORD("precomp"), Id, tok<';'>> {};
+struct PrecompClassDecl
+    : if_must<KEYWORD("precomp"), Id, tok<'('>, ScopedId, tok<')'>, tok<';'>> {
+};
 BEGIN_ACTION(PrecompClassDecl) {
-  if (!__ iface_precomp_class_name.empty()) {
-    throw parse_error("Multiple precomp declaration in interface",
-                      in.position());
-  }
-  __ iface_precomp_class_name = __ popId();
+  auto proto_id = __ popScopedId();
+  auto precomp_class_name = __ popId();
+  auto proto = *__ resolveProtocol(in, proto_id);
+  __ precomps.push_back({precomp_class_name, proto.first});
 }
 END_ACTION()
 
-struct InterfaceDecl : if_must<KEYWORD("interface"), Id, LB,
-                               star<sor<SizerDecl, EncoderDecl, DecoderDecl,
-                                        JitClassDecl, PrecompClassDecl>>,
-                               RB> {};
+struct PortalDecl : if_must<KEYWORD("portal"), Id, LB,
+                            star<sor<SizerDecl, EncoderDecl, DecoderDecl,
+                                     JitClassDecl, PrecompClassDecl>>,
+                            RB> {};
 
-BEGIN_ACTION(InterfaceDecl) {
-  __ interfaces.push_back(ParsedProtoFile::Interface{
-      .name = __ popScopedId(),
-      .sizers = __ sizers,
-      .encoders = __ encoders,
-      .decoders = __ decoders,
-      .jit_class_name = __ iface_jit_class_name,
-      .precomp_class_name = __ iface_precomp_class_name,
-  });
+BEGIN_ACTION(PortalDecl) {
+  auto name = __ popScopedId();
+
+  if (__ portals.count(name)) {
+    throw parse_error("Multiple portals", in.position());
+  }
+
+  auto& iface = __ portals
+                    .emplace(name,
+                             ParsedProtoFile::Portal{
+                                 .sizers = __ sizers,
+                                 .encoders = __ encoders,
+                                 .decoders = __ decoders,
+                                 .jit_class_name = __ iface_jit_class_name,
+                             })
+                    .first->second;
+
+  for (auto& precomp : __ precomps) {
+    if (iface.precomps.count(precomp.first)) {
+      throw parse_error(
+          "Precomp class " + precomp.first + " declared multiple times",
+          in.position());
+    }
+    iface.precomps[precomp.first] = precomp.second;
+  }
 
   __ sizers.clear();
   __ encoders.clear();
   __ decoders.clear();
   __ iface_jit_class_name.clear();
-  __ iface_precomp_class_name.clear();
 }
 END_ACTION()
 
 struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
-                     TypeDecl, SpaceDecl, InterfaceDecl> {};
+                     TypeDecl, SpaceDecl, PortalDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 
@@ -816,7 +853,7 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
-      .interfaces = parsed.interfaces,
+      .portals = parsed.portals,
   };
   file_input in(path);
   parse<ParseFile, ParseAction>(in, &state);
