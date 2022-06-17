@@ -90,6 +90,8 @@ struct ParseState {
   std::vector<ParsedProtoFile::Interface::Sizer> sizers;
   std::vector<ParsedProtoFile::Interface::Encoder> encoders;
   std::vector<ParsedProtoFile::Interface::Decoder> decoders;
+  SourceId iface_jit_class_name;
+  SourceId iface_precomp_class_name;
 
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
@@ -193,9 +195,6 @@ using LB = tok<'{'>;
 using RB = tok<'}'>;
 
 #define KEYWORD(X) spaced<TAO_PEGTL_KEYWORD(X)>
-
-struct struct_key : pad<TAO_PEGTL_KEYWORD("struct"), space> {};
-struct variant_key : pad<TAO_PEGTL_KEYWORD("variant"), space> {};
 
 template <intptr_t kPrefix, Sign sign, typename ActionInput>
 static void parseInt(const ActionInput& in, ParseState* state) {
@@ -749,15 +748,28 @@ BEGIN_ACTION(DecoderDecl) {
 }
 END_ACTION()
 
-struct InterfaceDecl
-    : if_must<KEYWORD("interface"), Id, LB,
-              star<sor<SizerDecl, EncoderDecl, DecoderDecl>>, RB> {};
+struct JitClassDecl : if_must<KEYWORD("jit"), Id> {};
+BEGIN_ACTION(JitClassDecl) { __ iface_jit_class_name = __ popScopedId(); }
+END_ACTION()
+
+struct PrecompClassDecl : if_must<KEYWORD("precomp"), Id> {};
+BEGIN_ACTION(PrecompClassDecl) {
+  __ iface_precomp_class_name = __ popScopedId();
+}
+END_ACTION()
+
+struct InterfaceDecl : if_must<KEYWORD("interface"), LB,
+                               star<sor<SizerDecl, EncoderDecl, DecoderDecl,
+                                        JitClassDecl, PrecompClassDecl>>,
+                               RB> {};
 
 BEGIN_ACTION(InterfaceDecl) {
-  __ interfaces.push_back({
+  __ interfaces.push_back(ParsedProtoFile::Interface{
       .sizers = __ sizers,
       .encoders = __ encoders,
       .decoders = __ decoders,
+      .jit_class_name = __ iface_jit_class_name,
+      .precomp_class_name = __ iface_precomp_class_name,
   });
 
   __ sizers.clear();
