@@ -74,8 +74,8 @@ cc_library(
         "types.cpp",
     ],
     hdrs = [
-        "arch_base.hpp",
         "arch.hpp",
+        "arch_base.hpp",
         "defer.hpp",
         "enums.cpp.inc",
         "enums.hpp.inc",
@@ -119,7 +119,8 @@ cc_binary(
 
 pj_lib(
     name = "reflect_pj",
-    protos = ["reflect.pj"],
+    nolib = True,
+    proto = "reflect.pj",
 )
 
 cc_library(
@@ -207,9 +208,8 @@ cc_library(
         "runtime.cpp",
     ],
     hdrs = [
-        "portal_types.hpp",
-        "runtime.hpp",
         "runtime.h",
+        "runtime.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [

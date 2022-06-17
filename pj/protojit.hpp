@@ -150,6 +150,17 @@ struct Any {
   friend struct gen::BuildPJType;
 };
 
+template <typename T, typename S>
+using DecodeHandler = void (*)(const T* msg, S* state);
+
+template <typename T>
+using SizeFunction = uintptr_t (*)(const T*);
+template <typename T>
+using EncodeFunction = void (*)(const T*, char*);
+template <typename T, typename S>
+using DecodeFunction = BoundedBuffer (*)(const char*, T*, BoundedBuffer,
+                                         DecodeHandler<T, S>[], S*);
+
 }  // namespace pj
 
 namespace pj {

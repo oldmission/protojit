@@ -342,7 +342,7 @@ EncodeFunction PJGetEncodeFunction(const PJPortal* portal, const char* name) {
 
 DecodeFunction PJGetDecodeFunction(const PJPortal* portal, const char* name) {
   return reinterpret_cast<const pj::Portal*>(portal)
-      ->GetDecodeFunction<void, BoundedBuffer>(name);
+      ->GetDecodeFunction<void, void>(name);
 }
 
 void PJFreePortal(const PJPortal* portal) {

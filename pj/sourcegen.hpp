@@ -15,16 +15,17 @@ class SourceGenerator {
       : outer_namespace_(outer_namespace), counter_(0) {}
 
   void addTypedef(const SourceId& name, types::ValueType type);
-  void addProtocolHead(const SourceId& name, types::ValueType type,
-                       types::PathAttr tag_path);
-
-  void addProtocol(const SourceId& name, types::ProtocolType proto);
 
   // Recursively add subtypes if not added for wire types.
   void addComposite(types::ValueType type, bool is_external = false);
 
-  void generateHeader(std::ostream& output,
-                      const std::vector<std::filesystem::path>& imports);
+  void addPortal(const SourceId& ns, const ParsedProtoFile::Portal& portal);
+  void addProtocol(const SourceId& name, mlir::Type proto,
+                   types::PathAttr path);
+
+  void generate(const std::filesystem::path& header_path, std::ostream& output,
+                std::ostream* cpp,
+                const std::vector<std::filesystem::path>& imports);
 
  private:
   enum class Region { kDefs, kBuilders };
@@ -80,28 +81,29 @@ class SourceGenerator {
   std::string getUniqueName() { return "_" + std::to_string(counter_++); }
 
   template <typename Name>
-  void beginNamespaceOf(const Name& name) {
+  void beginNamespaceOf(const Name& name, bool is_namespace_name = false) {
     for (std::string_view space : outer_namespace_) {
-      stream() << "namespace " << space << "{";
+      stream() << "namespace " << space << "{\n";
     }
-    for (size_t i = 0; i < name.size() - 1; ++i) {
-      stream() << "namespace " << std::string_view(name[i]) << "{";
+    for (size_t i = 0; i < name.size() - !is_namespace_name; ++i) {
+      stream() << "namespace " << std::string_view(name[i]) << "{\n";
     }
   }
 
   template <typename Name>
-  void endNamespaceOf(const Name& name) {
-    for (size_t i = 0; i < outer_namespace_.size() + name.size() - 1; ++i) {
+  void endNamespaceOf(const Name& name, bool is_namespace_name = false) {
+    for (size_t i = 0;
+         i < outer_namespace_.size() + name.size() - !is_namespace_name; ++i) {
       stream() << "}\n";
     }
     stream() << "\n";
   }
 
   template <typename Name>
-  std::string getNameAsString(const Name& name) {
+  std::string getNameAsString(const Name& name, const char* delim = "::") {
     std::stringstream str;
-    for (auto& p : outer_namespace_) str << "::" << p;
-    for (auto& p : name) str << "::" << std::string_view(p);
+    for (auto& p : outer_namespace_) str << delim << p;
+    for (auto& p : name) str << delim << std::string_view(p);
     return str.str();
   }
 
@@ -112,6 +114,11 @@ class SourceGenerator {
 
   void printIntTypeRef(Width width, Sign sign);
   void printTypeRef(types::ValueType type);
+  void printPlanName(std::ostream& os, const SourceId& plan);
+
+  std::ostream& printDecoderSig(std::ostream& os, const std::string& name,
+                                const ParsedProtoFile::Portal::Decoder& decoder,
+                                bool state_template);
 
   // Generates a variable containing a handle to a runtime type generated using
   // the type of the in-memory type, obtained using decltype
@@ -134,13 +141,18 @@ class SourceGenerator {
   void addVariantBuilder(types::VariantType type, bool has_value,
                          Width tag_width, bool is_external);
   void addVariant(types::VariantType type, bool is_external);
+  void addJitClass(const ParsedProtoFile::Portal& iface);
+  void addPrecompClass(const SourceId& ns, const ParsedProtoFile::Portal& iface,
+                       const std::string& name, const SourceId& plan);
 
   Region region_;
   Domain domain_ = Domain::kUnset;
   size_t depth_ = 0;
   std::stringstream defs_;
   std::stringstream builders_;
+  std::stringstream cpp_;
   std::unordered_set<const void*> generated_;
+  std::vector<std::string> entrypoints_;
 
   SourceId outer_namespace_;
   size_t counter_;

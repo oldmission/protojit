@@ -191,72 +191,6 @@ void SourceGenerator::addTypedef(const SourceId& name, types::ValueType type) {
   endNamespaceOf(name);
 }
 
-void SourceGenerator::addProtocolHead(const SourceId& name,
-                                      types::ValueType type,
-                                      types::PathAttr tag_path) {
-  if (shouldAdd(type)) {
-    addComposite(type);
-  }
-
-  region_ = Region::kDefs;
-  beginNamespaceOf(name);
-  stream() << "struct " << std::string_view(name.back()) << ";\n";
-  endNamespaceOf(name);
-
-  region_ = Region::kBuilders;
-  auto& os = stream();
-  os << "namespace pj {\n";
-  os << "namespace gen {\n";
-  os << "template <>\n"
-     << "struct ProtocolHead<";
-  printName(name);
-  os << "> {\n"
-     << "using Head = ";
-  printTypeRef(type);
-  os << ";\n";
-  os << "static std::string tag() { return \"" << tag_path.toString()
-     << "\"; }\n";
-  os << "};\n}  // namespace gen\n\n";
-  os << "\n}  // namespace pj\n\n";
-}
-
-void SourceGenerator::addProtocol(const SourceId& name,
-                                  types::ProtocolType proto) {
-  pushDomain(Domain::kWire);
-
-  if (shouldAdd(proto->head)) {
-    addComposite(proto->head);
-  }
-
-  region_ = Region::kDefs;
-  beginNamespaceOf(name);
-  stream() << "struct " << std::string_view(name.back()) << ";\n";
-  endNamespaceOf(name);
-
-  region_ = Region::kBuilders;
-  auto& os = stream();
-  os << "namespace pj {\n";
-  os << "namespace gen {\n";
-  os << "template <>\n"
-     << "struct BuildPJProtocol<";
-  printName(name);
-  os << "> {\n"
-     << "using Head = ";
-  printTypeRef(proto->head);
-  os << ";\n";
-
-  os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
-  std::string head_handle = createTypeHandleFromType(proto->head);
-  os << "return PJCreateProtocolType(ctx, " << head_handle << ", "
-     << proto->buffer_offset.bits() << ");\n";
-  os << "}\n";
-
-  os << "};\n}  // namespace gen\n\n";
-  os << "\n}  // namespace pj\n\n";
-
-  popDomain();
-}
-
 void SourceGenerator::addComposite(types::ValueType type, bool is_external) {
   pushDomain(type.cast<types::NominalType>().domain());
 
@@ -569,10 +503,196 @@ void SourceGenerator::addVariant(types::VariantType type, bool is_external) {
   addVariantBuilder(type, has_value, tag_width, is_external);
 }
 
-void SourceGenerator::generateHeader(
-    std::ostream& output, const std::vector<std::filesystem::path>& imports) {
+void SourceGenerator::addProtocol(const SourceId& name, mlir::Type proto,
+                                  types::PathAttr path) {
+  cpp_ << "  auto* ";
+  printPlanName(cpp_, name);
+  cpp_ << " = PJPlanProtocol(ctx, "
+          "::pj::gen::BuildPJType<"
+       << getNameAsString(proto.cast<types::NominalType>().name())
+       << ">::build(ctx, PJGetHostDomain(ctx)), \"";
+  path.print(cpp_);
+  cpp_ << "\");\n";
+}
+
+void SourceGenerator::addPortal(const SourceId& ns,
+                                const ParsedProtoFile::Portal& portal) {
+  if (!portal.jit_class_name.empty()) {
+    addJitClass(portal);
+  }
+  for (auto& [name, plan] : portal.precomps) {
+    addPrecompClass(ns, portal, name, plan);
+  }
+}
+
+void SourceGenerator::printPlanName(std::ostream& os, const SourceId& plan) {
+  os << "plan_" << getNameAsString(plan, "_");
+}
+
+std::ostream& SourceGenerator::printDecoderSig(
+    std::ostream& os, const std::string& name,
+    const ParsedProtoFile::Portal::Decoder& decoder, bool state_template) {
+  if (state_template) {
+    os << "template <typename S>";
+  }
+  std::string state = state_template ? "S" : "void";
+  os << "BoundedBuffer " << name << "("
+     << "const char* msg, " << getNameAsString(decoder.dst)
+     << "* result, BoundedBuffer buffer,"
+     << "::pj::DecodeHandler<" << getNameAsString(decoder.dst) << ", " << state
+     << "> handlers[], " << state << "* state)";
+  return os;
+}
+
+void SourceGenerator::addPrecompClass(const SourceId& ns,
+                                      const ParsedProtoFile::Portal& iface,
+                                      const std::string& name,
+                                      const SourceId& plan) {
+  // 1. Define class in the header with appropriate interface.
+  //
+  // struct ClassName {
+  //   // Always present with this name for a precomp class.
+  //   static std::string_view getSchema() {...}
+  //
+  //   // Always a zero-arg constructor.
+  //   ClassName() {}
+  //
+  //   // Something like this depending on what was requested:
+  //   size_t mySizeFn(const T* msg) {...}
+  //   void myEncodeFn(const T* msg, char* buf) {...}
+  //   template <typename S>
+  //   BoundedBuffer myDecodeFn(
+  //     const char* msg, T* result, BoundedBuffer buffer,
+  //     ::pj::DecodeHandler<T, S> handlers[], S* state) {...}
+  // }
+  //
+  // The class declaration goes into `defs_` and the function bodies
+  // go into `builders_` to keep the code clean.
+  builders_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
+
+  region_ = Region::kDefs;
+  beginNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  region_ = Region::kBuilders;
+  beginNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  defs_ << "struct " << name << "{\n"
+        << "static std::string_view getSchema();\n"
+        << name << "() {}\n";
+
+  for (auto& sizer : iface.sizers) {
+    auto sizer_name = "user_" + getNameAsString(ns, "_") + "_" + sizer.name;
+    defs_ << "size_t " << sizer.name << "(" << getNameAsString(sizer.src)
+          << " const* msg);\n";
+
+    region_ = Region::kBuilders;
+    builders_ << "extern \"C\" "
+              << "size_t " << sizer_name << "(const void*);\n"
+              << "size_t  " << name << "::" << sizer.name << "("
+              << getNameAsString(sizer.src) << " const* msg) {"
+              << "  return " << sizer_name << "(msg);\n"
+              << "}\n";
+    region_ = Region::kDefs;
+  }
+
+  for (auto& encoder : iface.encoders) {
+    auto encoder_name = "user_" + getNameAsString(ns, "_") + "_" + encoder.name;
+    defs_ << "void " << encoder.name << "(" << getNameAsString(encoder.src)
+          << " const*, char* buf);\n";
+
+    region_ = Region::kBuilders;
+    builders_ << "extern \"C\" "
+              << "void " << encoder_name << "(" << getNameAsString(encoder.src)
+              << " const*, char* buf);\n"
+              << "void  " << name << "::" << encoder.name << "("
+              << getNameAsString(encoder.src) << " const* msg, char* buf) {\n"
+              << "  " << encoder_name << "(msg, buf);\n"
+              << "}\n";
+    region_ = Region::kDefs;
+  }
+
+  for (auto& decoder : iface.decoders) {
+    printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true)
+        << ";";
+
+    auto decoder_name = "user_" + getNameAsString(ns, "_") + "_" + decoder.name;
+
+    region_ = Region::kBuilders;
+    builders_ << "extern \"C\" ";
+    printDecoderSig(builders_, decoder_name, decoder, /*state_template=*/false)
+        << ";\n";
+
+    printDecoderSig(builders_, name + "::" + decoder.name, decoder,
+                    /*state_template=*/true)
+        << "{\n";
+    builders_ << "return " << decoder_name
+              << "(msg, result, buffer, handlers, state);\n}\n";
+    region_ = Region::kDefs;
+  }
+
+  defs_ << "};\n";  // Terminate the struct.
+
+  region_ = Region::kDefs;
+  endNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  region_ = Region::kBuilders;
+  endNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
+
+  // 2. Generate .cpp file to do precompilation.
+  for (auto& sizer : iface.sizers) {
+    cpp_ << "  PJAddSizeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
+         << sizer.name << "\", ::pj::gen::BuildPJType<"
+         << getNameAsString(sizer.src)
+         << ">::build(ctx, PJGetHostDomain(ctx)), ";
+    printPlanName(cpp_, plan);
+    cpp_ << ", \"";
+    sizer.src_path.print(cpp_);
+    cpp_ << "\", false);\n";
+  }
+
+  for (auto& encoder : iface.encoders) {
+    cpp_ << "  PJAddEncodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
+         << encoder.name << "\", ::pj::gen::BuildPJType<"
+         << getNameAsString(encoder.src)
+         << ">::build(ctx, PJGetHostDomain(ctx)), ";
+    printPlanName(cpp_, plan);
+    cpp_ << ", \"";
+    encoder.src_path.print(cpp_);
+    cpp_ << "\");\n";
+  }
+
+  for (auto& decoder : iface.decoders) {
+    cpp_ << "  {\n"
+         << "    const char** handlers = {\n";
+    for (auto& handler : decoder.handlers) {
+      cpp_ << "    \"";
+      handler.print(cpp_);
+      cpp_ << "\",\n";
+    }
+    cpp_ << "  };\n"
+         << "  PJAddDecodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
+         << decoder.name << "\", ";
+    printPlanName(cpp_, plan);
+    cpp_ << ", ::pj::gen::BuildPJType<" << getNameAsString(decoder.dst)
+         << ">::build(ctx, PJGetHostDomain(ctx)), " << decoder.handlers.size()
+         << ", handlers);\n"
+         << "}\n";
+  }
+}
+
+void SourceGenerator::addJitClass(const ParsedProtoFile::Portal& spec) {
+  std::cerr << "NYI\n";
+  abort();
+}
+
+void SourceGenerator::generate(
+    const std::filesystem::path& path, std::ostream& output, std::ostream* cpp,
+    const std::vector<std::filesystem::path>& imports) {
   output << "#pragma once\n"
          << "#include <cstddef>\n"
+         << "#include <string_view>\n"
          << "#include \"pj/protojit.hpp\"\n"
          << "#include \"pj/runtime.h\"\n"
          << "\n";
@@ -583,6 +703,21 @@ void SourceGenerator::generateHeader(
 
   output << defs_.str();
   output << builders_.str();
+
+  if (cpp) {
+    *cpp << "#include <cstdio>\n"
+         << "#define PROTOJIT_NO_INTERFACES\n"
+         << "#include \"pj/runtime.h\"\n"
+         << "#include " << path.filename() << "\n"
+         << "int main(int argc, char** argv) {\n"
+         << "  if (argc != 2) {\n    fprintf(stderr, \"No output filename "
+            "given\\n\""
+            ");\n    return 1;\n  }\n"
+         << "  PJContext* ctx = PJGetContext();\n"
+         << cpp_.str() << "  PJPrecompile(ctx, argv[1]);\n"
+         << "  PJFreeContext(ctx);\n"
+         << "}\n";
+  }
 };
 
 }  // namespace pj

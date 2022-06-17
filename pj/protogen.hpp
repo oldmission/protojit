@@ -20,21 +20,18 @@ struct ParsedProtoFile {
     const SourceId name;
     mlir::Type type;
 
-    // For protocol types, the tag path corresponding to the variant that will
-    // get outlined. An empty tag path means no variant will get outlined. The
-    // tag path has the format <field name>, <field name>, ..., where the last
-    // field name is the field name of the variant.
-    types::PathAttr tag_path;
-
     // For variants, whether the variant was declared as an enum.
     // We will generate a enum directly without the wrapper class
     // in this case.
     const bool is_enum = false;
 
+    // For protocol defs only.
+    types::PathAttr path;
+
     bool is_external = false;
   };
 
-  struct Interface {
+  struct Portal {
     struct Sizer {
       std::string name;
       const SourceId src;
@@ -54,18 +51,18 @@ struct ParsedProtoFile {
       std::vector<types::PathAttr> handlers;
     };
 
-    SourceId name;
-
     std::vector<Sizer> sizers;
     std::vector<Encoder> encoders;
     std::vector<Decoder> decoders;
 
     const std::string jit_class_name;
-    const std::string precomp_class_name;
+
+    // class name -> protocol
+    std::map<std::string, SourceId> precomps;
   };
 
   std::vector<Decl> decls;
-  std::vector<Interface> interfaces;
+  std::map<SourceId, Portal> portals;
   std::vector<std::filesystem::path> imports;
 };
 
@@ -91,7 +88,8 @@ struct ParsingScope {
   mlir::MLIRContext& ctx;
   std::map<std::filesystem::path, ParsedProtoFile> parsed_files;
   std::map<SourceId, types::ValueType, SourceIdLess> type_defs;
-  // std::map<SourceId, mlir::Type, SourceIdLess> protocol_defs;
+  std::map<SourceId, std::pair<types::ValueType, types::PathAttr>, SourceIdLess>
+      protocol_defs;
 
   std::set<std::filesystem::path> pending_files;
   std::vector<std::filesystem::path> stack;

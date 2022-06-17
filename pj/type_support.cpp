@@ -76,17 +76,6 @@ bool DomainAttr::classof(mlir::Attribute attr) {
   return false;
 }
 
-void PathAttr::print(llvm::raw_ostream& os) const {
-  bool first = true;
-  for (auto& part : getValue()) {
-    if (!first) {
-      os << ".";
-    }
-    os << part;
-    first = false;
-  }
-}
-
 PathAttr PathAttr::none(mlir::MLIRContext* ctx) {
   return get(ctx, llvm::ArrayRef<llvm::StringRef>{});
 }

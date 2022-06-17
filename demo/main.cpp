@@ -7,8 +7,7 @@
 
 #include "pj/runtime.hpp"
 
-#include "demo/adoption.v1.pj.hpp"
-#include "demo/adoption.v2.pj.hpp"
+#include "demo/adoption.pj.hpp"
 
 namespace cl = llvm::cl;
 

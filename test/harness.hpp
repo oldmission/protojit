@@ -72,11 +72,10 @@ class PJGenericTest
     std::unique_ptr<char[]> dec_buffer;
   };
 
-  template <typename SrcT, typename DstT = SrcT, typename ProtoT = void>
+  template <typename SrcT, typename DstT = SrcT>
   struct Options {
     using Src = SrcT;
     using Dst = DstT;
-    using Proto = ProtoT;
 
     Src* from;
     Dst* to = nullptr;
@@ -90,14 +89,8 @@ class PJGenericTest
   Results transcode(const OptionsT& options) {
     using Src = typename OptionsT::Src;
     using Dst = typename OptionsT::Dst;
-    using Proto = typename OptionsT::Proto;
 
-    const PJProtocol* protocol;
-    if constexpr (std::is_same_v<Proto, void>) {
-      protocol = ctx->plan<Src>(no_tag ? "" : options.tag_path);
-    } else {
-      protocol = ctx->planProtocol<Proto>();
-    }
+    auto protocol = ctx->plan<Src>(no_tag ? "" : options.tag_path);
 
     ctx->addEncodeFunction<Src>("encode", protocol,
                                 no_src_path ? "" : options.src_path);
@@ -125,7 +118,8 @@ class PJGenericTest
         auto bbuf = decode_fn(
             enc_buffer.get(), options.to,
             {.ptr = results.dec_buffer.get(), .size = results.dec_buffer_size},
-            reinterpret_cast<Handler<Dst>*>(fn_ptrs.data()), &handlers);
+            reinterpret_cast<DecodeHandler<Dst, void>*>(fn_ptrs.data()),
+            &handlers);
 
         if (bbuf.ptr == nullptr) {
           EXPECT_TRUE(options.expect_dec_buffer);

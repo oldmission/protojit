@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <tuple>
 
-#include "portal_types.hpp"
+#include "protojit.hpp"
 
 namespace pj {
 

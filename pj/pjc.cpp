@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 
 #include <pegtl.hpp>
@@ -31,6 +32,13 @@ cl::opt<std::string> OuterNamespace(
 cl::opt<std::string> InputFile(cl::Positional, cl::desc("<proto file>"),
                                cl::Required, cl::cat(ProtogenOptionsCategory));
 
+cl::opt<std::string> OutputHeader("hpp", cl::desc("output header file"),
+                                  cl::Required,
+                                  cl::cat(ProtogenOptionsCategory));
+
+cl::opt<std::string> OutputTU("cpp", cl::desc("output cpp file (precomp only)"),
+                              cl::cat(ProtogenOptionsCategory));
+
 pj::SourceId decodeScopedName(const std::string& str) {
   pj::SourceId name;
   if (str.empty()) {
@@ -58,41 +66,36 @@ int main(int argc, char** argv) {
 
   pj::ParsingScope parse_scope{.ctx = ctx};
 
-  const auto path = std::filesystem::path(InputFile.getValue());
+  const auto input_path = std::filesystem::path(InputFile.getValue());
+  const auto header_path = std::filesystem::path(OutputHeader.getValue());
 
   for (auto& dir : IncludeDirectories) {
     parse_scope.import_dirs.emplace(dir);
   }
 
   try {
-    pj::parseProtoFile(parse_scope, path);
+    pj::parseProtoFile(parse_scope, input_path);
   } catch (tao::pegtl::parse_error& e) {
     std::cerr << "Parse error: " << e.what() << "\n";
     return 1;
   }
 
-  auto& parsed_file = parse_scope.parsed_files.at(path);
+  auto& parsed_file = parse_scope.parsed_files.at(input_path);
 
-  // TODO: support cross-compilation
   pj::SourceGenerator sourcegen{decodeScopedName(OuterNamespace.getValue())};
 
   const auto& proto = GenerateProtocol.getValue();
   if (!proto.empty()) {
     auto name = decodeScopedName(proto);
-    auto it = std::find_if(
-        parsed_file.decls.begin(), parsed_file.decls.end(),
-        [&](const auto& decl) {
-          return decl.name == name &&
-                 decl.kind == pj::ParsedProtoFile::DeclKind::kProtocol;
-        });
-    if (it == parsed_file.decls.end()) {
+    auto it = parse_scope.protocol_defs.find(name);
+    if (it == parse_scope.protocol_defs.end()) {
       std::cerr << "Protocol provided with option --gen-proto not found.\n";
       return 1;
     }
 
-    const auto& decl = *it;
-    auto planned = pj::plan_protocol(ctx, decl.type, decl.tag_path);
-    sourcegen.addProtocol(name, planned);
+    auto planned = pj::plan_protocol(ctx, it->second.first, it->second.second);
+    // TODO: update this
+    // sourcegen.addProtocol(name, planned);
   } else {
     for (auto& decl : parsed_file.decls) {
       auto type = decl.type.cast<pj::types::ValueType>();
@@ -104,12 +107,22 @@ int main(int argc, char** argv) {
           sourcegen.addComposite(type, decl.is_external);
           break;
         case pj::ParsedProtoFile::DeclKind::kProtocol:
-          sourcegen.addProtocolHead(decl.name, type, decl.tag_path);
+          sourcegen.addProtocol(decl.name, decl.type, decl.path);
           break;
       }
     }
+
+    for (auto& [ns, portal] : parsed_file.portals) {
+      sourcegen.addPortal(ns, portal);
+    }
   }
 
-  sourcegen.generateHeader(std::cout, parsed_file.imports);
+  std::ofstream header_out{header_path};
+  std::unique_ptr<std::ofstream> cpp_out;
+  if (!OutputTU.empty()) {
+    cpp_out.reset(new std::ofstream{OutputTU.getValue()});
+  }
+  sourcegen.generate(header_path, header_out, cpp_out.get(),
+                     parsed_file.imports);
   return 0;
 }

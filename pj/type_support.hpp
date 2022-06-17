@@ -324,7 +324,18 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   using Base::Base;
   using Base::get;
 
-  void print(llvm::raw_ostream& os) const;
+  template <typename OS>
+  void print(OS& os) const {
+    bool first = true;
+    for (auto& part : getValue()) {
+      if (!first) {
+        os << ".";
+      }
+      os << std::string_view(part.data(), part.size());
+      first = false;
+    }
+  }
+
   static PathAttr none(mlir::MLIRContext* C);
   static PathAttr fromString(mlir::MLIRContext* C, llvm::StringRef src_path);
   std::string toString() const;
