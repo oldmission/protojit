@@ -54,12 +54,14 @@ struct ParsedProtoFile {
       std::vector<types::PathAttr> handlers;
     };
 
+    SourceId name;
+
     std::vector<Sizer> sizers;
     std::vector<Encoder> encoders;
     std::vector<Decoder> decoders;
 
-    const SourceId jit_class_name;
-    const SourceId precomp_class_name;
+    const std::string jit_class_name;
+    const std::string precomp_class_name;
   };
 
   std::vector<Decl> decls;
