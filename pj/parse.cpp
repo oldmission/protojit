@@ -90,8 +90,8 @@ struct ParseState {
   std::vector<ParsedProtoFile::Interface::Sizer> sizers;
   std::vector<ParsedProtoFile::Interface::Encoder> encoders;
   std::vector<ParsedProtoFile::Interface::Decoder> decoders;
-  SourceId iface_jit_class_name;
-  SourceId iface_precomp_class_name;
+  std::string iface_jit_class_name;
+  std::string iface_precomp_class_name;
 
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
@@ -624,7 +624,7 @@ struct ProtoDecl
     : if_must<KEYWORD("protocol"), Id, tok<':'>, Id, PathDecl, tok<';'>> {};
 
 BEGIN_ACTION(ProtoDecl) {
-  auto head_name = __ popScopedId();
+  auto head_name = __ popScopedId(false);
   auto protocol_name = __ popScopedId();
 
   if (__ resolveType(in, protocol_name, false)) {
@@ -669,7 +669,7 @@ void handleSizerOrEncoderDecl(const ActionInput& in, ParseState* state) {
   static_assert(std::is_same_v<Decl, SizerDecl> ||
                 std::is_same_v<Decl, EncoderDecl>);
 
-  auto src = __ popScopedId();
+  auto src = __ popScopedId(false);
   // Check that the src type exists.
   auto src_type = __ resolveType(in, src);
 
@@ -721,7 +721,7 @@ struct DecoderDecl : if_must<KEYWORD("decoder"), Id, tok<':'>, ScopedId,
                              opt<HandlersDecl>, tok<';'>> {};
 
 BEGIN_ACTION(DecoderDecl) {
-  auto dst = __ popScopedId();
+  auto dst = __ popScopedId(false);
   // Check that the dst type exists.
   auto dst_type = __ resolveType(in, dst);
 
@@ -748,23 +748,33 @@ BEGIN_ACTION(DecoderDecl) {
 }
 END_ACTION()
 
-struct JitClassDecl : if_must<KEYWORD("jit"), Id> {};
-BEGIN_ACTION(JitClassDecl) { __ iface_jit_class_name = __ popScopedId(); }
-END_ACTION()
-
-struct PrecompClassDecl : if_must<KEYWORD("precomp"), Id> {};
-BEGIN_ACTION(PrecompClassDecl) {
-  __ iface_precomp_class_name = __ popScopedId();
+struct JitClassDecl : if_must<KEYWORD("jit"), Id, tok<';'>> {};
+BEGIN_ACTION(JitClassDecl) {
+  if (!__ iface_jit_class_name.empty()) {
+    throw parse_error("Multiple jit declarations in interface", in.position());
+  }
+  __ iface_jit_class_name = __ popId();
 }
 END_ACTION()
 
-struct InterfaceDecl : if_must<KEYWORD("interface"), LB,
+struct PrecompClassDecl : if_must<KEYWORD("precomp"), Id, tok<';'>> {};
+BEGIN_ACTION(PrecompClassDecl) {
+  if (!__ iface_precomp_class_name.empty()) {
+    throw parse_error("Multiple precomp declaration in interface",
+                      in.position());
+  }
+  __ iface_precomp_class_name = __ popId();
+}
+END_ACTION()
+
+struct InterfaceDecl : if_must<KEYWORD("interface"), Id, LB,
                                star<sor<SizerDecl, EncoderDecl, DecoderDecl,
                                         JitClassDecl, PrecompClassDecl>>,
                                RB> {};
 
 BEGIN_ACTION(InterfaceDecl) {
   __ interfaces.push_back(ParsedProtoFile::Interface{
+      .name = __ popScopedId(),
       .sizers = __ sizers,
       .encoders = __ encoders,
       .decoders = __ decoders,
@@ -775,6 +785,8 @@ BEGIN_ACTION(InterfaceDecl) {
   __ sizers.clear();
   __ encoders.clear();
   __ decoders.clear();
+  __ iface_jit_class_name.clear();
+  __ iface_precomp_class_name.clear();
 }
 END_ACTION()
 
