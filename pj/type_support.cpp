@@ -62,6 +62,20 @@ bool ValueType::classof(mlir::Type val) {
   return false;
 }
 
+size_t ReflectDomain::counter = 0;
+size_t WireDomain::counter = 0;
+
+bool DomainAttr::classof(mlir::Attribute attr) {
+#define CHECK_TYPE_ID(DOMAIN) \
+  if (attr.getTypeID() == DOMAIN##DomainAttr::getTypeID()) return true;
+
+  FOR_EACH_DOMAIN(CHECK_TYPE_ID);
+
+#undef CHECK_TYPE_ID
+
+  return false;
+}
+
 void PathAttr::print(llvm::raw_ostream& os) const {
   bool first = true;
   for (auto& part : getValue()) {

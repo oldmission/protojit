@@ -336,8 +336,8 @@ BEGIN_ACTION(StructDecl) {
 
   auto name = __ popScopedId();
   SpanConverter<llvm::StringRef> name_converter{name};
-  auto type = types::StructType::get(&__ ctx, types::TypeDomain::kHost,
-                                     name_converter.get());
+  auto type = types::StructType::get(
+      &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
 
   types::Struct data{
       .fields = Span<types::StructField>{fields.data(), fields.size()}};
@@ -434,8 +434,8 @@ static void handleVariant(const ActionInput& in, ParseState* state,
 
   auto name = __ popScopedId();
   SpanConverter<llvm::StringRef> name_converter{name};
-  auto type = types::InlineVariantType::get(&__ ctx, types::TypeDomain::kHost,
-                                            name_converter.get());
+  auto type = types::InlineVariantType::get(
+      &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
 
   types::InlineVariant data{.terms =
                                 Span<types::Term>{terms.data(), terms.size()}};

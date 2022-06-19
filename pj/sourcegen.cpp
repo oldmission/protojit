@@ -85,7 +85,7 @@ std::string SourceGenerator::createTypeHandleFromDecl(std::string decl) {
 
   std::string handle;
   stream() << "const auto* " << (handle = getUniqueName())
-           << " = BuildPJType<decltype(" << decl << ")>::build(ctx);\n";
+           << " = BuildPJType<decltype(" << decl << ")>::build(ctx, domain);\n";
   return handle;
 }
 
@@ -96,12 +96,11 @@ std::string SourceGenerator::createTypeHandleFromType(types::ValueType type) {
   std::string handle = getUniqueName();
 
   // BuildPJType is always used for NominalTypes under the assumption that pjc
-  // is not used for host and wire types at once. It is also used for host types
-  // because their type information is inferred from the compiler.
+  // is not used for host and wire types at once.
   if (domain_ == Domain::kHost || type.isa<types::NominalType>()) {
     os << "const auto* " << handle << " = BuildPJType<";
     printTypeRef(type);
-    os << ">::build(ctx);\n";
+    os << ">::build(ctx, domain);\n";
     return handle;
   }
 
@@ -246,7 +245,7 @@ void SourceGenerator::addProtocol(const SourceId& name,
   printTypeRef(proto->head);
   os << ";\n";
 
-  os << "static const auto* build(PJContext* ctx) {\n";
+  os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
   std::string head_handle = createTypeHandleFromType(proto->head);
   os << "return PJCreateProtocolType(ctx, " << head_handle << ", "
      << proto->buffer_offset.bits() << ");\n";
@@ -259,7 +258,7 @@ void SourceGenerator::addProtocol(const SourceId& name,
 }
 
 void SourceGenerator::addComposite(types::ValueType type, bool is_external) {
-  pushDomain(type.cast<types::NominalType>().type_domain());
+  pushDomain(type.cast<types::NominalType>().domain());
 
   if (type.isa<types::StructType>()) {
     addStruct(type.cast<types::StructType>(), is_external);
@@ -306,7 +305,7 @@ void SourceGenerator::addStructBuilder(types::StructType type,
   printName(name);
   os << "> {\n";
 
-  os << "static const auto* build(PJContext* ctx) {\n";
+  os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
 
   // Generate an array of handles for each of the fields.
   os << "const PJStructField* fields[" << type->fields.size() << "];\n";
@@ -348,9 +347,7 @@ void SourceGenerator::addStructBuilder(types::StructType type,
      << " = PJCreateStructType(ctx";
   os << ", /*name_size=*/" << name.size();
   os << ", /*name=*/" << name_array;
-  os << ", /*type_domain=*/"
-     << (domain_ == Domain::kHost ? "PJ_TYPE_DOMAIN_HOST"
-                                  : "PJ_TYPE_DOMAIN_WIRE");
+  os << ", /*type_domain=*/domain";
   os << ", /*num_fields=*/" << type->fields.size();
   os << ", /*fields=*/fields";
   if (domain_ == Domain::kHost) {
@@ -453,7 +450,7 @@ void SourceGenerator::addVariantBuilder(types::VariantType type, bool has_value,
   printName(name);
   os << "> {\n";
 
-  os << "static const auto* build(PJContext* ctx) {\n";
+  os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
 
   os << "const PJTerm* terms[" << type.terms().size() << "];\n";
   size_t term_num = 0;
@@ -491,9 +488,7 @@ void SourceGenerator::addVariantBuilder(types::VariantType type, bool has_value,
      << "VariantType(ctx";
   os << ", /*name_size=*/" << name.size();
   os << ", /*name=*/" << name_array;
-  os << ", /*type_domain=*/"
-     << (domain_ == Domain::kHost ? "PJ_TYPE_DOMAIN_HOST"
-                                  : "PJ_TYPE_DOMAIN_WIRE");
+  os << ", /*type_domain=*/domain";
   os << ", /*num_terms=*/" << type.terms().size();
   os << ", /*terms=*/terms";
   if (domain_ == Domain::kHost) {

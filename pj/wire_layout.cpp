@@ -26,7 +26,7 @@ ValueType WireLayout::visit(StructType type) {
     alignment = std::max(alignment, el.headAlignment());
   }
 
-  auto packed = StructType::get(&ctx_, types::TypeDomain::kWire, type.name());
+  auto packed = StructType::get(&ctx_, wire_domain_, type.name());
   packed.setTypeData(
       {.fields = fields, .size = offset, .alignment = alignment});
   return packed;
@@ -51,8 +51,7 @@ ValueType WireLayout::visitVariant(Variant type) {
   const Width tag_align = Bytes(1);
 
   if constexpr (std::is_same_v<Variant, OutlineVariantType>) {
-    auto packed =
-        OutlineVariantType::get(&ctx_, types::TypeDomain::kWire, type.name());
+    auto packed = OutlineVariantType::get(&ctx_, wire_domain_, type.name());
     // term_offset will be set in OutlineVariantOffsetGeneration.
     packed.setTypeData({.terms = terms,
                         .tag_width = tag_width,
@@ -63,8 +62,7 @@ ValueType WireLayout::visitVariant(Variant type) {
   } else {
     const Width term_offset = Bytes(0);
     const Width tag_offset = RoundUp(term_offset + term_size, tag_align);
-    auto packed =
-        InlineVariantType::get(&ctx_, types::TypeDomain::kWire, type.name());
+    auto packed = InlineVariantType::get(&ctx_, wire_domain_, type.name());
     packed.setTypeData({.terms = terms,
                         .term_offset = term_offset,
                         .term_size = term_size,

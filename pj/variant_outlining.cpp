@@ -17,8 +17,9 @@ ValueType VariantOutlining::tryOutlineVariant(Type type, PathAttr path) {
                                       std::prev(var.name().end())};
     std::string last = "__outline__" + var.name().back().str();
     name.push_back(last);
-    auto outline = OutlineVariantType::get(&ctx_, types::TypeDomain::kInternal,
-                                           Name{name.data(), name.size()});
+    auto outline =
+        OutlineVariantType::get(&ctx_, types::InternalDomainAttr::get(&ctx_),
+                                Name{name.data(), name.size()});
 
     // term_offset is left unset because it depends on the final generated
     // head sizes of all types coming after it. It will be set in the end in
@@ -63,7 +64,6 @@ void OutlineVariantOffsetGeneration::incrementTermOffset(Width val) {
 void OutlineVariantOffsetGeneration::run(Type type) {
   if (auto var = type.dyn_cast<OutlineVariantType>()) {
     // Must run after WireLayout
-    assert(var.type_domain() == TypeDomain::kWire);
     outline_ = var;
     incrementTermOffset(var.headSize());
     return;

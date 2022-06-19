@@ -157,7 +157,7 @@ namespace gen {
 
 template <typename T, PJSign S>
 struct BuildPJType<Integer<T, S>> {
-  static const auto* build(PJContext* ctx) {
+  static const auto* build(PJContext* ctx, const PJDomain* domain) {
     static_assert(std::is_integral_v<T>);
     return PJCreateIntType(ctx, /*width=*/sizeof(T) << 3,
                            /*alignment=*/alignof(T) << 3,
@@ -167,14 +167,16 @@ struct BuildPJType<Integer<T, S>> {
 
 template <>
 struct BuildPJType<::pj::Unit> {
-  static const auto* build(PJContext* ctx) { return PJCreateUnitType(ctx); }
+  static const auto* build(PJContext* ctx, const PJDomain* domain) {
+    return PJCreateUnitType(ctx);
+  }
 };
 
 template <typename Elem, size_t Length>
 struct BuildPJType<std::array<Elem, Length>> {
-  static const auto* build(PJContext* ctx) {
+  static const auto* build(PJContext* ctx, const PJDomain* domain) {
     using Array = std::array<Elem, Length>;
-    auto elem = BuildPJType<Elem>::build(ctx);
+    auto elem = BuildPJType<Elem>::build(ctx, domain);
     return PJCreateArrayType(ctx, /*elem=*/elem, /*length=*/Length,
                              /*elem_size=*/sizeof(Elem) << 3,
                              /*alignment=*/alignof(Array) << 3);
@@ -183,9 +185,9 @@ struct BuildPJType<std::array<Elem, Length>> {
 
 template <typename Elem, size_t MinLength, intptr_t MaxLength>
 struct BuildPJType<::pj::ArrayView<Elem, MinLength, MaxLength>> {
-  static const auto* build(PJContext* ctx) {
+  static const auto* build(PJContext* ctx, const PJDomain* domain) {
     using AV = ::pj::ArrayView<Elem, MinLength, MaxLength>;
-    auto elem = BuildPJType<Elem>::build(ctx);
+    auto elem = BuildPJType<Elem>::build(ctx, domain);
     intptr_t inline_payload_offset = -1;
     intptr_t inline_payload_size = 0;
     if constexpr (MinLength > 0) {
@@ -220,12 +222,12 @@ namespace gen {
 
 template <>
 struct BuildPJType<Any> {
-  static const auto* build(PJContext* ctx) {
+  static const auto* build(PJContext* ctx, const PJDomain* domain) {
     return PJCreateAnyType(
         ctx, offsetof(Any, data_) << 3, sizeof(Any::data_) << 3,
         offsetof(Any, type_) << 3, sizeof(Any::type_) << 3, sizeof(Any) << 3,
         alignof(Any) << 3,
-        ::pj::gen::BuildPJType<::pj::reflect::Protocol>::build(ctx));
+        ::pj::gen::BuildPJType<::pj::reflect::Protocol>::build(ctx, domain));
   }
 };
 

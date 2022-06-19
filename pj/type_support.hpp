@@ -13,6 +13,7 @@
 
 #include "arch.hpp"
 #include "span.hpp"
+#include "type_domain.hpp"
 #include "util.hpp"
 
 namespace pj {
@@ -51,7 +52,7 @@ struct ValueType;
 using ChildVector = llvm::SmallVector<std::pair<mlir::Type, std::string>>;
 
 struct ValueTypeStorage : public mlir::TypeStorage {
-  virtual ~ValueTypeStorage(){};
+  virtual ~ValueTypeStorage() {}
   virtual void print(llvm::raw_ostream& os) const = 0;
   virtual bool hasDetails() const = 0;
   virtual void printDetails(llvm::raw_ostream& os) const = 0;
@@ -170,31 +171,27 @@ struct StructuralTypeBase : public ValueType {
   }
 };
 
-enum class TypeDomain { kHost, kWire, kInternal, kReflect };
-
-
 struct NominalTypeStorageBase : public ValueTypeStorage {
   virtual ~NominalTypeStorageBase() {}
   virtual Name name() const = 0;
-  virtual TypeDomain type_domain() const = 0;
+  virtual DomainAttr domain() const = 0;
 };
 
 template <typename T>
 struct NominalTypeStorage : public NominalTypeStorageBase {
-  using KeyTy = std::pair<TypeDomain, Name>;
+  using KeyTy = std::pair<DomainAttr, Name>;
 
-  NominalTypeStorage(TypeDomain type_domain, Name name)
-      : type_domain_(type_domain), name_(name) {}
+  NominalTypeStorage(DomainAttr domain, Name name)
+      : domain_(domain), name_(name) {}
 
   bool operator==(const KeyTy& k) const {
-    return type_domain_ == std::get<TypeDomain>(k) &&
-           name_ == std::get<Name>(k);
+    return domain_ == std::get<DomainAttr>(k) && name_ == std::get<Name>(k);
   }
 
   static llvm::hash_code hashKey(const KeyTy& k) {
     using ::llvm::hash_combine;
     using ::llvm::hash_value;
-    return hash_combine(hash_value(std::get<TypeDomain>(k)),
+    return hash_combine(hash_value(std::get<DomainAttr>(k)),
                         hash_value(std::get<Name>(k)));
   }
 
@@ -205,20 +202,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
   }
 
   void print(llvm::raw_ostream& os) const override {
-    switch (type_domain_) {
-      case TypeDomain::kHost:
-        os << "host";
-        break;
-      case TypeDomain::kWire:
-        os << "wire";
-        break;
-      case TypeDomain::kInternal:
-        os << "internal";
-      case TypeDomain::kReflect:
-        os << "reflect";
-        break;
-    }
-
+    os << domain_;
     for (auto p : name_) {
       os << "::" << p;
     }
@@ -242,9 +226,9 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
 
   Name name() const override { return name_; }
 
-  TypeDomain type_domain() const override { return type_domain_; }
+  DomainAttr domain() const override { return domain_; }
 
-  TypeDomain type_domain_;
+  DomainAttr domain_;
   Name name_;
   T type_data_;
 };
@@ -257,7 +241,7 @@ struct NominalType : public ValueType {
 
   Name name() const { return storage()->name(); };
 
-  TypeDomain type_domain() const { return storage()->type_domain(); };
+  DomainAttr domain() const { return storage()->domain(); };
 
  private:
   const NominalTypeStorageBase* storage() const {

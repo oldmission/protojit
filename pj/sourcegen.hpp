@@ -43,11 +43,15 @@ class SourceGenerator {
     depth_++;
   }
 
-  void pushDomain(types::TypeDomain domain) {
+  void pushDomain(types::DomainAttr domain) {
     auto new_domain = Domain::kUnset;
-    if (domain == types::TypeDomain::kHost) {
+    // .pj files are parsed into the InternalDomain, because the types do not
+    // actually correspond to an actual in-memory type. However, since the
+    // generated C++ code does describe an in-memory type, it should be
+    // generated in HostDomain.
+    if (domain.isa<types::InternalDomainAttr>()) {
       new_domain = Domain::kHost;
-    } else if (domain == types::TypeDomain::kWire) {
+    } else if (domain.isa<types::WireDomainAttr>()) {
       new_domain = Domain::kWire;
     }
     pushDomain(new_domain);
@@ -63,7 +67,7 @@ class SourceGenerator {
     if (auto nominal = type.dyn_cast_or_null<types::NominalType>()) {
       // Host types must be added manually because they require additional
       // information.
-      return nominal.type_domain() == types::TypeDomain::kWire &&
+      return nominal.domain().isa<types::WireDomainAttr>() &&
              generated_.find(type.getAsOpaquePointer()) == generated_.end();
     }
     return false;
