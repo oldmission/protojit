@@ -3,7 +3,6 @@
 #include "pj/span.hpp"
 
 namespace pj {
-using namespace types;
 
 namespace reflect {
 
@@ -20,9 +19,9 @@ namespace reflect {
   void reflect(::pj::types::T##Type type, llvm::BumpPtrAllocator& alloc,   \
                std::vector<Type>& pool,                                    \
                std::unordered_map<const void*, int32_t>& cache);           \
-  ::pj::types::ValueType unreflect(const ::pj::reflect::T& type,           \
-                                   int32_t index, mlir::MLIRContext& ctxi, \
-                                   Span<Type> pool);
+  ::pj::types::ValueType unreflect(                                        \
+      const ::pj::reflect::T& type, int32_t index, mlir::MLIRContext& ctx, \
+      types::WireDomainAttr domain, Span<Type> pool);
 FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(DECLARE_TYPE_REFLECTORS)
 #undef DECLARE_TYPE_REFLECTORS
 
@@ -52,10 +51,11 @@ int32_t reflect(types::ValueType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const Type& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
-#define MATCH_TYPE(T)                                 \
-  else if (type.tag == Type::Kind::T) {               \
-    return unreflect(type.value.T, index, ctx, pool); \
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
+#define MATCH_TYPE(T)                                         \
+  else if (type.tag == Type::Kind::T) {                       \
+    return unreflect(type.value.T, index, ctx, domain, pool); \
   }
 
   if (false)
@@ -86,17 +86,18 @@ Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
   return proto;
 }
 
-types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx) {
+types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx,
+                           types::WireDomainAttr domain) {
   Span<Type> pool{type.types.begin(), type.types.size()};
   const Type& head = pool[type.head];
-  return ProtocolType::get(&ctx,
-                           types::Protocol{
-                               .head = unreflect(head, type.head, ctx, pool),
-                               .buffer_offset = type.buffer_offset,
-                           });
+  return types::ProtocolType::get(
+      &ctx, types::Protocol{
+                .head = unreflect(head, type.head, ctx, domain, pool),
+                .buffer_offset = type.buffer_offset,
+            });
 }
 
-void reflect(IntType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::IntType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   Type result{.tag = Type::Kind::Int};
@@ -109,27 +110,29 @@ void reflect(IntType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const Int& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
-  return IntType::get(&ctx, types::Int{
-                                .width = type.width,
-                                .alignment = type.alignment,
-                                .sign = type.sign,
-                            });
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
+  return types::IntType::get(&ctx, types::Int{
+                                       .width = type.width,
+                                       .alignment = type.alignment,
+                                       .sign = type.sign,
+                                   });
 }
 
-void reflect(UnitType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::UnitType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   pool.emplace_back(Type{.tag = Type::Kind::Unit});
 }
 
 types::ValueType unreflect(const Unit& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
-  return UnitType::get(&ctx);
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
+  return types::UnitType::get(&ctx);
 }
 
 Name reflectName(types::Name name, llvm::BumpPtrAllocator& alloc) {
-  auto* result = alloc.Allocate<pj::ArrayView<char, 0, -1>>(name.size());
+  auto* result = alloc.Allocate<ArrayView<char, 0, -1>>(name.size());
   for (size_t i = 0; i < name.size(); ++i) {
     result[i] = {name[i].data(), name[i].size()};
   }
@@ -142,7 +145,7 @@ SpanConverter<llvm::StringRef> unreflectName(Name name) {
           }};
 }
 
-void reflect(StructType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::StructType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   auto* fields = alloc.Allocate<StructField>(type->fields.size());
@@ -169,18 +172,19 @@ void reflect(StructType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const Struct& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
   auto name_conv = unreflectName(type.name);
   SpanConverter<types::StructField> field_conv{
       type.fields, type.fields.size(), [&](const StructField& f) {
         return types::StructField{
-            .type = unreflect(pool[index + f.type], index + f.type, ctx, pool),
+            .type = unreflect(pool[index + f.type], index + f.type, ctx, domain,
+                              pool),
             .name = {f.name.begin(), f.name.size()},
             .offset = f.offset,
         };
       }};
-  auto result =
-      StructType::get(&ctx, types::TypeDomain::kReflect, name_conv.get());
+  auto result = types::StructType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::Struct{
       .fields = field_conv.get(),
       .size = type.size,
@@ -189,7 +193,7 @@ types::ValueType unreflect(const Struct& type, int32_t index,
   return result;
 }
 
-void reflect(ArrayType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::ArrayType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   const int32_t elem = reflect(type->elem, alloc, pool, cache);
@@ -205,18 +209,19 @@ void reflect(ArrayType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const Array& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
-  return ArrayType::get(
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
+  return types::ArrayType::get(
       &ctx, types::Array{
                 .elem = unreflect(pool[index + type.elem], index + type.elem,
-                                  ctx, pool),
+                                  ctx, domain, pool),
                 .length = type.length,
                 .elem_size = type.elem_size,
                 .alignment = type.alignment,
             });
 }
 
-void reflect(VectorType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::VectorType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   const int32_t elem = reflect(type->elem, alloc, pool, cache);
@@ -241,11 +246,12 @@ void reflect(VectorType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const Vector& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
-  return VectorType::get(
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
+  return types::VectorType::get(
       &ctx, types::Vector{
                 .elem = unreflect(pool[index + type.elem], index + type.elem,
-                                  ctx, pool),
+                                  ctx, domain, pool),
                 .min_length = type.min_length,
                 .max_length = type.max_length,
                 .ppl_count = type.ppl_count,
@@ -261,8 +267,8 @@ types::ValueType unreflect(const Vector& type, int32_t index,
             });
 }
 
-Term* reflectTerms(pj::Span<pj::types::Term> terms,
-                   llvm::BumpPtrAllocator& alloc, std::vector<Type>& pool,
+Term* reflectTerms(Span<types::Term> terms, llvm::BumpPtrAllocator& alloc,
+                   std::vector<Type>& pool,
                    std::unordered_map<const void*, int32_t>& cache) {
   auto* terms_alloc = alloc.Allocate<Term>(terms.size());
   auto* terms_it = terms_alloc;
@@ -282,18 +288,19 @@ Term* reflectTerms(pj::Span<pj::types::Term> terms,
 
 SpanConverter<types::Term> unreflectTerms(ArrayView<Term, 0, -1> terms,
                                           int32_t index, mlir::MLIRContext& ctx,
+                                          types::WireDomainAttr domain,
                                           Span<Type> pool) {
   return {terms.begin(), terms.size(), [&](const Term& term) {
             return types::Term{
                 .name = {term.name.begin(), term.name.size()},
                 .type = unreflect(pool[index + term.type], index + term.type,
-                                  ctx, pool),
+                                  ctx, domain, pool),
                 .tag = term.tag,
             };
           }};
 }
 
-void reflect(InlineVariantType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   auto* terms = reflectTerms(type->terms, alloc, pool, cache);
@@ -311,11 +318,11 @@ void reflect(InlineVariantType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const InlineVariant& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
   auto name_conv = unreflectName(type.name);
-  auto term_conv = unreflectTerms(type.terms, index, ctx, pool);
-  auto result = types::InlineVariantType::get(&ctx, types::TypeDomain::kReflect,
-                                              name_conv.get());
+  auto term_conv = unreflectTerms(type.terms, index, ctx, domain, pool);
+  auto result = types::InlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::InlineVariant{
       .terms = term_conv.get(),
       .term_offset = type.term_offset,
@@ -327,7 +334,7 @@ types::ValueType unreflect(const InlineVariant& type, int32_t index,
   return result;
 }
 
-void reflect(OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
+void reflect(types::OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   auto* terms = reflectTerms(type->terms, alloc, pool, cache);
@@ -344,11 +351,11 @@ void reflect(OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
 }
 
 types::ValueType unreflect(const OutlineVariant& type, int32_t index,
-                           mlir::MLIRContext& ctx, Span<Type> pool) {
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           Span<Type> pool) {
   auto name_conv = unreflectName(type.name);
-  auto term_conv = unreflectTerms(type.terms, index, ctx, pool);
-  auto result = types::OutlineVariantType::get(
-      &ctx, types::TypeDomain::kReflect, name_conv.get());
+  auto term_conv = unreflectTerms(type.terms, index, ctx, domain, pool);
+  auto result = types::OutlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::OutlineVariant{
       .terms = term_conv.get(),
       .tag_width = type.tag_width,
@@ -361,18 +368,19 @@ types::ValueType unreflect(const OutlineVariant& type, int32_t index,
 
 #undef FOR_EACH_PROTOJIT_TYPE
 
-ValueType reflectableTypeFor(ValueType type) {
-  if (type.isa<IntType>()) {
+types::ValueType reflectableTypeFor(types::ValueType type,
+                                    types::ReflectDomainAttr domain) {
+  if (type.isa<types::IntType>()) {
     return type;
   }
-  if (auto array = type.dyn_cast<ArrayType>()) {
+  if (auto array = type.dyn_cast<types::ArrayType>()) {
     types::Array ary{array};
-    ary.elem = reflectableTypeFor(ary.elem);
-    return ArrayType::get(array.getContext(), ary);
+    ary.elem = reflectableTypeFor(ary.elem, domain);
+    return types::ArrayType::get(array.getContext(), ary);
   }
-  if (auto vec = type.dyn_cast<VectorType>()) {
-    auto elem = reflectableTypeFor(vec->elem);
-    return VectorType::get(
+  if (auto vec = type.dyn_cast<types::VectorType>()) {
+    auto elem = reflectableTypeFor(vec->elem, domain);
+    return types::VectorType::get(
         type.getContext(),
         types::Vector{
             .elem = elem,
@@ -394,42 +402,41 @@ ValueType reflectableTypeFor(ValueType type) {
             .outlined_payload_alignment = elem.headAlignment(),
         });
   }
-  if (auto str = type.dyn_cast<StructType>()) {
+  if (auto str = type.dyn_cast<types::StructType>()) {
     llvm::SmallVector<types::StructField, 4> fields;
     for (auto& f : str->fields) {
       fields.emplace_back(types::StructField{
-          .type = reflectableTypeFor(f.type),
+          .type = reflectableTypeFor(f.type, domain),
           .name = f.name,
           .offset = f.offset,
       });
     }
     types::Struct result = str;
     result.fields = fields;
-    auto typ = types::StructType::get(type.getContext(), TypeDomain::kReflect,
-                                      str.name());
+    auto typ = types::StructType::get(type.getContext(), domain, str.name());
     typ.setTypeData(result);
     return typ;
   }
-  if (auto var = type.dyn_cast<VariantType>()) {
+  if (auto var = type.dyn_cast<types::VariantType>()) {
     llvm::SmallVector<types::Term, 4> terms;
     Width term_max_size = Bits(0);
     for (auto& t : var.terms()) {
       auto back = terms.emplace_back(types::Term{
           .name = t.name,
-          .type = reflectableTypeFor(t.type),
+          .type = reflectableTypeFor(t.type, domain),
           .tag = t.tag,
       });
       term_max_size = std::max(term_max_size, back.type.headSize());
     }
-    if (auto inl = type.dyn_cast<InlineVariantType>()) {
+    if (auto inl = type.dyn_cast<types::InlineVariantType>()) {
       types::InlineVariant result = inl;
       result.terms = terms;
-      auto typ = types::InlineVariantType::get(
-          type.getContext(), TypeDomain::kReflect, inl.name());
+      auto typ =
+          types::InlineVariantType::get(type.getContext(), domain, inl.name());
       typ.setTypeData(result);
       return typ;
     }
-    if (auto outl = type.dyn_cast<OutlineVariantType>()) {
+    if (auto outl = type.dyn_cast<types::OutlineVariantType>()) {
       types::InlineVariant result{
           .terms = terms,
           .term_offset = Bytes(0),
@@ -439,8 +446,8 @@ ValueType reflectableTypeFor(ValueType type) {
           .size = term_max_size + outl.tag_width(),
           .alignment = outl->term_alignment,
       };
-      auto typ = types::InlineVariantType::get(
-          type.getContext(), TypeDomain::kReflect, outl.name());
+      auto typ =
+          types::InlineVariantType::get(type.getContext(), domain, outl.name());
       typ.setTypeData(result);
       return typ;
     }

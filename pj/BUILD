@@ -83,6 +83,7 @@ cc_library(
         "ir.hpp",
         "ir.hpp.inc",
         "span.hpp",
+        "type_domain.hpp",
         "type_support.hpp",
         "types.hpp",
         "util.hpp",

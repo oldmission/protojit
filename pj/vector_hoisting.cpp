@@ -53,7 +53,7 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
                                         inner.getAsOpaquePointer()));
       name_conv.storage().back() = back;
 
-      auto outer = StructType::get(&ctx_, str.type_domain(), name_conv.get());
+      auto outer = StructType::get(&ctx_, str.domain(), name_conv.get());
       outer.setTypeData(data);
       return outer;
     };
