@@ -16,9 +16,9 @@ pj::ReferenceMode ConvertReferenceMode(PJReferenceMode reference_mode) {
              : pj::ReferenceMode::kOffset;
 }
 
-pj::types::TypeDomain ConvertTypeDomain(PJTypeDomain type_domain) {
-  return (type_domain == PJ_TYPE_DOMAIN_HOST) ? pj::types::TypeDomain::kHost
-                                              : pj::types::TypeDomain::kWire;
+pj::types::DomainAttr ConvertDomain(const PJDomain* domain) {
+  return mlir::Attribute::getFromOpaquePointer(domain)
+      .cast<pj::types::DomainAttr>();
 }
 
 pj::Sign ConvertSign(PJSign sign) {
@@ -45,6 +45,12 @@ PJContext* PJGetContext() {
 
 void PJFreeContext(PJContext* ctx) {
   delete reinterpret_cast<pj::ProtoJitContext*>(ctx);
+}
+
+const PJDomain* PJGetHostDomain(PJContext* ctx) {
+  auto host = pj::types::HostDomainAttr::get(
+      &reinterpret_cast<pj::ProtoJitContext*>(ctx)->ctx_);
+  return reinterpret_cast<const PJDomain*>(host.getAsOpaquePointer());
 }
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
@@ -94,7 +100,7 @@ const PJStructField* PJCreateStructField(const char* name, const void* type,
 
 const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        const char* name[],
-                                       PJTypeDomain type_domain,
+                                       const PJDomain* domain,
                                        uintptr_t num_fields,
                                        const PJStructField* fields[], Bits size,
                                        Bits alignment) {
@@ -108,7 +114,7 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
         return *casted;
       }};
   auto struct_type = pj::types::StructType::get(
-      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+      &ctx->ctx_, ConvertDomain(domain), name_converter.get());
   struct_type.setTypeData({.fields = fields_converter.get(),
                            .size = pj::Bits(size),
                            .alignment = pj::Bits(alignment)});
@@ -129,7 +135,7 @@ const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag) {
 
 const PJInlineVariantType* PJCreateInlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_width,
     Bits size, Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
@@ -142,7 +148,7 @@ const PJInlineVariantType* PJCreateInlineVariantType(
         return *casted;
       }};
   auto inline_variant_type = pj::types::InlineVariantType::get(
-      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+      &ctx->ctx_, ConvertDomain(domain), name_converter.get());
   inline_variant_type.setTypeData({.terms = terms_converter.get(),
                                    .term_offset = pj::Bits(term_offset),
                                    .term_size = pj::Bits(term_size),
@@ -157,7 +163,7 @@ const PJInlineVariantType* PJCreateInlineVariantType(
 
 const PJOutlineVariantType* PJCreateOutlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
@@ -169,7 +175,7 @@ const PJOutlineVariantType* PJCreateOutlineVariantType(
         return *casted;
       }};
   auto outline_variant_type = pj::types::OutlineVariantType::get(
-      &ctx->ctx_, ConvertTypeDomain(type_domain), name_converter.get());
+      &ctx->ctx_, ConvertDomain(domain), name_converter.get());
   outline_variant_type.setTypeData(
       {.terms = terms_converter.get(),
        .tag_width = pj::Bits(tag_width),

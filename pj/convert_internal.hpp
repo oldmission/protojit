@@ -4,8 +4,8 @@
 
 namespace pj {
 
-// Converts all NominalTypes to have a type_domain of kInternal so that types
-// can be freely mutated during planning without affecting existing types.
+// Converts all NominalTypes to InternalDomain so that types can be freely
+// mutated during planning without affecting existing types.
 class ConvertInternal : public TypePass {
  public:
   ConvertInternal(mlir::MLIRContext& ctx) : ctx_(ctx) {}

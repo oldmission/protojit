@@ -6,7 +6,8 @@ namespace pj {
 
 class WireLayout : public TypePass {
  public:
-  WireLayout(mlir::MLIRContext& ctx) : ctx_(ctx) {}
+  WireLayout(mlir::MLIRContext& ctx)
+      : ctx_(ctx), wire_domain_(types::WireDomainAttr::unique(&ctx_)) {}
 
   bool run(types::Protocol& proto) override;
 
@@ -21,6 +22,7 @@ class WireLayout : public TypePass {
   types::ValueType visit(mlir::Type type);
 
   mlir::MLIRContext& ctx_;
+  types::WireDomainAttr wire_domain_;
 };
 
 }  // namespace pj

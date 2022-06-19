@@ -1079,7 +1079,8 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
         loc, _.getListener(), src_type.cast<VectorType>(),
         dst_type.cast<VectorType>(), op.getResult().getType());
   } else if (dst_type.isa<AnyType>()) {
-    auto reflected_type = reflect::reflectableTypeFor(src_type);
+    auto reflected_type = reflect::reflectableTypeFor(
+        src_type, ReflectDomainAttr::unique(_.getContext()));
 
     auto buf = operands[2];
     Value aligned_buf = _.create<AlignOp>(
@@ -1130,11 +1131,11 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
   if (type.isa<StructType>()) {
     llvm::StringRef name = "<empty>";
     src = _.create<UnitOp>(
-        loc, StructType::get(ctx, types::TypeDomain::kHost, &name));
+        loc, StructType::get(ctx, HostDomainAttr::get(ctx), &name));
   } else if (type.isa<VariantType>()) {
     llvm::StringRef name = "<empty>";
     src = _.create<UnitOp>(
-        loc, InlineVariantType::get(ctx, types::TypeDomain::kHost, &name));
+        loc, InlineVariantType::get(ctx, HostDomainAttr::get(ctx), &name));
   } else if (type.isa<ArrayType>()) {
     src = _.create<UnitOp>(
         loc, ArrayType::get(ctx, Array{.elem = type.cast<ArrayType>()->elem}));

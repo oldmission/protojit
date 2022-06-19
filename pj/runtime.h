@@ -16,7 +16,7 @@ extern "C" {
 typedef intptr_t Bits;
 
 enum PJSign { PJ_SIGN_SIGNED, PJ_SIGN_UNSIGNED, PJ_SIGN_SIGNLESS };
-enum PJTypeDomain { PJ_TYPE_DOMAIN_HOST, PJ_TYPE_DOMAIN_WIRE };
+typedef struct PJDomain PJDomain;
 enum PJReferenceMode { PJ_REFERENCE_MODE_POINTER, PJ_REFERENCE_MODE_OFFSET };
 
 typedef struct PJContext PJContext;
@@ -54,6 +54,8 @@ PJContext* PJGetContext();
 
 void PJFreeContext(PJContext* ctx);
 
+const PJDomain* PJGetHostDomain(PJContext* c);
+
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
 
@@ -64,7 +66,7 @@ const PJStructField* PJCreateStructField(const char* name, const void* type,
 
 const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        const char* name[],
-                                       PJTypeDomain type_domain,
+                                       const PJDomain* domain,
                                        uintptr_t num_fields,
                                        const PJStructField* fields[], Bits size,
                                        Bits alignment);
@@ -78,13 +80,13 @@ const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 
 const PJInlineVariantType* PJCreateInlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_size, Bits size,
     Bits alignment);
 
 const PJOutlineVariantType* PJCreateOutlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
-    PJTypeDomain type_domain, uintptr_t num_terms, const PJTerm* terms[],
+    const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
     Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment);
 
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,

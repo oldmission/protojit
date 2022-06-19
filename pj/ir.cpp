@@ -35,13 +35,13 @@ void ProtoJitDialect::printType(Type type, DialectAsmPrinter& p) const {
 void ProtoJitDialect::printAttribute(Attribute attr,
                                      DialectAsmPrinter& p) const {
   if (auto width = attr.dyn_cast<WidthAttr>()) {
-    p << "b" << width->bits();
+    width.print(p.getStream());
+  } else if (auto domain = attr.dyn_cast<DomainAttr>()) {
+    domain.print(p.getStream());
   } else if (auto path = attr.dyn_cast<PathAttr>()) {
     path.print(p.getStream());
   } else if (auto handler = attr.dyn_cast<DispatchHandlerAttr>()) {
-    auto& os = p.getStream();
-    handler.path().print(os);
-    os << "=" << handler.index();
+    handler.print(p.getStream());
   } else {
     UNREACHABLE();
   }
@@ -49,7 +49,8 @@ void ProtoJitDialect::printAttribute(Attribute attr,
 
 ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
     : Dialect(getDialectNamespace(), ctx, TypeID::get<ProtoJitDialect>()) {
-  addAttributes<WidthAttr, PathAttr, DispatchHandlerAttr>();
+  addAttributes<WidthAttr, HostDomainAttr, WireDomainAttr, ReflectDomainAttr,
+                InternalDomainAttr, PathAttr, DispatchHandlerAttr>();
 
   addTypes<HandlersArrayType, UserStateType, UnitType, IntType, StructType,
            InlineVariantType, OutlineVariantType, ArrayType, VectorType,

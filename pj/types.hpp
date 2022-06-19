@@ -902,6 +902,8 @@ struct WidthAttr : public mlir::Attribute::AttrBase<WidthAttr, mlir::Attribute,
                                                     WidthAttributeStorage> {
   using Base::Base;
   using Base::get;
+
+  void print(llvm::raw_ostream& os) { os << "b" << getValue().bits(); }
   Width* operator->() const { return &getImpl()->value; }
   Width getValue() const { return getImpl()->value; }
 };

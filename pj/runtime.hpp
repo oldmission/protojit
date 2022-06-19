@@ -56,7 +56,8 @@ class Context {
 
   template <typename Head>
   const PJProtocol* plan(const std::string& tag_path = "") {
-    const void* head = gen::BuildPJType<Head>::build(ctx_);
+    const void* head =
+        gen::BuildPJType<Head>::build(ctx_, PJGetHostDomain(ctx_));
     return PJPlanProtocol(ctx_, head, tag_path.c_str());
   }
 
@@ -81,8 +82,10 @@ class Context {
   template <typename Src>
   void addEncodeFunction(const std::string& name, const PJProtocol* protocol,
                          const std::string& src_path) {
-    PJAddEncodeFunction(ctx_, name.c_str(), gen::BuildPJType<Src>::build(ctx_),
-                        protocol, src_path.c_str());
+    PJAddEncodeFunction(
+        ctx_, name.c_str(),
+        gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)), protocol,
+        src_path.c_str());
   }
 
   template <typename Dest>
@@ -93,15 +96,17 @@ class Context {
     for (const auto& name : handlers) {
       handlers_arr.push_back(name.c_str());
     }
-    PJAddDecodeFunction(ctx_, name.c_str(), protocol,
-                        gen::BuildPJType<Dest>::build(ctx_), handlers.size(),
-                        handlers.empty() ? nullptr : &handlers_arr[0]);
+    PJAddDecodeFunction(
+        ctx_, name.c_str(), protocol,
+        gen::BuildPJType<Dest>::build(ctx_, PJGetHostDomain(ctx_)),
+        handlers.size(), handlers.empty() ? nullptr : &handlers_arr[0]);
   }
 
   template <typename Src>
   void addSizeFunction(const std::string& name, const PJProtocol* protocol,
                        const std::string& src_path, bool round_up) {
-    PJAddSizeFunction(ctx_, name.c_str(), gen::BuildPJType<Src>::build(ctx_),
+    PJAddSizeFunction(ctx_, name.c_str(),
+                      gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)),
                       protocol, src_path.c_str(), round_up);
   }
 
