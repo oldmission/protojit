@@ -93,7 +93,7 @@ v2::Adoption SampleDogV2{
     .fee = 100,
 };
 
-void writeSchemaToFile(pj::runtime::Context& ctx, const PJProtocol* proto,
+void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
                        const std::string& file) {
   std::vector<char> buf;
   buf.resize(ctx.getProtoSize(proto));
@@ -102,8 +102,8 @@ void writeSchemaToFile(pj::runtime::Context& ctx, const PJProtocol* proto,
   std::ofstream{file}.write(buf.data(), buf.size());
 }
 
-const PJProtocol* readSchemaFromFile(pj::runtime::Context& ctx,
-                                     const std::string& file) {
+pj::runtime::Protocol readSchemaFromFile(pj::runtime::Context& ctx,
+                                         const std::string& file) {
   std::vector<char> buf;
   std::ifstream fs{file};
 
@@ -126,7 +126,7 @@ void read(pj::runtime::Context& ctx) {
   using Proto = Protocol<V>;
   using Head = typename pj::gen::ProtocolHead<Proto>::Head;
 
-  const PJProtocol* proto = readSchemaFromFile(ctx, SchemaFile.getValue());
+  auto proto = readSchemaFromFile(ctx, SchemaFile.getValue());
   std::cout << "Read optimized protocol from schema file" << std::endl;
 
   void (*handle_cat)(const Head*, const void*) = [](const Head* adoption,
@@ -184,7 +184,7 @@ void write(pj::runtime::Context& ctx) {
   using Proto = Protocol<V>;
   using Head = typename pj::gen::ProtocolHead<Proto>::Head;
 
-  const PJProtocol* proto = ctx.planProtocol<Proto>();
+  auto proto = ctx.planProtocol<Proto>();
   std::cout << "Planned optimized protocol" << std::endl;
   writeSchemaToFile(ctx, proto, SchemaFile.getValue());
   std::cout << "Outputted schema to file" << std::endl;

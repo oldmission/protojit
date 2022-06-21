@@ -671,10 +671,12 @@ mlir::Value GeneratePass::transcodeOutlineVector(mlir::Location loc,
   if (src_type->min_length > 0) {
     _.create<AssumeOp>(
         loc,
-        _.create<CmpIOp>(loc, CmpIPredicate::uge, copy_length,
-                         buildIndex(loc, _,
-                                    std::min(src_type->min_length + 1,
-                                             dst_type->maxLengthBound()))));
+        _.create<CmpIOp>(
+            loc, CmpIPredicate::uge, copy_length,
+            buildIndex(
+                loc, _,
+                std::min(src_type->min_length + 1,
+                         static_cast<uint64_t>(dst_type->maxLengthBound())))));
   }
 
   Value is_dst_inline = [&]() -> Value {

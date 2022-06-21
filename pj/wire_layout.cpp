@@ -97,7 +97,7 @@ ValueType WireLayout::visit(VectorType type) {
   assert(el_align.bytes() > 0);
   const Width el_size = RoundUp(elem.headSize(), el_align);
 
-  const intptr_t min_length = type->wire_min_length;
+  const uint64_t min_length = type->wire_min_length;
 
   const Width length_offset = Bytes(0);
   Width length_size = Bytes(8);

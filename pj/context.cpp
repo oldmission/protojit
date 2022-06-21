@@ -119,6 +119,7 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
   assert(decode_fn);
 
   uint64_t dec_size = 8192;
+  auto domain = types::WireDomainAttr::unique(&ctx_);
   while (true) {
     auto dec_buffer = std::make_unique<char[]>(dec_size);
     auto bbuf =
@@ -128,8 +129,7 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
       dec_size *= 2;
       continue;
     }
-    return reflect::unreflect(reflected, ctx_,
-                              types::WireDomainAttr::unique(&ctx_))
+    return reflect::unreflect(reflected, ctx_, domain)
         .cast<types::ProtocolType>();
   }
 }

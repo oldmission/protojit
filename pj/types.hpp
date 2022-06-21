@@ -39,6 +39,8 @@ struct Int {
            alignment == other.alignment;
   }
 
+  bool isBinaryCompatibleWith(const Int& other) const { return *this == other; }
+
   Width headSize() const { return width; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return true; }
@@ -76,7 +78,7 @@ inline Int type_intern(__attribute__((unused))
 
 struct IntType
     : public mlir::Type::TypeBase<IntType, StructuralTypeBase<Int, IntType>,
-                                  StructuralTypeStorage<Int>> {
+                                  StructuralTypeStorage<Int, IntType>> {
   using Base::Base;
   using Base::get;
 
@@ -106,6 +108,7 @@ struct UnitTypeStorage : public ValueTypeStorage {
   Width headAlignment() const override { return Bytes(1); }
   bool hasMaxSize() const override { return true; }
   ChildVector children() const override { return {}; }
+  bool isBinaryCompatibleWith(ValueType type) const override { return true; }
 };
 
 struct UnitType
@@ -142,6 +145,8 @@ struct Struct {
   bool has_max_size = false;
   ValueType outline_variant = {};
 
+  bool isBinaryCompatibleWith(const Struct& other) const;
+
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return has_max_size; }
@@ -163,7 +168,7 @@ Struct type_intern(mlir::TypeStorageAllocator& allocator, const Struct& key);
 struct StructType
     : public mlir::Type::TypeBase<
           StructType, NominalTypeBase<NominalType, Struct, StructType>,
-          NominalTypeStorage<Struct>> {
+          NominalTypeStorage<Struct, StructType>> {
   using Base::Base;
   using Base::get;
 
@@ -185,7 +190,7 @@ struct TermAttribute {
 
   struct VectorSplit {
     enum Type { kInline, kOutline } type;
-    intptr_t inline_length;
+    uint64_t inline_length;
     PathAttr path;  // Relative path from term type to the vector.
     bool is_default;
 
@@ -242,6 +247,8 @@ struct InlineVariant {
   Width size = Width::None();
   Width alignment = Width::None();
 
+  bool isBinaryCompatibleWith(const InlineVariant& other) const;
+
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const {
@@ -280,6 +287,8 @@ struct OutlineVariant {
   Width tag_alignment = Width::None();
   Width term_offset = Width::None();
   Width term_alignment = Width::None();
+
+  bool isBinaryCompatibleWith(const OutlineVariant& other) const;
 
   Width headSize() const { return tag_width; }
 
@@ -379,7 +388,7 @@ struct InlineVariantType
     : public mlir::Type::TypeBase<
           InlineVariantType,
           NominalTypeBase<VariantType, InlineVariant, InlineVariantType>,
-          NominalTypeStorage<InlineVariant>> {
+          NominalTypeStorage<InlineVariant, InlineVariantType>> {
   using Base::Base;
   using Base::classof;
   using Base::get;
@@ -393,7 +402,7 @@ struct OutlineVariantType
     : public mlir::Type::TypeBase<
           OutlineVariantType,
           NominalTypeBase<VariantType, OutlineVariant, OutlineVariantType>,
-          NominalTypeStorage<OutlineVariant>> {
+          NominalTypeStorage<OutlineVariant, OutlineVariantType>> {
   using Base::Base;
   using Base::classof;
   using Base::get;
@@ -475,6 +484,8 @@ struct Array {
            elem_size == ary.elem_size && alignment == ary.alignment;
   }
 
+  bool isBinaryCompatibleWith(const Array& other) const;
+
   Width headSize() const { return elem_size * length; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return has_max_size; }
@@ -518,7 +529,7 @@ inline Array type_intern(mlir::TypeStorageAllocator& alloc, Array ary) {
 struct ArrayType
     : public mlir::Type::TypeBase<ArrayType,
                                   StructuralTypeBase<Array, ArrayType>,
-                                  StructuralTypeStorage<Array>> {
+                                  StructuralTypeStorage<Array, ArrayType>> {
   using Base::Base;
   using Base::get;
 };
@@ -568,7 +579,7 @@ struct Vector {
   ValueType elem;
 
   // Never None. 0 implies no inline storage.
-  int64_t min_length;
+  uint64_t min_length;
 
   // May be None. May not be 0.
   int64_t max_length;
@@ -578,7 +589,7 @@ struct Vector {
 
   /*** Generated ***/
   // The min_length specified by the user for the wire type.
-  int64_t wire_min_length;
+  uint64_t wire_min_length;
 
   // Partial payload length -- number of elements stored inline, when the total
   // number of elements exceeds min_length. Never None, also never guaranteed to
@@ -607,6 +618,9 @@ struct Vector {
   Width partial_payload_size;
 
   Width size;
+
+  bool isBinaryCompatibleWith(const Vector& other) const;
+
   Width headSize() const { return size; }
   Width elemSize() const {
     return RoundUp(elem.headSize(), elem.headAlignment());
@@ -704,7 +718,7 @@ inline Vector type_intern(mlir::TypeStorageAllocator& allocator, Vector V) {
 struct VectorType
     : public mlir::Type::TypeBase<VectorType,
                                   StructuralTypeBase<Vector, VectorType>,
-                                  StructuralTypeStorage<Vector>> {
+                                  StructuralTypeStorage<Vector, VectorType>> {
   using Base::Base;
   using Base::get;
 };
@@ -737,6 +751,8 @@ struct Any {
            alignment == other.alignment && self == other.self;
   }
 
+  bool isBinaryCompatibleWith(const Any& other) const;
+
   Width headSize() const { return size; }
   Width headAlignment() const { return alignment; }
   bool hasMaxSize() const { return false; }
@@ -763,7 +779,7 @@ inline Any type_intern(mlir::TypeStorageAllocator& allocator, const Any& A) {
 
 struct AnyType
     : public mlir::Type::TypeBase<AnyType, StructuralTypeBase<Any, AnyType>,
-                                  StructuralTypeStorage<Any>> {
+                                  StructuralTypeStorage<Any, AnyType>> {
   using Base::Base;
   using Base::get;
 };
@@ -776,6 +792,7 @@ struct Protocol {
   bool operator==(const Protocol& P) const {
     return head == P.head && buffer_offset == P.buffer_offset;
   }
+  bool isBinaryCompatibleWith(const Protocol& other) const;
   Width headSize() const { return head.headSize(); }
   Width headAlignment() const { return head.headAlignment(); }
   bool hasMaxSize() const { return head.hasMaxSize(); }
@@ -802,9 +819,9 @@ inline llvm::hash_code hash_value(const Protocol& P) {
 }
 
 struct ProtocolType
-    : public mlir::Type::TypeBase<ProtocolType,
-                                  StructuralTypeBase<Protocol, ProtocolType>,
-                                  StructuralTypeStorage<Protocol>> {
+    : public mlir::Type::TypeBase<
+          ProtocolType, StructuralTypeBase<Protocol, ProtocolType>,
+          StructuralTypeStorage<Protocol, ProtocolType>> {
   using Base::Base;
   using Base::get;
 };

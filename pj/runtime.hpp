@@ -53,6 +53,19 @@ class Portal {
   friend class Context;
 };
 
+class Protocol {
+ public:
+  bool isBinaryCompatibleWith(Protocol other) const {
+    return PJIsBinaryCompatible(proto_, other.proto_);
+  }
+
+ private:
+  Protocol(const PJProtocol* proto) : proto_(proto) {}
+
+  const PJProtocol* proto_;
+  friend class Context;
+};
+
 class Context {
  public:
   Context() : ctx_(PJGetContext()) {}
@@ -71,41 +84,39 @@ class Context {
   Context(Context&& c) { *this = std::move(c); }
 
   template <typename Head>
-  const PJProtocol* plan(const std::string& tag_path = "") {
+  Protocol plan(const std::string& tag_path = "") {
     const void* head =
         gen::BuildPJType<Head>::build(ctx_, PJGetHostDomain(ctx_));
-    return PJPlanProtocol(ctx_, head, tag_path.c_str());
+    return Protocol{PJPlanProtocol(ctx_, head, tag_path.c_str())};
   }
 
   template <typename Proto>
-  const PJProtocol* planProtocol() {
+  Protocol planProtocol() {
     using Head = typename gen::ProtocolHead<Proto>::Head;
     return plan<Head>(gen::ProtocolHead<Proto>::tag());
   }
 
-  uint64_t getProtoSize(const PJProtocol* proto) {
-    return PJGetProtoSize(ctx_, proto);
+  uint64_t getProtoSize(Protocol proto) {
+    return PJGetProtoSize(ctx_, proto.proto_);
   }
 
-  void encodeProto(const PJProtocol* proto, char* buf) {
-    return PJEncodeProto(ctx_, proto, buf);
+  void encodeProto(Protocol proto, char* buf) {
+    return PJEncodeProto(ctx_, proto.proto_, buf);
   }
 
-  const PJProtocol* decodeProto(const char* buf) {
-    return PJDecodeProto(ctx_, buf);
-  }
+  Protocol decodeProto(const char* buf) { return PJDecodeProto(ctx_, buf); }
 
   template <typename Src>
-  void addEncodeFunction(const std::string& name, const PJProtocol* protocol,
+  void addEncodeFunction(const std::string& name, Protocol protocol,
                          const std::string& src_path) {
     PJAddEncodeFunction(
         ctx_, name.c_str(),
-        gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)), protocol,
-        src_path.c_str());
+        gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)),
+        protocol.proto_, src_path.c_str());
   }
 
   template <typename Dest>
-  void addDecodeFunction(const std::string& name, const PJProtocol* protocol,
+  void addDecodeFunction(const std::string& name, Protocol protocol,
                          const std::vector<std::string>& handlers) {
     std::vector<const char*> handlers_arr;
     handlers_arr.reserve(handlers.size());
@@ -113,17 +124,17 @@ class Context {
       handlers_arr.push_back(name.c_str());
     }
     PJAddDecodeFunction(
-        ctx_, name.c_str(), protocol,
+        ctx_, name.c_str(), protocol.proto_,
         gen::BuildPJType<Dest>::build(ctx_, PJGetHostDomain(ctx_)),
         handlers.size(), handlers.empty() ? nullptr : &handlers_arr[0]);
   }
 
   template <typename Src>
-  void addSizeFunction(const std::string& name, const PJProtocol* protocol,
+  void addSizeFunction(const std::string& name, Protocol protocol,
                        const std::string& src_path, bool round_up) {
     PJAddSizeFunction(ctx_, name.c_str(),
                       gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)),
-                      protocol, src_path.c_str(), round_up);
+                      protocol.proto_, src_path.c_str(), round_up);
   }
 
   void precompile(const std::string& filename) {

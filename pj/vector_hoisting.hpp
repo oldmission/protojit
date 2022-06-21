@@ -38,7 +38,7 @@ class VectorHoisting : public TypePass {
 
  private:
   struct Split {
-    intptr_t inline_length;
+    uint64_t inline_length;
     types::ValueType short_type;
     types::ValueType long_type;
     types::PathAttr path;
