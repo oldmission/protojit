@@ -5,6 +5,8 @@
 #ifndef PJ_RUNTIME_H
 #define PJ_RUNTIME_H
 
+#include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -36,9 +38,13 @@ struct BoundedBuffer {
   uint64_t size;
 };
 
+static_assert(sizeof(BoundedBuffer) == 2 * sizeof(void*));
+static_assert(sizeof(BoundedBuffer::ptr) == sizeof(void*));
+static_assert(offsetof(BoundedBuffer, ptr) == 0);
+static_assert(offsetof(BoundedBuffer, size) == sizeof(void*));
+
 // Takes the decoded object and an additional state parameter.
 typedef void (*Handler)(const void*, const void*);
-
 typedef uintptr_t (*SizeFunction)(const void*);
 typedef void (*EncodeFunction)(const void*, char*);
 typedef BoundedBuffer (*DecodeFunction)(const char*, void*, BoundedBuffer,

@@ -201,11 +201,12 @@ cc_library(
         "context.hpp",
         "lib.cpp",
         "portal.cpp",
+        "portal.hpp",
         "portal_impl.hpp",
         "runtime.cpp",
     ],
     hdrs = [
-        "portal.hpp",
+        "portal_types.hpp",
         "runtime.hpp",
         "runtime.h",
     ],

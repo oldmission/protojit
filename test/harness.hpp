@@ -24,7 +24,7 @@ class PJGenericTest
                                 ::testing::Test> {
  protected:
   void SetUp() override {
-    ctx = getContext();
+    ctx = std::make_unique<runtime::Context>();
     if constexpr (VariantTest) {
       std::tie(no_tag, no_src_path) = this->GetParam();
     } else {
@@ -33,10 +33,7 @@ class PJGenericTest
     }
   }
 
-  ~PJGenericTest() {
-    EXPECT_TRUE(waiting_matches.empty());
-    freeContext(ctx);
-  }
+  ~PJGenericTest() { EXPECT_TRUE(waiting_matches.empty()); }
 
   template <size_t I, typename T>
   void onMatch(const std::string& term,
@@ -97,23 +94,23 @@ class PJGenericTest
 
     const PJProtocol* protocol;
     if constexpr (std::is_same_v<Proto, void>) {
-      protocol = plan<Src>(ctx, no_tag ? "" : options.tag_path);
+      protocol = ctx->plan<Src>(no_tag ? "" : options.tag_path);
     } else {
-      protocol = planProtocol<Proto>(ctx);
+      protocol = ctx->planProtocol<Proto>();
     }
 
-    addEncodeFunction<Src>(ctx, "encode", protocol,
-                           no_src_path ? "" : options.src_path);
-    addDecodeFunction<Dst>(ctx, "decode", protocol, branches);
-    addSizeFunction<Src>(ctx, "size", protocol,
-                         no_src_path ? "" : options.src_path,
-                         options.round_up_size);
+    ctx->addEncodeFunction<Src>("encode", protocol,
+                                no_src_path ? "" : options.src_path);
+    ctx->addDecodeFunction<Dst>("decode", protocol, branches);
+    ctx->addSizeFunction<Src>("size", protocol,
+                              no_src_path ? "" : options.src_path,
+                              options.round_up_size);
 
-    const auto portal = compile(ctx);
+    const auto portal = ctx->compile();
 
-    const auto size_fn = portal->GetSizeFunction<Src>("size");
-    const auto encode_fn = portal->GetEncodeFunction<Src>("encode");
-    const auto decode_fn = portal->GetDecodeFunction<Dst>("decode");
+    const auto size_fn = portal.getSizeFunction<Src>("size");
+    const auto encode_fn = portal.getEncodeFunction<Src>("encode");
+    const auto decode_fn = portal.getDecodeFunction<Dst>("decode");
 
     Results results;
     results.enc_size = size_fn(options.from);
@@ -128,7 +125,7 @@ class PJGenericTest
         auto bbuf = decode_fn(
             enc_buffer.get(), options.to,
             {.ptr = results.dec_buffer.get(), .size = results.dec_buffer_size},
-            reinterpret_cast<Portal::Handler<Dst>*>(fn_ptrs.data()), &handlers);
+            reinterpret_cast<Handler<Dst>*>(fn_ptrs.data()), &handlers);
 
         if (bbuf.ptr == nullptr) {
           EXPECT_TRUE(options.expect_dec_buffer);
@@ -154,7 +151,7 @@ class PJGenericTest
   std::set<std::string> waiting_matches;
   bool no_tag;
   bool no_src_path;
-  PJContext* ctx;
+  std::unique_ptr<runtime::Context> ctx;
 };
 
 using PJVariantTest = PJGenericTest<true>;
