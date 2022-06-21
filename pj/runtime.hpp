@@ -3,64 +3,133 @@
 #include <tuple>
 #include <vector>
 
-#include "portal.hpp"
+#include "portal_types.hpp"
 #include "protojit.hpp"
 #include "runtime.h"
 
 namespace pj {
 
-PJContext* getContext();
+namespace runtime {
 
-void freeContext(PJContext* ctx);
+class Context;
 
-template <typename Head>
-const PJProtocol* plan(PJContext* ctx, const std::string& tag_path = "") {
-  const void* head = gen::BuildPJType<Head>::build(ctx);
-  return PJPlanProtocol(ctx, head, tag_path.c_str());
-}
+class Portal {
+ public:
+  ~Portal() { PJFreePortal(portal_); }
 
-template <typename Proto>
-const PJProtocol* planProtocol(PJContext* ctx) {
-  using Head = typename gen::ProtocolHead<Proto>::Head;
-  return plan<Head>(ctx, gen::ProtocolHead<Proto>::tag());
-}
+  // Disable copying.
+  Portal& operator=(const Portal&) = delete;
+  Portal(const Portal&) = delete;
 
-uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto);
-void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf);
-const PJProtocol* decodeProto(PJContext* ctx, const char* buf);
-
-template <typename Src>
-void addEncodeFunction(PJContext* ctx, const std::string& name,
-                       const PJProtocol* protocol,
-                       const std::string& src_path) {
-  PJAddEncodeFunction(ctx, name.c_str(), gen::BuildPJType<Src>::build(ctx),
-                      protocol, src_path.c_str());
-}
-
-template <typename Dest>
-void addDecodeFunction(PJContext* ctx, const std::string& name,
-                       const PJProtocol* protocol,
-                       const std::vector<std::string>& handlers) {
-  std::vector<const char*> handlers_arr;
-  handlers_arr.reserve(handlers.size());
-  for (const auto& name : handlers) {
-    handlers_arr.push_back(name.c_str());
+  // Allow moving.
+  Portal& operator=(Portal&& p) {
+    portal_ = p.portal_;
+    p.portal_ = nullptr;
+    return *this;
   }
-  PJAddDecodeFunction(ctx, name.c_str(), protocol,
-                      gen::BuildPJType<Dest>::build(ctx), handlers.size(),
-                      handlers.empty() ? nullptr : &handlers_arr[0]);
-}
+  Portal(Portal&& p) { *this = std::move(p); }
 
-template <typename Src>
-void addSizeFunction(PJContext* ctx, const std::string& name,
-                     const PJProtocol* protocol, const std::string& src_path,
-                     bool round_up) {
-  PJAddSizeFunction(ctx, name.c_str(), gen::BuildPJType<Src>::build(ctx),
-                    protocol, src_path.c_str(), round_up);
-}
+  template <typename T>
+  auto getSizeFunction(const char* name) const {
+    return reinterpret_cast<SizeFunction<T>>(PJGetSizeFunction(portal_, name));
+  }
 
-void precompile(PJContext* ctx, const std::string& filename);
+  template <typename T>
+  auto getEncodeFunction(const char* name) const {
+    return reinterpret_cast<EncodeFunction<T>>(
+        PJGetEncodeFunction(portal_, name));
+  }
 
-std::unique_ptr<Portal> compile(PJContext* ctx);
+  template <typename T>
+  auto getDecodeFunction(const char* name) const {
+    return reinterpret_cast<DecodeFunction<T, ::pj::BoundedBuffer>>(
+        PJGetDecodeFunction(portal_, name));
+  }
 
+ private:
+  Portal(const PJPortal* portal) : portal_(portal) {}
+
+  const PJPortal* portal_;
+  friend class Context;
+};
+
+class Context {
+ public:
+  Context() : ctx_(PJGetContext()) {}
+  ~Context() { PJFreeContext(ctx_); }
+
+  // Disable copying.
+  Context& operator=(const Context&) = delete;
+  Context(const Context&) = delete;
+
+  // Allow moving.
+  Context& operator=(Context&& c) {
+    ctx_ = c.ctx_;
+    c.ctx_ = nullptr;
+    return *this;
+  }
+  Context(Context&& c) { *this = std::move(c); }
+
+  template <typename Head>
+  const PJProtocol* plan(const std::string& tag_path = "") {
+    const void* head = gen::BuildPJType<Head>::build(ctx_);
+    return PJPlanProtocol(ctx_, head, tag_path.c_str());
+  }
+
+  template <typename Proto>
+  const PJProtocol* planProtocol() {
+    using Head = typename gen::ProtocolHead<Proto>::Head;
+    return plan<Head>(gen::ProtocolHead<Proto>::tag());
+  }
+
+  uint64_t getProtoSize(const PJProtocol* proto) {
+    return PJGetProtoSize(ctx_, proto);
+  }
+
+  void encodeProto(const PJProtocol* proto, char* buf) {
+    return PJEncodeProto(ctx_, proto, buf);
+  }
+
+  const PJProtocol* decodeProto(const char* buf) {
+    return PJDecodeProto(ctx_, buf);
+  }
+
+  template <typename Src>
+  void addEncodeFunction(const std::string& name, const PJProtocol* protocol,
+                         const std::string& src_path) {
+    PJAddEncodeFunction(ctx_, name.c_str(), gen::BuildPJType<Src>::build(ctx_),
+                        protocol, src_path.c_str());
+  }
+
+  template <typename Dest>
+  void addDecodeFunction(const std::string& name, const PJProtocol* protocol,
+                         const std::vector<std::string>& handlers) {
+    std::vector<const char*> handlers_arr;
+    handlers_arr.reserve(handlers.size());
+    for (const auto& name : handlers) {
+      handlers_arr.push_back(name.c_str());
+    }
+    PJAddDecodeFunction(ctx_, name.c_str(), protocol,
+                        gen::BuildPJType<Dest>::build(ctx_), handlers.size(),
+                        handlers.empty() ? nullptr : &handlers_arr[0]);
+  }
+
+  template <typename Src>
+  void addSizeFunction(const std::string& name, const PJProtocol* protocol,
+                       const std::string& src_path, bool round_up) {
+    PJAddSizeFunction(ctx_, name.c_str(), gen::BuildPJType<Src>::build(ctx_),
+                      protocol, src_path.c_str(), round_up);
+  }
+
+  void precompile(const std::string& filename) {
+    return PJPrecompile(ctx_, filename.c_str());
+  }
+
+  Portal compile() { return Portal(PJCompile(ctx_)); }
+
+ private:
+  PJContext* ctx_;
+};
+
+}  // namespace runtime
 }  // namespace pj

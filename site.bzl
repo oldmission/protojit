@@ -19,7 +19,7 @@ def pj_exe(name, srcs, linkopts, deps, protos, proto_deps = []):
         name = name,
         srcs = srcs + [
             "//pj:arch_base.hpp",
-            "//pj:portal.hpp",
+            "//pj:portal_types.hpp",
             "//pj:protojit.hpp",
             "//pj:runtime.h",
             "//pj:runtime.hpp",

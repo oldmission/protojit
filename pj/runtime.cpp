@@ -3,6 +3,7 @@
 #include "context.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
+#include "runtime.hpp"
 #include "span.hpp"
 #include "types.hpp"
 
@@ -337,31 +338,3 @@ DecodeFunction PJGetDecodeFunction(const PJPortal* portal, const char* name) {
 void PJFreePortal(const PJPortal* portal) {
   delete reinterpret_cast<const pj::Portal*>(portal);
 }
-
-namespace pj {
-
-PJContext* getContext() { return PJGetContext(); }
-
-void freeContext(PJContext* ctx) { PJFreeContext(ctx); }
-
-uint64_t getProtoSize(PJContext* ctx, const PJProtocol* proto) {
-  return PJGetProtoSize(ctx, proto);
-}
-
-void encodeProto(PJContext* ctx, const PJProtocol* proto, char* buf) {
-  PJEncodeProto(ctx, proto, buf);
-}
-
-const PJProtocol* decodeProto(PJContext* ctx, const char* buf) {
-  return PJDecodeProto(ctx, buf);
-}
-
-void precompile(PJContext* ctx, const std::string& filename) {
-  return PJPrecompile(ctx, filename.c_str());
-}
-
-std::unique_ptr<Portal> compile(PJContext* ctx) {
-  return reinterpret_cast<ProtoJitContext*>(ctx)->compile();
-}
-
-}  // namespace pj
