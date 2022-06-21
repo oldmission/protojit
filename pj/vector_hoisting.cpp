@@ -14,16 +14,18 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
     if (vec->wire_min_length == 0 || vec->wire_min_length == vec->max_length) {
       return {};
     }
-    return Split{.inline_length = vec->wire_min_length,
-                 .short_type = VectorType::get(
-                     &ctx_, Vector{.elem = vec->elem,
-                                   .max_length = vec->wire_min_length,
-                                   .wire_min_length = vec->wire_min_length}),
-                 .long_type = VectorType::get(
-                     &ctx_, Vector{.elem = vec->elem,
-                                   .max_length = vec->max_length,
-                                   .wire_min_length = 0}),
-                 .path = PathAttr::fromString(&ctx_, "_")};
+    return Split{
+        .inline_length = vec->wire_min_length,
+        .short_type = VectorType::get(
+            &ctx_,
+            Vector{.elem = vec->elem,
+                   .max_length = static_cast<int64_t>(vec->wire_min_length),
+                   .wire_min_length = vec->wire_min_length}),
+        .long_type =
+            VectorType::get(&ctx_, Vector{.elem = vec->elem,
+                                          .max_length = vec->max_length,
+                                          .wire_min_length = 0}),
+        .path = PathAttr::fromString(&ctx_, "_")};
   }
 
   if (auto str = type.dyn_cast<StructType>()) {

@@ -25,6 +25,8 @@ type Name = char8[:][:];
 
 type Offset = int32;
 
+type Path = char8[:][:];
+
 struct Int {
   width: Width;
   alignment: Width;
@@ -46,16 +48,36 @@ struct Struct {
   alignment: Width;
 }
 
+enum VectorSplitType {
+  kInline;
+  kOutline;
+}
+
+struct VectorSplit {
+  type: VectorSplitType;
+  inline_length: uint64;
+  path: Path;
+  // TODO: add booleans
+  is_default: uint8;
+}
+
+variant TermAttribute {
+  // TODO: support decoding undef to Undef
+  vector_split: VectorSplit;
+}
+
 struct Term {
   name: char8[:];
   type: Offset;
   tag: uint64;
+  attributes: TermAttribute[:];
 }
 
 struct InlineVariant {
   name: Name;
   terms: Term[:];
   term_offset: Width;
+  term_size: Width;
   tag_offset: Width;
   tag_width: Width;
   size: Width;
@@ -80,7 +102,7 @@ struct Array {
 
 struct Vector {
   elem: Offset;
-  min_length: int64;
+  min_length: uint64;
   max_length: int64;
   ppl_count: int64;
   length_offset: Width;

@@ -60,6 +60,7 @@ struct ValueTypeStorage : public mlir::TypeStorage {
   virtual Width headAlignment() const = 0;
   virtual bool hasMaxSize() const = 0;
   virtual ChildVector children() const = 0;
+  virtual bool isBinaryCompatibleWith(ValueType type) const = 0;
 };
 
 // Base class for all PJ types that represent values; i.e., everything except
@@ -111,6 +112,11 @@ struct ValueType : public mlir::Type {
     return static_cast<const ValueTypeStorage*>(impl)->children();
   }
 
+  bool isBinaryCompatibleWith(ValueType type) const {
+    return static_cast<const ValueTypeStorage*>(impl)->isBinaryCompatibleWith(
+        type);
+  }
+
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 };
 
@@ -125,21 +131,21 @@ inline Name type_intern(mlir::TypeStorageAllocator& allocator, Name n) {
   return Name{allocator.copyInto(Name{pieces.data(), pieces.size()})};
 }
 
-template <typename T>
+template <typename Data, typename Type>
 struct StructuralTypeStorage : public ValueTypeStorage {
-  using KeyTy = T;
+  using KeyTy = Data;
 
-  StructuralTypeStorage(const T& key) : key(key) {}
+  StructuralTypeStorage(const Data& key) : key(key) {}
 
-  bool operator==(const T& k) const { return key == k; }
+  bool operator==(const Data& k) const { return key == k; }
 
-  static llvm::hash_code hashKey(const T& k) {
+  static llvm::hash_code hashKey(const Data& k) {
     using ::llvm::hash_value;
     return hash_value(k);
   }
 
   static StructuralTypeStorage* construct(mlir::TypeStorageAllocator& allocator,
-                                          const T& key) {
+                                          const Data& key) {
     return new (allocator.allocate<StructuralTypeStorage>())
         StructuralTypeStorage(type_intern(allocator, key));
   }
@@ -153,6 +159,10 @@ struct StructuralTypeStorage : public ValueTypeStorage {
   Width headAlignment() const override { return key.headAlignment(); }
   bool hasMaxSize() const override { return key.hasMaxSize(); }
   ChildVector children() const override { return key.children(); }
+  bool isBinaryCompatibleWith(ValueType type) const override {
+    return type.isa<Type>() &&
+           key.isBinaryCompatibleWith(Data(type.cast<Type>()));
+  }
 
   KeyTy key;
 };
@@ -166,8 +176,8 @@ struct StructuralTypeBase : public ValueType {
   const D* operator->() const { return &storage()->key; }
 
  private:
-  const StructuralTypeStorage<D>* storage() const {
-    return static_cast<const StructuralTypeStorage<D>*>(impl);
+  const StructuralTypeStorage<D, T>* storage() const {
+    return static_cast<const StructuralTypeStorage<D, T>*>(impl);
   }
 };
 
@@ -177,7 +187,7 @@ struct NominalTypeStorageBase : public ValueTypeStorage {
   virtual DomainAttr domain() const = 0;
 };
 
-template <typename T>
+template <typename Data, typename Type>
 struct NominalTypeStorage : public NominalTypeStorageBase {
   using KeyTy = std::pair<DomainAttr, Name>;
 
@@ -202,7 +212,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
   }
 
   void print(llvm::raw_ostream& os) const override {
-    os << domain_;
+    domain_.print(os);
     for (auto p : name_) {
       os << "::" << p;
     }
@@ -217,9 +227,13 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
   Width headAlignment() const override { return type_data_.headAlignment(); }
   bool hasMaxSize() const override { return type_data_.hasMaxSize(); }
   ChildVector children() const override { return type_data_.children(); }
+  bool isBinaryCompatibleWith(ValueType type) const override {
+    return type.isa<Type>() &&
+           type_data_.isBinaryCompatibleWith(Data(type.cast<Type>()));
+  }
 
   mlir::LogicalResult mutate(mlir::TypeStorageAllocator& allocator,
-                             const T& type_data) {
+                             const Data& type_data) {
     type_data_ = type_intern(allocator, type_data);
     return mlir::success();
   }
@@ -230,7 +244,7 @@ struct NominalTypeStorage : public NominalTypeStorageBase {
 
   DomainAttr domain_;
   Name name_;
-  T type_data_;
+  Data type_data_;
 };
 
 // Base class for all PJ types that have a name (derived from NominalTypeBase).
@@ -265,8 +279,8 @@ struct NominalTypeBase : public Base {
   }
 
  private:
-  const NominalTypeStorage<D>* storage() const {
-    return static_cast<const NominalTypeStorage<D>*>(this->impl);
+  const NominalTypeStorage<D, T>* storage() const {
+    return static_cast<const NominalTypeStorage<D, T>*>(this->impl);
   }
 };
 

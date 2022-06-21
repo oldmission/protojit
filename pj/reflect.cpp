@@ -267,16 +267,100 @@ types::ValueType unreflect(const Vector& type, int32_t index,
             });
 }
 
+Path reflectPath(types::PathAttr path, llvm::BumpPtrAllocator& alloc) {
+  auto vec = path.getValue();
+  auto* result = alloc.Allocate<ArrayView<char, 0, -1>>(vec.size());
+  for (size_t i = 0; i < vec.size(); ++i) {
+    result[i] = {vec[i].data(), vec[i].size()};
+  }
+  return {result, vec.size()};
+}
+
+types::PathAttr unreflectPath(Path path, mlir::MLIRContext& ctx) {
+  SpanConverter<llvm::StringRef> conv{
+      path.begin(), path.size(), [](auto str) {
+        return llvm::StringRef{str.begin(), str.size()};
+      }};
+  return types::PathAttr::get(&ctx, conv.get());
+}
+
+TermAttribute* reflectTermAttributes(Span<types::TermAttribute> attrs,
+                                     llvm::BumpPtrAllocator& alloc) {
+  auto* attrs_alloc = alloc.Allocate<TermAttribute>(attrs.size());
+  auto* attrs_it = attrs_alloc;
+  for (auto& attr : attrs) {
+    (*attrs_it++) = std::visit(
+        overloaded{
+            [&](const types::TermAttribute::Undef& undef) {
+              return TermAttribute{.tag = TermAttribute::Kind::undef};
+            },
+            [&](const types::TermAttribute::VectorSplit& vs) {
+              using VectorSplit = types::TermAttribute::VectorSplit;
+              return TermAttribute{
+                  .value = {.vector_split =
+                                {
+                                    .type =
+                                        vs.type == VectorSplit::Type::kInline
+                                            ? VectorSplitType::kInline
+                                            : VectorSplitType::kOutline,
+                                    .inline_length = vs.inline_length,
+                                    .path = reflectPath(vs.path, alloc),
+                                    .is_default = vs.is_default,
+                                }},
+                  .tag = TermAttribute::Kind::vector_split,
+              };
+            },
+        },
+        attr.value);
+  }
+  return attrs_alloc;
+}
+
+Span<types::TermAttribute> unreflectTermAttributes(
+    ArrayView<TermAttribute, 0, -1> attrs, mlir::MLIRContext& ctx,
+    llvm::BumpPtrAllocator& alloc) {
+  auto* attrs_alloc = alloc.Allocate<types::TermAttribute>(attrs.size());
+  auto* attrs_it = attrs_alloc;
+  for (const TermAttribute& attr : attrs) {
+    switch (attr.tag) {
+      case TermAttribute::Kind::undef:
+        // TODO: decode is_default if available using reflection.
+        (*attrs_it++) = types::TermAttribute{
+            .value = types::TermAttribute::Undef{.is_default = false},
+        };
+        break;
+      case TermAttribute::Kind::vector_split:
+        using VectorSplit = types::TermAttribute::VectorSplit;
+        const auto& vs = attr.value.vector_split;
+        (*attrs_it++) = types::TermAttribute{
+            .value =
+                types::TermAttribute::VectorSplit{
+                    .type = vs.type == VectorSplitType::kInline
+                                ? VectorSplit::Type::kInline
+                                : VectorSplit::Type::kOutline,
+                    .inline_length = vs.inline_length,
+                    .path = unreflectPath(vs.path, ctx),
+                    .is_default = !!vs.is_default,
+                },
+        };
+        break;
+    }
+  }
+  return {attrs_alloc, attrs.size()};
+}
+
 Term* reflectTerms(Span<types::Term> terms, llvm::BumpPtrAllocator& alloc,
                    std::vector<Type>& pool,
                    std::unordered_map<const void*, int32_t>& cache) {
   auto* terms_alloc = alloc.Allocate<Term>(terms.size());
   auto* terms_it = terms_alloc;
   for (auto& term : terms) {
+    auto* attributes = reflectTermAttributes(term.attributes, alloc);
     (*terms_it++) = Term{
         .name = {term.name.data(), term.name.size()},
         .type = reflect(term.type, alloc, pool, cache),
         .tag = term.tag,
+        .attributes = {attributes, term.attributes.size()},
     };
   }
   const int32_t this_offset = pool.size();
@@ -286,18 +370,23 @@ Term* reflectTerms(Span<types::Term> terms, llvm::BumpPtrAllocator& alloc,
   return terms_alloc;
 }
 
-SpanConverter<types::Term> unreflectTerms(ArrayView<Term, 0, -1> terms,
-                                          int32_t index, mlir::MLIRContext& ctx,
-                                          types::WireDomainAttr domain,
-                                          Span<Type> pool) {
-  return {terms.begin(), terms.size(), [&](const Term& term) {
-            return types::Term{
-                .name = {term.name.begin(), term.name.size()},
-                .type = unreflect(pool[index + term.type], index + term.type,
-                                  ctx, domain, pool),
-                .tag = term.tag,
-            };
-          }};
+Span<types::Term> unreflectTerms(ArrayView<Term, 0, -1> terms, int32_t index,
+                                 mlir::MLIRContext& ctx,
+                                 llvm::BumpPtrAllocator& alloc,
+                                 types::WireDomainAttr domain,
+                                 Span<Type> pool) {
+  auto* terms_alloc = alloc.Allocate<types::Term>(terms.size());
+  auto* terms_it = terms_alloc;
+  for (const Term& term : terms) {
+    (*terms_it++) = types::Term{
+        .name = {term.name.begin(), term.name.size()},
+        .type = unreflect(pool[index + term.type], index + term.type, ctx,
+                          domain, pool),
+        .tag = term.tag,
+        .attributes = unreflectTermAttributes(term.attributes, ctx, alloc),
+    };
+  }
+  return {terms_alloc, terms.size()};
 }
 
 void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
@@ -309,6 +398,7 @@ void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
       .name = reflectName(type.name(), alloc),
       .terms = {terms, type->terms.size()},
       .term_offset = type->term_offset,
+      .term_size = type->term_size,
       .tag_offset = type->tag_offset,
       .tag_width = type->tag_width,
       .size = type->size,
@@ -320,12 +410,13 @@ void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
 types::ValueType unreflect(const InlineVariant& type, int32_t index,
                            mlir::MLIRContext& ctx, types::WireDomainAttr domain,
                            Span<Type> pool) {
+  llvm::BumpPtrAllocator alloc;
   auto name_conv = unreflectName(type.name);
-  auto term_conv = unreflectTerms(type.terms, index, ctx, domain, pool);
   auto result = types::InlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::InlineVariant{
-      .terms = term_conv.get(),
+      .terms = unreflectTerms(type.terms, index, ctx, alloc, domain, pool),
       .term_offset = type.term_offset,
+      .term_size = type.term_size,
       .tag_offset = type.tag_offset,
       .tag_width = type.tag_width,
       .size = type.size,
@@ -353,15 +444,15 @@ void reflect(types::OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
 types::ValueType unreflect(const OutlineVariant& type, int32_t index,
                            mlir::MLIRContext& ctx, types::WireDomainAttr domain,
                            Span<Type> pool) {
+  llvm::BumpPtrAllocator alloc;
   auto name_conv = unreflectName(type.name);
-  auto term_conv = unreflectTerms(type.terms, index, ctx, domain, pool);
   auto result = types::OutlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::OutlineVariant{
-      .terms = term_conv.get(),
+      .terms = unreflectTerms(type.terms, index, ctx, alloc, domain, pool),
       .tag_width = type.tag_width,
       .tag_alignment = type.tag_alignment,
       .term_offset = type.term_offset,
-      .term_alignment = type.term_offset,
+      .term_alignment = type.term_alignment,
   });
   return result;
 }
@@ -454,6 +545,5 @@ types::ValueType reflectableTypeFor(types::ValueType type,
   }
   UNREACHABLE();
 }
-
 }  // namespace reflect
 }  // namespace pj

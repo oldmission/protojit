@@ -36,7 +36,7 @@ struct ParseState {
 
   // Populated after parsing Len, MinLen, and MaxLen rules.
   uint64_t array_len = kNone;
-  int64_t array_min_len = kNone;
+  uint64_t array_min_len = kNone;
   int64_t array_max_len = kNone;
 
   // Set by ExternalDecl, cleared by StructDecl.

@@ -204,8 +204,8 @@ const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
 }
 
 const PJVectorType* PJCreateVectorType(
-    PJContext* c, const void* type, intptr_t min_length, intptr_t max_length,
-    intptr_t wire_min_length, intptr_t ppl_count, Bits length_offset,
+    PJContext* c, const void* type, uint64_t min_length, intptr_t max_length,
+    uint64_t wire_min_length, intptr_t ppl_count, Bits length_offset,
     Bits length_size, Bits ref_offset, Bits ref_size,
     PJReferenceMode reference_mode, Bits inline_payload_offset,
     Bits inline_payload_size, Bits partial_payload_offset,
@@ -273,6 +273,10 @@ const PJProtocol* PJDecodeProto(PJContext* ctx_, const char* buf) {
   auto* ctx = reinterpret_cast<pj::ProtoJitContext*>(ctx_);
   return reinterpret_cast<const PJProtocol*>(
       ctx->decodeProto(buf).getAsOpaquePointer());
+}
+
+bool PJIsBinaryCompatible(const PJProtocol* a, const PJProtocol* b) {
+  return ConvertProtocol(a).isBinaryCompatibleWith(ConvertProtocol(b));
 }
 
 void PJAddEncodeFunction(PJContext* ctx_, const char* name, const void* src_,
