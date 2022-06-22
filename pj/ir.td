@@ -240,5 +240,5 @@ def SizeFunctionOp : ProtoJit_Op<"sizefunc"> {
 }
 
 def DefineProtocolOp : ProtoJit_Op<"defproto"> {
-  let arguments = (ins StrAttr:$name, StrAttr:$proto);
+  let arguments = (ins StrAttr:$ptrName, StrAttr:$sizeName, StrAttr:$proto);
 }

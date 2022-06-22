@@ -576,12 +576,31 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   region_ = Region::kBuilders;
   beginNamespaceOf(ns, /*is_namespace_name=*/true);
 
-  defs_ << "struct " << name << "{\n"
-        << "static std::string_view getSchema();\n"
-        << name << "() {}\n";
+  defs_ << "struct " << name << "{\n" << name << "() {}\n";
 
+  auto bare_schema_ptr_name =
+      "protocol_ptr_" + getNameAsString(ns, "_") + "_" + name;
+  auto bare_schema_size_name =
+      "protocol_size_" + getNameAsString(ns, "_") + "_" + name;
+
+  {
+    defs_ << "static std::string_view getSchema();\n";
+
+    region_ = Region::kBuilders;
+    builders_ << "extern \"C\" const char user_" << bare_schema_ptr_name
+              << ";\n"
+              << "extern \"C\" size_t user_" << bare_schema_size_name << ";\n"
+              << "std::string_view  " << name << "::getSchema() {"
+              << "  return { &user_" << bare_schema_ptr_name << ", user_"
+              << bare_schema_size_name << "};\n"
+              << "}\n";
+    region_ = Region::kDefs;
+  }
+
+  // SAMIR_TODO2: add precomp name to all of these guys
   for (auto& sizer : iface.sizers) {
-    auto sizer_name = "user_" + getNameAsString(ns, "_") + "_" + sizer.name;
+    auto sizer_name =
+        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + sizer.name;
     defs_ << "size_t " << sizer.name << "(" << getNameAsString(sizer.src)
           << " const* msg);\n";
 
@@ -596,7 +615,8 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   }
 
   for (auto& encoder : iface.encoders) {
-    auto encoder_name = "user_" + getNameAsString(ns, "_") + "_" + encoder.name;
+    auto encoder_name =
+        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + encoder.name;
     defs_ << "void " << encoder.name << "(" << getNameAsString(encoder.src)
           << " const*, char* buf);\n";
 
@@ -615,7 +635,8 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
     printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true)
         << ";";
 
-    auto decoder_name = "user_" + getNameAsString(ns, "_") + "_" + decoder.name;
+    auto decoder_name =
+        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + decoder.name;
 
     region_ = Region::kBuilders;
     builders_ << "extern \"C\" ";
@@ -641,9 +662,15 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
 
   // 2. Generate .cpp file to do precompilation.
+
+  cpp_ << "  PJAddProtocolDefinition(ctx, \"" << bare_schema_ptr_name
+       << "\", \"" << bare_schema_size_name << "\", ";
+  printPlanName(cpp_, plan);
+  cpp_ << ");\n";
+
   for (auto& sizer : iface.sizers) {
     cpp_ << "  PJAddSizeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << sizer.name << "\", ::pj::gen::BuildPJType<"
+         << name << "_" << sizer.name << "\", ::pj::gen::BuildPJType<"
          << getNameAsString(sizer.src)
          << ">::build(ctx, PJGetHostDomain(ctx)), ";
     printPlanName(cpp_, plan);
@@ -654,7 +681,7 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
 
   for (auto& encoder : iface.encoders) {
     cpp_ << "  PJAddEncodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << encoder.name << "\", ::pj::gen::BuildPJType<"
+         << name << "_" << encoder.name << "\", ::pj::gen::BuildPJType<"
          << getNameAsString(encoder.src)
          << ">::build(ctx, PJGetHostDomain(ctx)), ";
     printPlanName(cpp_, plan);
@@ -673,7 +700,7 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
     }
     cpp_ << "  };\n"
          << "  PJAddDecodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << decoder.name << "\", ";
+         << name << "_" << decoder.name << "\", ";
     printPlanName(cpp_, plan);
     cpp_ << ", ::pj::gen::BuildPJType<" << getNameAsString(decoder.dst)
          << ">::build(ctx, PJGetHostDomain(ctx)), " << decoder.handlers.size()
