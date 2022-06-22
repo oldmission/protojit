@@ -165,6 +165,27 @@ std::string SourceGenerator::createTypeHandleFromType(types::ValueType type) {
   UNREACHABLE();
 }
 
+std::string SourceGenerator::createProtocol(
+    ParsedProtoFile::Portal::Protocol proto, bool create_handle) {
+  assert(region_ == Region::kBuilders || region_ == Region::kCpp);
+
+  auto& os = stream();
+  std::string handle;
+  if (create_handle) {
+    handle = getUniqueName();
+    os << "auto " << handle << " = ";
+  }
+  os << "ctx.plan<"
+     << getNameAsString(proto.first.cast<types::NominalType>().name()) << ">(";
+  proto.second.print(os);
+  os << ")";
+  if (create_handle) {
+    os << ";\n";
+  }
+
+  return handle;
+}
+
 std::string SourceGenerator::buildStringArray(Span<llvm::StringRef> arr) {
   auto& os = stream();
   std::string var;
@@ -503,30 +524,14 @@ void SourceGenerator::addVariant(types::VariantType type, bool is_external) {
   addVariantBuilder(type, has_value, tag_width, is_external);
 }
 
-void SourceGenerator::addProtocol(const SourceId& name, mlir::Type proto,
-                                  types::PathAttr path) {
-  cpp_ << "  auto* ";
-  printPlanName(cpp_, name);
-  cpp_ << " = PJPlanProtocol(ctx, "
-          "::pj::gen::BuildPJType<"
-       << getNameAsString(proto.cast<types::NominalType>().name())
-       << ">::build(ctx, PJGetHostDomain(ctx)), \"";
-  path.print(cpp_);
-  cpp_ << "\");\n";
-}
-
 void SourceGenerator::addPortal(const SourceId& ns,
                                 const ParsedProtoFile::Portal& portal) {
-  if (!portal.jit_class_name.empty()) {
-    addJitClass(portal);
+  for (auto& [name, proto] : portal.jits) {
+    addJitClass(ns, portal, name, proto);
   }
-  for (auto& [name, plan] : portal.precomps) {
-    addPrecompClass(ns, portal, name, plan);
+  for (auto& [name, proto] : portal.precomps) {
+    addPrecompClass(ns, portal, name, proto);
   }
-}
-
-void SourceGenerator::printPlanName(std::ostream& os, const SourceId& plan) {
-  os << "plan_" << getNameAsString(plan, "_");
 }
 
 std::ostream& SourceGenerator::printDecoderSig(
@@ -544,11 +549,194 @@ std::ostream& SourceGenerator::printDecoderSig(
   return os;
 }
 
+void SourceGenerator::addJitClass(
+    const SourceId& ns, const ParsedProtoFile::Portal& portal,
+    const std::string& name,
+    std::optional<ParsedProtoFile::Portal::Protocol> proto) {
+  // Define class in the header with the following interface.
+  //
+  // struct ClassName {
+  //   // Returns the protocol that the JIT-compiled methods use.
+  //   Protocol getProtocol();
+  //
+  //   // Plans the protocol specified in the .pj file and JIT-compiles all
+  //   // requested methods. This constructor is only present if the jit class
+  //   was
+  //   // provided a protocol.
+  //   ClassName();
+  //
+  //   // JIT-compiles all requested methods using the provided protocol. Always
+  //   // present.
+  //   ClassName(Protocol proto);
+  //
+  //   // Something like this depending on what was requested:
+  //   size_t mySizeFn(const T* msg) {...}
+  //   void myEncodeFn(const T* msg, char* buf) {...}
+  //   template <typename S>
+  //   BoundedBuffer myDecodeFn(
+  //     const char* msg, T* result, BoundedBuffer buffer,
+  //     ::pj::DecodeHandler<T, S> handlers[], S* state) {...}
+  // };
+  //
+  // The class declaration goes into `defs_`, and the function bodies go into
+  // `builders_`.
+  builders_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
+
+  region_ = Region::kDefs;
+  beginNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  region_ = Region::kBuilders;
+  beginNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  defs_ << "struct " << name << "{\n";
+
+  auto generate_constructor_body = [&]() {
+    assert(region_ == Region::kBuilders);
+
+    std::stringstream adds;
+    std::stringstream gets;
+
+    for (auto& sizer : portal.sizers) {
+      adds << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+           << sizer.name << "\", proto_, \"";
+      sizer.src_path.print(adds);
+      adds << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
+
+      gets << sizer.name << "_ = portal_.getSizeFunction<"
+           << getNameAsString(sizer.src) << ">(\"" << sizer.name << "\");\n";
+    }
+
+    for (auto& encoder : portal.encoders) {
+      adds << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
+           << encoder.name << "\", proto_, \"";
+      encoder.src_path.print(adds);
+      adds << "\");\n";
+
+      gets << encoder.name << "_ = portal_.getEncodeFunction<"
+           << getNameAsString(encoder.src) << ">(\"" << encoder.name
+           << "\");\n";
+    }
+
+    for (auto& decoder : portal.decoders) {
+      // Generate in a new scope because we are declaring a variable.
+      adds << "{\n";
+
+      adds << "std::vector<std::string> handlers = {\n";
+      for (auto& handler : decoder.handlers) {
+        adds << "\"";
+        handler.print(adds);
+        adds << "\",";
+      }
+      adds << "};\n";
+
+      adds << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
+           << decoder.name << "\", proto_, handlers);\n";
+
+      adds << "}\n";  // End scope.
+
+      gets << decoder.name << "_ = portal_.getDecodeFunction<"
+           << getNameAsString(decoder.dst) << ">(\"" << decoder.name
+           << "\");\n";
+    }
+
+    builders_ << adds.str() << "portal_ = ctx.compile();\n" << gets.str();
+  };
+
+  // Generate no-argument constructor.
+  if (proto) {
+    defs_ << name << "();\n";
+
+    region_ = Region::kBuilders;
+    builders_ << name << "::" << name << "() : proto_("
+              << createProtocol(proto.value(), false) << ") {\n";
+    generate_constructor_body();
+    builders_ << "}\n";
+  }
+
+  // Generate constructor which takes an external protocol.
+  defs_ << name << "(::pj::runtime::Protocol proto);\n";
+
+  region_ = Region::kBuilders;
+  builders_ << name << "::" << name
+            << "(::pj::runtime::Protocol proto) : proto_(proto) {\n";
+  generate_constructor_body();
+  builders_ << "}\n";
+
+  // Generate getProtocol() function.
+  defs_ << "::pj::runtime::Protocol getProtocol();";
+  builders_ << "::pj::runtime::Protocol " << name << "::getProtocol() {\n"
+            << "return proto_;\n"
+            << "}\n";
+
+  // Generate wrapper functions and member variables which they call into.
+  std::stringstream fn_decls;
+  std::stringstream vars;
+
+  vars << "::pj::runtime::Context ctx;\n"
+       << "::pj::runtime::Protocol proto_;\n"
+       << "::pj::runtime::Portal portal_;\n";
+
+  for (auto& sizer : portal.sizers) {
+    vars << "::pj::SizeFunction<" << getNameAsString(sizer.src) << ">"
+         << sizer.name << "_;\n";
+
+    fn_decls << "size_t " << sizer.name << "(const "
+             << getNameAsString(sizer.src) << "* msg);\n";
+
+    builders_ << "size_t " << name << "::" << sizer.name << "(const "
+              << getNameAsString(sizer.src) << "* msg) {\n"
+              << "return " << sizer.name << "_(msg);\n"
+              << "}\n";
+  }
+  for (auto& encoder : portal.encoders) {
+    vars << "::pj::EncodeFunction<" << getNameAsString(encoder.src) << ">"
+         << encoder.name << "_;\n";
+
+    fn_decls << "void " << encoder.name << "(const "
+             << getNameAsString(encoder.src) << "* msg, char* buf);\n";
+
+    builders_ << "void " << name << "::" << encoder.name << "(const "
+              << getNameAsString(encoder.src) << "* msg, char* buf) {\n"
+              << "return " << encoder.name << "_(msg, buf);\n"
+              << "}\n";
+  }
+  for (auto& decoder : portal.decoders) {
+    vars << "::pj::DecodeFunction<" << getNameAsString(decoder.dst) << ", void>"
+         << decoder.name << "_;\n";
+
+    printDecoderSig(fn_decls, decoder.name, decoder,
+                    /*state_template=*/true)
+        << ";\n";
+
+    printDecoderSig(builders_, name + "::" + decoder.name, decoder,
+                    /*state_template=*/true)
+        << "{\n";
+    builders_ << "return " << decoder.name
+              << "_(msg, result, buffer, handlers, state);\n"
+              << "}\n";
+  }
+
+  defs_ << fn_decls.str() << "\n"
+        << "private:\n"
+        << vars.str();
+
+  defs_ << "};\n";  // Terminate the struct.
+
+  region_ = Region::kDefs;
+  endNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  region_ = Region::kBuilders;
+  endNamespaceOf(ns, /*is_namespace_name=*/true);
+
+  builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
+}
+
 void SourceGenerator::addPrecompClass(const SourceId& ns,
-                                      const ParsedProtoFile::Portal& iface,
+                                      const ParsedProtoFile::Portal& portal,
                                       const std::string& name,
-                                      const SourceId& plan) {
-  // 1. Define class in the header with appropriate interface.
+                                      ParsedProtoFile::Portal::Protocol proto) {
+  // Define class with the following interface and generate cpp to precompile
+  // methods for requested functions.
   //
   // struct ClassName {
   //   // Always present with this name for a precomp class.
@@ -566,8 +754,8 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   //     ::pj::DecodeHandler<T, S> handlers[], S* state) {...}
   // }
   //
-  // The class declaration goes into `defs_` and the function bodies
-  // go into `builders_` to keep the code clean.
+  // The class declaration goes into `defs_`, the function bodies go into
+  // `builders_`, and the precompilation code goes into `cpp_`.
   builders_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
 
   region_ = Region::kDefs;
@@ -576,79 +764,105 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   region_ = Region::kBuilders;
   beginNamespaceOf(ns, /*is_namespace_name=*/true);
 
+  region_ = Region::kCpp;
+  auto proto_handle = createProtocol(proto, true);
+
   defs_ << "struct " << name << "{\n" << name << "() {}\n";
 
-  auto bare_schema_ptr_name =
-      "protocol_ptr_" + getNameAsString(ns, "_") + "_" + name;
-  auto bare_schema_size_name =
-      "protocol_size_" + getNameAsString(ns, "_") + "_" + name;
-
   {
+    auto bare_schema_ptr_name =
+        "protocol_ptr_" + getNameAsString(ns, "_") + "_" + name;
+    auto bare_schema_size_name =
+        "protocol_size_" + getNameAsString(ns, "_") + "_" + name;
+
     defs_ << "static std::string_view getSchema();\n";
 
-    region_ = Region::kBuilders;
     builders_ << "extern \"C\" const char user_" << bare_schema_ptr_name
               << ";\n"
               << "extern \"C\" size_t user_" << bare_schema_size_name << ";\n"
-              << "std::string_view  " << name << "::getSchema() {"
-              << "  return { &user_" << bare_schema_ptr_name << ", user_"
+              << "std::string_view  " << name << "::getSchema() {\n"
+              << "return {&user_" << bare_schema_ptr_name << ", user_"
               << bare_schema_size_name << "};\n"
               << "}\n";
-    region_ = Region::kDefs;
+
+    cpp_ << "ctx.addProtocolDefinition(\"" << bare_schema_ptr_name << "\", \""
+         << bare_schema_size_name << "\", " << proto_handle << ");\n";
   }
 
-  // SAMIR_TODO2: add precomp name to all of these guys
-  for (auto& sizer : iface.sizers) {
-    auto sizer_name =
-        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + sizer.name;
-    defs_ << "size_t " << sizer.name << "(" << getNameAsString(sizer.src)
-          << " const* msg);\n";
+  for (auto& sizer : portal.sizers) {
+    defs_ << "size_t " << sizer.name << "(const " << getNameAsString(sizer.src)
+          << "* msg);\n";
 
-    region_ = Region::kBuilders;
-    builders_ << "extern \"C\" "
-              << "size_t " << sizer_name << "(const void*);\n"
-              << "size_t  " << name << "::" << sizer.name << "("
-              << getNameAsString(sizer.src) << " const* msg) {"
-              << "  return " << sizer_name << "(msg);\n"
+    auto bare_sizer_name =
+        getNameAsString(ns, "_") + "_" + name + "_" + sizer.name;
+
+    builders_ << "extern \"C\" size_t user_" << bare_sizer_name
+              << "(const void*);\n";
+    builders_ << "size_t " << name << "::" << sizer.name << "(const "
+              << getNameAsString(sizer.src) << "* msg) {\n"
+              << "return user_" << bare_sizer_name << "(msg);\n"
               << "}\n";
-    region_ = Region::kDefs;
+
+    cpp_ << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+         << bare_sizer_name << "\", " << proto_handle << ", \"";
+    sizer.src_path.print(cpp_);
+    cpp_ << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
   }
 
-  for (auto& encoder : iface.encoders) {
-    auto encoder_name =
-        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + encoder.name;
-    defs_ << "void " << encoder.name << "(" << getNameAsString(encoder.src)
-          << " const*, char* buf);\n";
+  for (auto& encoder : portal.encoders) {
+    defs_ << "void " << encoder.name << "(const "
+          << getNameAsString(encoder.src) << "*, char* buf);\n";
 
-    region_ = Region::kBuilders;
-    builders_ << "extern \"C\" "
-              << "void " << encoder_name << "(" << getNameAsString(encoder.src)
-              << " const*, char* buf);\n"
-              << "void  " << name << "::" << encoder.name << "("
-              << getNameAsString(encoder.src) << " const* msg, char* buf) {\n"
-              << "  " << encoder_name << "(msg, buf);\n"
+    auto bare_encoder_name =
+        getNameAsString(ns, "_") + "_" + name + "_" + encoder.name;
+
+    builders_ << "extern \"C\" void user_" << bare_encoder_name << "(const "
+              << getNameAsString(encoder.src) << "*, char* buf);\n";
+    builders_ << "void " << name << "::" << encoder.name << "(const "
+              << getNameAsString(encoder.src) << "* msg, char* buf) {\n"
+              << "user_" << bare_encoder_name << "(msg, buf);\n"
               << "}\n";
-    region_ = Region::kDefs;
+
+    cpp_ << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
+         << bare_encoder_name << "\", " << proto_handle << ", \"";
+    encoder.src_path.print(cpp_);
+    cpp_ << "\");\n";
   }
 
-  for (auto& decoder : iface.decoders) {
+  for (auto& decoder : portal.decoders) {
     printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true)
         << ";";
 
-    auto decoder_name =
-        "user_" + getNameAsString(ns, "_") + "_" + name + "_" + decoder.name;
+    auto bare_decoder_name =
+        getNameAsString(ns, "_") + "_" + name + "_" + decoder.name;
 
-    region_ = Region::kBuilders;
     builders_ << "extern \"C\" ";
-    printDecoderSig(builders_, decoder_name, decoder, /*state_template=*/false)
+    printDecoderSig(builders_, "user_" + bare_decoder_name, decoder,
+                    /*state_template=*/false)
         << ";\n";
 
     printDecoderSig(builders_, name + "::" + decoder.name, decoder,
                     /*state_template=*/true)
         << "{\n";
-    builders_ << "return " << decoder_name
-              << "(msg, result, buffer, handlers, state);\n}\n";
-    region_ = Region::kDefs;
+    builders_ << "return user_" << bare_decoder_name
+              << "(msg, result, buffer, handlers, state);\n"
+              << "}\n";
+
+    // Generate cpp in a new scope because we are declaring a variable.
+    cpp_ << "{\n";
+
+    cpp_ << "std::vector<std::string> handlers = {\n";
+    for (auto& handler : decoder.handlers) {
+      cpp_ << "\"";
+      handler.print(cpp_);
+      cpp_ << "\",";
+    }
+    cpp_ << "};\n";
+
+    cpp_ << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
+         << bare_decoder_name << "\", " << proto_handle << ", handlers);\n";
+
+    cpp_ << "}\n";  // End scope.
   }
 
   defs_ << "};\n";  // Terminate the struct.
@@ -660,58 +874,6 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   endNamespaceOf(ns, /*is_namespace_name=*/true);
 
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
-
-  // 2. Generate .cpp file to do precompilation.
-
-  cpp_ << "  PJAddProtocolDefinition(ctx, \"" << bare_schema_ptr_name
-       << "\", \"" << bare_schema_size_name << "\", ";
-  printPlanName(cpp_, plan);
-  cpp_ << ");\n";
-
-  for (auto& sizer : iface.sizers) {
-    cpp_ << "  PJAddSizeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << name << "_" << sizer.name << "\", ::pj::gen::BuildPJType<"
-         << getNameAsString(sizer.src)
-         << ">::build(ctx, PJGetHostDomain(ctx)), ";
-    printPlanName(cpp_, plan);
-    cpp_ << ", \"";
-    sizer.src_path.print(cpp_);
-    cpp_ << "\", false);\n";
-  }
-
-  for (auto& encoder : iface.encoders) {
-    cpp_ << "  PJAddEncodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << name << "_" << encoder.name << "\", ::pj::gen::BuildPJType<"
-         << getNameAsString(encoder.src)
-         << ">::build(ctx, PJGetHostDomain(ctx)), ";
-    printPlanName(cpp_, plan);
-    cpp_ << ", \"";
-    encoder.src_path.print(cpp_);
-    cpp_ << "\");\n";
-  }
-
-  for (auto& decoder : iface.decoders) {
-    cpp_ << "  {\n"
-         << "    const char** handlers = {\n";
-    for (auto& handler : decoder.handlers) {
-      cpp_ << "    \"";
-      handler.print(cpp_);
-      cpp_ << "\",\n";
-    }
-    cpp_ << "  };\n"
-         << "  PJAddDecodeFunction(ctx, \"" << getNameAsString(ns, "_") << "_"
-         << name << "_" << decoder.name << "\", ";
-    printPlanName(cpp_, plan);
-    cpp_ << ", ::pj::gen::BuildPJType<" << getNameAsString(decoder.dst)
-         << ">::build(ctx, PJGetHostDomain(ctx)), " << decoder.handlers.size()
-         << ", handlers);\n"
-         << "}\n";
-  }
-}
-
-void SourceGenerator::addJitClass(const ParsedProtoFile::Portal& spec) {
-  std::cerr << "NYI\n";
-  abort();
 }
 
 void SourceGenerator::generate(
@@ -721,7 +883,7 @@ void SourceGenerator::generate(
          << "#include <cstddef>\n"
          << "#include <string_view>\n"
          << "#include \"pj/protojit.hpp\"\n"
-         << "#include \"pj/runtime.h\"\n"
+         << "#include \"pj/runtime.hpp\"\n"
          << "\n";
 
   for (auto& import : imports) {
@@ -734,15 +896,16 @@ void SourceGenerator::generate(
   if (cpp) {
     *cpp << "#include <cstdio>\n"
          << "#define PROTOJIT_NO_INTERFACES\n"
-         << "#include \"pj/runtime.h\"\n"
+         << "#include \"pj/runtime.hpp\"\n"
          << "#include " << path.filename() << "\n"
          << "int main(int argc, char** argv) {\n"
-         << "  if (argc != 2) {\n    fprintf(stderr, \"No output filename "
-            "given\\n\""
-            ");\n    return 1;\n  }\n"
-         << "  PJContext* ctx = PJGetContext();\n"
-         << cpp_.str() << "  PJPrecompile(ctx, argv[1]);\n"
-         << "  PJFreeContext(ctx);\n"
+         << "  if (argc != 2) {\n"
+         << "    fprintf(stderr, \"No output filename given\");\n"
+         << "    return 1;\n"
+         << "  }\n"
+         << "  pj::runtime::Context ctx;\n"
+         << cpp_.str() << "\n"
+         << "  ctx.precompile(argv[1]);\n"
          << "}\n";
   }
 };

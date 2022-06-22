@@ -93,7 +93,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    /*auto planned =*/pj::plan_protocol(ctx, it->second.first, it->second.second);
+    /*auto planned =*/pj::plan_protocol(ctx, it->second.first,
+                                        it->second.second);
     // TODO: update this
     // sourcegen.addProtocol(name, planned);
   } else {
@@ -105,9 +106,6 @@ int main(int argc, char** argv) {
           break;
         case pj::ParsedProtoFile::DeclKind::kComposite:
           sourcegen.addComposite(type, decl.is_external);
-          break;
-        case pj::ParsedProtoFile::DeclKind::kProtocol:
-          sourcegen.addProtocol(decl.name, decl.type, decl.path);
           break;
       }
     }
