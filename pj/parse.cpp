@@ -91,9 +91,15 @@ struct ParseState {
   std::vector<ParsedProtoFile::Portal::Encoder> encoders;
   std::vector<ParsedProtoFile::Portal::Decoder> decoders;
 
-  std::string iface_jit_class_name;
+  // Populated after parsing ProtoParam. Cleared by PrecompClassDecl and
+  // JitClassDecl.
+  std::optional<ParsedProtoFile::Portal::Protocol> proto_param;
 
-  std::vector<std::pair<std::string, SourceId>> precomps;
+  std::vector<std::pair<std::string, ParsedProtoFile::Portal::Protocol>>
+      precomps;
+  std::vector<
+      std::pair<std::string, std::optional<ParsedProtoFile::Portal::Protocol>>>
+      jits;
 
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
@@ -663,13 +669,6 @@ BEGIN_ACTION(ProtoDecl) {
     checkVariantPath(in, head, tag_path, /*check_term=*/false);
   }
 
-  __ decls.emplace_back(ParsedProtoFile::Decl{
-      .kind = ParsedProtoFile::DeclKind::kProtocol,
-      .name = protocol_name,
-      .type = head,
-      .path = tag_path,
-  });
-
   __ parse_scope.protocol_defs.emplace(protocol_name,
                                        std::make_pair(head, tag_path));
 
@@ -769,23 +768,29 @@ BEGIN_ACTION(DecoderDecl) {
 }
 END_ACTION()
 
-struct JitClassDecl : if_must<KEYWORD("jit"), Id, tok<';'>> {};
+struct ProtoParam : if_must<tok<'('>, ScopedId, tok<')'>> {};
+BEGIN_ACTION(ProtoParam) {
+  assert(!__ proto_param.has_value());
+  auto id = __ popScopedId();
+  __ proto_param = __ resolveProtocol(in, id).value().second;
+}
+END_ACTION()
+
+struct JitClassDecl : if_must<KEYWORD("jit"), Id, opt<ProtoParam>, tok<';'>> {};
 BEGIN_ACTION(JitClassDecl) {
-  if (!__ iface_jit_class_name.empty()) {
-    throw parse_error("Multiple jit declarations in portal", in.position());
-  }
-  __ iface_jit_class_name = __ popId();
+  auto jit_class_name = __ popId();
+  __ jits.push_back({jit_class_name, __ proto_param});
+  __ proto_param = {};
 }
 END_ACTION()
 
 struct PrecompClassDecl
-    : if_must<KEYWORD("precomp"), Id, tok<'('>, ScopedId, tok<')'>, tok<';'>> {
-};
+    : if_must<KEYWORD("precomp"), Id, ProtoParam, tok<';'>> {};
 BEGIN_ACTION(PrecompClassDecl) {
-  auto proto_id = __ popScopedId();
+  assert(__ proto_param.has_value());
   auto precomp_class_name = __ popId();
-  auto proto = *__ resolveProtocol(in, proto_id);
-  __ precomps.push_back({precomp_class_name, proto.first});
+  __ precomps.push_back({precomp_class_name, *__ proto_param});
+  __ proto_param = {};
 }
 END_ACTION()
 
@@ -801,30 +806,34 @@ BEGIN_ACTION(PortalDecl) {
     throw parse_error("Multiple portals", in.position());
   }
 
-  auto& iface = __ portals
-                    .emplace(name,
-                             ParsedProtoFile::Portal{
-                                 .sizers = __ sizers,
-                                 .encoders = __ encoders,
-                                 .decoders = __ decoders,
-                                 .jit_class_name = __ iface_jit_class_name,
-                             })
-                    .first->second;
+  auto& portal = __ portals
+                     .emplace(name,
+                              ParsedProtoFile::Portal{
+                                  .sizers = __ sizers,
+                                  .encoders = __ encoders,
+                                  .decoders = __ decoders,
+                              })
+                     .first->second;
 
-  for (auto& precomp : __ precomps) {
-    if (iface.precomps.count(precomp.first)) {
-      throw parse_error(
-          "Precomp class " + precomp.first + " declared multiple times",
-          in.position());
+  auto add_interfaces = [&](const auto& decls, auto& map) {
+    for (auto& decl : decls) {
+      if (portal.precomps.count(decl.first) || portal.jits.count(decl.first)) {
+        throw parse_error("precomp or jit class with name " + decl.first +
+                              " declared multiple times",
+                          in.position());
+      }
+      map[decl.first] = decl.second;
     }
-    iface.precomps[precomp.first] = precomp.second;
-  }
+  };
+
+  add_interfaces(__ precomps, portal.precomps);
+  add_interfaces(__ jits, portal.jits);
 
   __ sizers.clear();
   __ encoders.clear();
   __ decoders.clear();
-  __ iface_jit_class_name.clear();
   __ precomps.clear();
+  __ jits.clear();
 }
 END_ACTION()
 

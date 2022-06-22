@@ -8,12 +8,14 @@ portal TestPortal {
   encoder encode : Int32;
   decoder decode : Int32;
   precomp Precomp(Proto);
+  jit Jit(Proto);
 }
 
 portal TestSender {
   sizer size : Int32;
   encoder encode : Int32;
   precomp Precomp(Proto);
+  jit Jit(Proto);
 }
 
 portal TestReceiver {
@@ -22,4 +24,6 @@ portal TestReceiver {
   // Make sure multiple precomp definitions are allowed.
   precomp Precomp(Proto);
   precomp Precomp1(Proto1);
+  jit Jit(Proto);
+  jit Jit1(Proto1);
 }

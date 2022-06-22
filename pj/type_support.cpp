@@ -98,14 +98,7 @@ PathAttr PathAttr::fromString(mlir::MLIRContext* ctx,
 
 std::string PathAttr::toString() const {
   std::ostringstream sstr;
-  bool first = true;
-  for (auto piece : getValue()) {
-    if (!first) {
-      sstr << ".";
-    }
-    first = false;
-    sstr << std::string_view(piece);
-  }
+  print(sstr);
   return sstr.str();
 }
 

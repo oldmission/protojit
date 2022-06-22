@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -14,6 +15,7 @@ class Context;
 
 class Portal {
  public:
+  Portal() : portal_(nullptr) {}
   ~Portal() { PJFreePortal(portal_); }
 
   // Disable copying.
@@ -130,6 +132,12 @@ class Context {
     PJAddSizeFunction(ctx_, name.c_str(),
                       gen::BuildPJType<Src>::build(ctx_, PJGetHostDomain(ctx_)),
                       protocol.proto_, src_path.c_str(), round_up);
+  }
+
+  void addProtocolDefinition(const std::string& name,
+                             const std::string& size_name, Protocol protocol) {
+    PJAddProtocolDefinition(ctx_, name.c_str(), size_name.c_str(),
+                            protocol.proto_);
   }
 
   void precompile(const std::string& filename) {

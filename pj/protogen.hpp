@@ -13,7 +13,7 @@ namespace pj {
 using SourceId = std::vector<std::string>;
 
 struct ParsedProtoFile {
-  enum class DeclKind { kType, kComposite, kProtocol };
+  enum class DeclKind { kType, kComposite };
 
   struct Decl {
     const DeclKind kind;
@@ -24,9 +24,6 @@ struct ParsedProtoFile {
     // We will generate a enum directly without the wrapper class
     // in this case.
     const bool is_enum = false;
-
-    // For protocol defs only.
-    types::PathAttr path;
 
     bool is_external = false;
   };
@@ -55,10 +52,10 @@ struct ParsedProtoFile {
     std::vector<Encoder> encoders;
     std::vector<Decoder> decoders;
 
-    const std::string jit_class_name;
-
-    // class name -> protocol
-    std::map<std::string, SourceId> precomps;
+    // class name -> protocol / default protocol
+    using Protocol = std::pair<types::ValueType, types::PathAttr>;
+    std::map<std::string, Protocol> precomps;
+    std::map<std::string, std::optional<Protocol>> jits;
   };
 
   std::vector<Decl> decls;
