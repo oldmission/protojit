@@ -210,14 +210,14 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
   }
 
   // Decode the latest compatible version found in the file.
-  for (size_t dec_size = 8192;; dec_size *= 2) {
+  for (int64_t dec_size = 8192;; dec_size *= 2) {
     auto dec_buffer = std::make_unique<char[]>(dec_size);
 
     auto bbuf = latest_compatible.decode_fn(
         latest_compatible.data, &proto,
         {.ptr = dec_buffer.get(), .size = dec_size});
 
-    if (bbuf.ptr != nullptr) {
+    if (bbuf.size >= 0) {
       auto wire = types::WireDomainAttr::unique(&ctx_);
       return reflect::unreflect(proto, ctx_, wire).cast<types::ProtocolType>();
     }

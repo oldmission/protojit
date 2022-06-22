@@ -116,11 +116,12 @@ class PJGenericTest
 
         auto bbuf = decode_fn(
             enc_buffer.get(), options.to,
-            {.ptr = results.dec_buffer.get(), .size = results.dec_buffer_size},
+            {.ptr = results.dec_buffer.get(),
+             .size = static_cast<int64_t>(results.dec_buffer_size)},
             reinterpret_cast<DecodeHandler<Dst, void>*>(fn_ptrs.data()),
             &handlers);
 
-        if (bbuf.ptr == nullptr) {
+        if (bbuf.size < 0) {
           EXPECT_TRUE(options.expect_dec_buffer);
 
           // Horribly inefficient, but it ensures that any off-by-one error in

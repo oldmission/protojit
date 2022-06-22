@@ -934,8 +934,8 @@ LogicalResult DecodeCatchOpLowering::matchAndRewrite(
       continuation_end->addArgument(BoundedBufferType::get(ctx), loc);
 
   _.setInsertionPointToStart(fail);
-  auto empty_buf = pass->buildBoundedBuf(
-      loc, _, _.create<LLVM::NullOp>(loc, pass->bytePtrType()), {});
+  auto empty_buf =
+      pass->buildBoundedBuf(loc, _, {}, pass->buildWordConstant(loc, _, -1));
   _.create<LLVM::BrOp>(loc, ValueRange{empty_buf}, continuation_end);
 
   _.setInsertionPointToStart(succ);

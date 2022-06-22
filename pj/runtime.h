@@ -35,7 +35,7 @@ typedef struct PJPortal PJPortal;
 
 struct BoundedBuffer {
   char* ptr;
-  uint64_t size;
+  int64_t size;
 };
 
 static_assert(sizeof(BoundedBuffer) == 2 * sizeof(void*));
