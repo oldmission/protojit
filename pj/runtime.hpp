@@ -54,6 +54,8 @@ class Portal {
 
 class Protocol {
  public:
+  Protocol(const Protocol& proto) : proto_(proto.proto_) {}
+
   bool isBinaryCompatibleWith(Protocol other) const {
     return PJIsBinaryCompatible(proto_, other.proto_);
   }
