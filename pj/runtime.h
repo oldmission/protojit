@@ -128,7 +128,7 @@ void PJAddSizeFunction(PJContext* ctx, const char* name, const void* src,
                        bool round_up);
 
 void PJAddProtocolDefinition(PJContext* ctx, const char* name,
-                             const PJProtocol* protocol);
+                             const char* size_name, const PJProtocol* protocol);
 
 void PJPrecompile(PJContext* ctx, const char* filename);
 const PJPortal* PJCompile(PJContext* ctx);

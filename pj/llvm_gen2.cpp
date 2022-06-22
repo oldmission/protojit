@@ -83,6 +83,10 @@ struct LLVMGenPass
     return mlir::IntegerAttr::get(intType(width), value);
   }
 
+  mlir::Attribute wordAttr(size_t value) {
+    return mlir::IntegerAttr::get(intType(wordSize()), value);
+  }
+
   mlir::Value buildWordConstant(mlir::Location& loc, mlir::OpBuilder& _,
                                 size_t value) {
     return buildIntConstant(loc, _, wordSize(), value);
@@ -1104,13 +1108,14 @@ LogicalResult DefineProtocolOpLowering::matchAndRewrite(
     ConversionPatternRewriter& _) const {
   auto proto_cst_type =
       LLVMArrayType::get(pass->intType(Bytes(1)), op.proto().size());
-  auto proto_cst_attr = DenseIntElementsAttr::get(
-      RankedTensorType::get(static_cast<int64_t>(op.proto().size()),
-                            _.getIntegerType(8)),
-      op.proto());
+  auto proto_cst_attr = StringAttr::get(_.getContext(), op.proto());
   _.setInsertionPointToStart(pass->module().getBody());
   _.create<LLVM::GlobalOp>(op.getLoc(), proto_cst_type, /*isConstant=*/false,
-                           LLVM::Linkage::External, op.name(), proto_cst_attr);
+                           LLVM::Linkage::External, op.ptrName(),
+                           proto_cst_attr);
+  _.create<LLVM::GlobalOp>(op.getLoc(), pass->wordType(), /*isConstant=*/false,
+                           LLVM::Linkage::External, op.sizeName(),
+                           pass->wordAttr(op.proto().size()));
   _.eraseOp(op);
   return success();
 }

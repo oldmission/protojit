@@ -824,6 +824,7 @@ BEGIN_ACTION(PortalDecl) {
   __ encoders.clear();
   __ decoders.clear();
   __ iface_jit_class_name.clear();
+  __ precomps.clear();
 }
 END_ACTION()
 

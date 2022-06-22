@@ -37,7 +37,8 @@ struct ProtoJitContext {
                        types::ProtocolType protocol, llvm::StringRef src_path,
                        bool round_up);
 
-  void addProtocolDefinition(std::string_view name, llvm::StringRef proto_data);
+  void addProtocolDefinition(std::string_view name, std::string_view size_name,
+                             llvm::StringRef proto_data);
 
   void precompile(std::string_view filename, size_t opt_level = 3);
   std::unique_ptr<Portal> compile(size_t opt_level = 3);

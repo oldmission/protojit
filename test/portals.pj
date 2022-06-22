@@ -1,11 +1,25 @@
 import test.ints;
 
 protocol Proto : Int32;
+protocol Proto1 : Int32;
 
 portal TestPortal {
   sizer size : Int32;
   encoder encode : Int32;
   decoder decode : Int32;
-
   precomp Precomp(Proto);
+}
+
+portal TestSender {
+  sizer size : Int32;
+  encoder encode : Int32;
+  precomp Precomp(Proto);
+}
+
+portal TestReceiver {
+  decoder decode : Int32;
+
+  // Make sure multiple precomp definitions are allowed.
+  precomp Precomp(Proto);
+  precomp Precomp1(Proto1);
 }

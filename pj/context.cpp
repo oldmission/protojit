@@ -172,11 +172,13 @@ void ProtoJitContext::addSizeFunction(std::string_view name, mlir::Type src,
 }
 
 void ProtoJitContext::addProtocolDefinition(std::string_view name,
+                                            std::string_view size_name,
                                             llvm::StringRef proto_data) {
   // TODO: use a more interesting location
   auto loc = builder_.getUnknownLoc();
   module_->push_back(builder_.create<DefineProtocolOp>(
-      loc, kUserFunctionPrefix + std::string{name}, proto_data));
+      loc, kUserFunctionPrefix + std::string{name},
+      kUserFunctionPrefix + std::string{size_name}, proto_data));
 }
 
 #define DEBUG_TYPE "pj.compile"

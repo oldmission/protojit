@@ -312,12 +312,13 @@ void PJAddSizeFunction(PJContext* ctx_, const char* name, const void* src_,
 }
 
 void PJAddProtocolDefinition(PJContext* ctx, const char* name,
+                             const char* size_name,
                              const PJProtocol* protocol) {
   std::vector<char> proto;
   proto.resize(PJGetProtoSize(ctx, protocol));
   PJEncodeProto(ctx, protocol, proto.data());
   reinterpret_cast<pj::ProtoJitContext*>(ctx)->addProtocolDefinition(
-      name, {proto.data(), proto.size()});
+      name, size_name, {proto.data(), proto.size()});
 }
 
 void PJPrecompile(PJContext* ctx, const char* filename) {
