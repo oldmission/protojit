@@ -156,12 +156,14 @@ void read(pj::runtime::Context& ctx) {
 
     pj::DecodeHandler<Adoption<V>, void> handlers[2] = {handle_cat, handle_dog};
 
-    while (true) {
+    for (int64_t dec_size = 1024;; dec_size *= 2) {
+      auto dec_buf = std::make_unique<char[]>(dec_size);
+
       auto bbuf = reader.template decode<void>(
-          data_buf.data() + 8, &dst,
-          {.ptr = dec_buf.data(), .size = dec_buf.size()}, handlers, nullptr);
-      if (bbuf.ptr != nullptr) break;
-      dec_buf.resize(dec_buf.size() * 2);
+          data_buf.data() + 8, &dst, {.ptr = dec_buf.get(), .size = dec_size},
+          handlers, nullptr);
+
+      if (bbuf.size >= 0) break;
     }
   } while (fs.peek() != std::char_traits<char>::eof());
 }
