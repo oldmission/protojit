@@ -92,6 +92,13 @@ v2::Adoption SampleDogV2{
     .fee = 100,
 };
 
+template <Ver V>
+using Reader = std::conditional_t<V == Ver::v1, v1::Reader, v2::Reader>;
+template <Ver V>
+using Writer = std::conditional_t<V == Ver::v1, v1::Writer, v2::Writer>;
+template <Ver V>
+using Adoption = std::conditional_t<V == Ver::v1, v1::Adoption, v2::Adoption>;
+
 void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
                        const std::string& file) {
   std::vector<char> buf;
@@ -101,10 +108,10 @@ void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
   std::ofstream{file}.write(buf.data(), buf.size());
 }
 
-pj::runtime::Protocol readSchemaFromFile(pj::runtime::Context& ctx,
-                                         const std::string& file) {
+template <Ver V>
+Reader<V> getReaderForSchema(const std::string& schema_file) {
   std::vector<char> buf;
-  std::ifstream fs{file};
+  std::ifstream fs{schema_file};
 
   size_t size = 0;
   do {
@@ -113,37 +120,19 @@ pj::runtime::Protocol readSchemaFromFile(pj::runtime::Context& ctx,
     size += fs.gcount();
   } while (!fs.eof());
 
-  return ctx.decodeProto(buf.data());
+  return Reader<V>{buf.data()};
 }
 
 template <Ver V>
-using Protocol =
-    std::conditional_t<V == Ver::v1, v1::AdoptionProto, v2::AdoptionProto>;
-
-template <Ver V>
 void read(pj::runtime::Context& ctx) {
-  using Proto = Protocol<V>;
-  using Head = typename pj::gen::ProtocolHead<Proto>::Head;
+  auto reader = getReaderForSchema<V>(SchemaFile.getValue());
 
-  auto proto = readSchemaFromFile(ctx, SchemaFile.getValue());
-  std::cout << "Read optimized protocol from schema file" << std::endl;
-
-  void (*handle_cat)(const Head*, const void*) = [](const Head* adoption,
-                                                    const void*) {
+  auto handle_cat = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got cat adoption message" << std::endl;
   };
-  void (*handle_dog)(const Head*, const void*) = [](const Head* adoption,
-                                                    const void*) {
+  auto handle_dog = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got dog adoption message" << std::endl;
   };
-
-  ctx.addDecodeFunction<Head>("decode", proto, /*handlers=*/
-                              {"animal.specifics.cat", "animal.specifics.dog"});
-
-  auto portal = ctx.compile();
-  std::cout << "Compiled decode function" << std::endl;
-
-  const auto decode = portal.getDecodeFunction<Head>("decode");
 
   std::vector<char> data_buf;
   data_buf.resize(1024);
@@ -163,15 +152,14 @@ void read(pj::runtime::Context& ctx) {
 
     // Decode the message, increasing the size of the decode buffer if
     // necessary.
-    Head dst{.animal = {.specifics = {.value = {.cat = {}}}}};
+    Adoption<V> dst{.animal = {.specifics = {.value = {.cat = {}}}}};
 
-    using HandlerT = void (*)(const Head*, const void*);
-    HandlerT handlers[2] = {handle_cat, handle_dog};
+    pj::DecodeHandler<Adoption<V>, void> handlers[2] = {handle_cat, handle_dog};
 
     while (true) {
-      auto bbuf = decode(data_buf.data() + 8, &dst,
-                         {.ptr = dec_buf.data(), .size = dec_buf.size()},
-                         handlers, nullptr);
+      auto bbuf = reader.template decode<void>(
+          data_buf.data() + 8, &dst,
+          {.ptr = dec_buf.data(), .size = dec_buf.size()}, handlers, nullptr);
       if (bbuf.ptr != nullptr) break;
       dec_buf.resize(dec_buf.size() * 2);
     }
@@ -180,34 +168,9 @@ void read(pj::runtime::Context& ctx) {
 
 template <Ver V>
 void write(pj::runtime::Context& ctx) {
-  using Proto = Protocol<V>;
-  using Head = typename pj::gen::ProtocolHead<Proto>::Head;
+  Writer<V> writer;
 
-  auto proto = ctx.planProtocol<Proto>();
-  std::cout << "Planned optimized protocol" << std::endl;
-  writeSchemaToFile(ctx, proto, SchemaFile.getValue());
-  std::cout << "Outputted schema to file" << std::endl;
-
-  // Specialized functions generated for each of cat and dog because it is known
-  // at compile-time which of the two we'll be encoding.
-  ctx.addSizeFunction<Head>("size_cat", proto,
-                            /*src_path=*/"animal.specifics.cat",
-                            /*round_up=*/false);
-  ctx.addSizeFunction<Head>("size_dog", proto,
-                            /*src_path=*/"animal.specifics.dog",
-                            /*round_up=*/false);
-  ctx.addEncodeFunction<Head>("encode_cat", proto,
-                              /*src_path=*/"animal.specifics.cat");
-  ctx.addEncodeFunction<Head>("encode_dog", proto,
-                              /*src_path=*/"animal.specifics.dog");
-
-  auto portal = ctx.compile();
-  std::cout << "Compiled size and encode functions" << std::endl;
-
-  const auto size_cat = portal.getSizeFunction<Head>("size_cat");
-  const auto size_dog = portal.getSizeFunction<Head>("size_dog");
-  const auto encode_cat = portal.getEncodeFunction<Head>("encode_cat");
-  const auto encode_dog = portal.getEncodeFunction<Head>("encode_dog");
+  writeSchemaToFile(ctx, writer.getProtocol(), SchemaFile.getValue());
 
   auto [cat, dog] = [&]() {
     if constexpr (V == Ver::v1) {
@@ -217,18 +180,18 @@ void write(pj::runtime::Context& ctx) {
     }
   }();
 
-  uint64_t cat_size = size_cat(cat);
-  uint64_t dog_size = size_dog(dog);
+  uint64_t cat_size = writer.size_cat(cat);
+  uint64_t dog_size = writer.size_dog(dog);
   uint64_t cat_size_aligned = ((cat_size - 1) | 7) + 1;
 
   std::vector<char> buf;
   buf.resize(8 + cat_size_aligned + 8 + dog_size);
 
   *reinterpret_cast<uint64_t*>(&buf[0]) = cat_size_aligned;
-  encode_cat(cat, &buf[8]);
+  writer.encode_cat(cat, &buf[8]);
 
   *reinterpret_cast<uint64_t*>(&buf[8 + cat_size_aligned]) = dog_size;
-  encode_dog(dog, &buf[8 + cat_size_aligned + 8]);
+  writer.encode_dog(dog, &buf[8 + cat_size_aligned + 8]);
 
   std::ofstream{DataFile.getValue()}.write(buf.data(), buf.size());
   std::cout << "Encoded and outputted data to file" << std::endl;
