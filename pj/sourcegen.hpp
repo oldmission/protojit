@@ -18,11 +18,10 @@ class SourceGenerator {
   void addTypedef(const SourceId& name, types::ValueType type);
 
   // Recursively add subtypes if not added for wire types.
+  void addProtocol(const SourceId& name, types::ProtocolType proto);
   void addComposite(types::ValueType type, bool is_external = false);
 
   void addPortal(const SourceId& ns, const ParsedProtoFile::Portal& portal);
-  void addProtocol(const SourceId& name, mlir::Type proto,
-                   types::PathAttr path);
 
   void generate(const std::filesystem::path& header_path, std::ostream& output,
                 std::ostream* cpp,
@@ -65,15 +64,8 @@ class SourceGenerator {
     }
   }
 
-  bool shouldAdd(types::ValueType type) {
-    if (auto nominal = type.dyn_cast_or_null<types::NominalType>()) {
-      // Host types must be added manually because they require additional
-      // information.
-      return nominal.domain().isa<types::WireDomainAttr>() &&
-             generated_.find(type.getAsOpaquePointer()) == generated_.end();
-    }
-    return false;
-  }
+  // Adds the type as well as all of its subtypes.
+  void addType(types::ValueType type);
 
   std::stringstream& stream() {
     if (region_ == Region::kDefs) return defs_;

@@ -213,6 +213,61 @@ void SourceGenerator::addTypedef(const SourceId& name, types::ValueType type) {
   endNamespaceOf(name);
 }
 
+void SourceGenerator::addType(types::ValueType type) {
+  if (auto nominal = type.dyn_cast<types::NominalType>()) {
+    if (nominal.domain().isa<types::WireDomainAttr>() &&
+        generated_.find(type.getAsOpaquePointer()) == generated_.end()) {
+      addComposite(nominal);
+    }
+    return;
+  }
+
+  if (auto arr = type.dyn_cast<types::ArrayType>()) {
+    addType(arr->elem);
+    return;
+  }
+
+  if (auto vec = type.dyn_cast<types::VectorType>()) {
+    addType(vec->elem);
+    return;
+  }
+}
+
+void SourceGenerator::addProtocol(const SourceId& name,
+                                  types::ProtocolType proto) {
+  pushDomain(Domain::kWire);
+
+  addType(proto->head);
+
+  region_ = Region::kDefs;
+  beginNamespaceOf(name);
+  stream() << "struct " << std::string_view(name.back()) << ";\n";
+  endNamespaceOf(name);
+
+  region_ = Region::kBuilders;
+  auto& os = stream();
+  os << "namespace pj {\n";
+  os << "namespace gen {\n";
+  os << "template <>\n"
+     << "struct BuildPJProtocol<";
+  printName(name);
+  os << "> {\n"
+     << "using Head = ";
+  printTypeRef(proto->head);
+  os << ";\n";
+
+  os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
+  std::string head_handle = createTypeHandleFromType(proto->head);
+  os << "return PJCreateProtocolType(ctx, " << head_handle << ", "
+     << proto->buffer_offset.bits() << ");\n";
+  os << "}\n";
+
+  os << "};\n}  // namespace gen\n\n";
+  os << "\n}  // namespace pj\n\n";
+
+  popDomain();
+}
+
 void SourceGenerator::addComposite(types::ValueType type, bool is_external) {
   pushDomain(type.cast<types::NominalType>().domain());
 
@@ -329,9 +384,7 @@ void SourceGenerator::addStructBuilder(types::StructType type,
 
 void SourceGenerator::addStruct(types::StructType type, bool is_external) {
   for (const auto& field : type->fields) {
-    if (shouldAdd(field.type)) {
-      addComposite(field.type);
-    }
+    addType(field.type);
   }
 
   if (domain_ == Domain::kHost && !is_external) {
@@ -504,9 +557,7 @@ void SourceGenerator::addVariantBuilder(types::VariantType type, bool has_value,
 
 void SourceGenerator::addVariant(types::VariantType type, bool is_external) {
   for (const auto& term : type.terms()) {
-    if (shouldAdd(term.type)) {
-      addComposite(term.type);
-    }
+    addType(term.type);
   }
 
   const bool has_value = std::any_of(
