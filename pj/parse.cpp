@@ -35,7 +35,9 @@ struct ParseState {
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
-  std::map<SourceId, ParsedProtoFile::Portal>& portals;
+  std::vector<std::pair<SourceId, ParsedProtoFile::Protocol>>& protos;
+  std::map<SourceId, ParsedProtoFile::Precomp, SourceIdLess>& precomps;
+  std::set<SourceId, SourceIdLess>& portals;
 
   // Updated after parsing a 'FieldDecl' rule.
   // Cleared when done with a struct/variant decl.
@@ -87,19 +89,12 @@ struct ParseState {
   // Populated after parsing SizerDecl, EncoderDecl, and DecoderDecl,
   // respectively.
   // Cleared by PortalDecl.
-  std::vector<ParsedProtoFile::Portal::Sizer> sizers;
-  std::vector<ParsedProtoFile::Portal::Encoder> encoders;
-  std::vector<ParsedProtoFile::Portal::Decoder> decoders;
+  std::vector<Portal::Sizer> sizers;
+  std::vector<Portal::Encoder> encoders;
+  std::vector<Portal::Decoder> decoders;
 
-  // Populated after parsing ProtoParam. Cleared by PrecompClassDecl and
-  // JitClassDecl.
-  std::optional<ParsedProtoFile::Portal::Protocol> proto_param;
-
-  std::vector<std::pair<std::string, ParsedProtoFile::Portal::Protocol>>
-      precomps;
-  std::vector<
-      std::pair<std::string, std::optional<ParsedProtoFile::Portal::Protocol>>>
-      jits;
+  // Populated after parsing ProtoParam. Cleared by PrecompDecl and PortalDecl.
+  std::optional<SourceId> proto_param;
 
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
@@ -672,6 +667,7 @@ BEGIN_ACTION(ProtoDecl) {
     checkVariantPath(in, head, tag_path, /*check_term=*/false);
   }
 
+  __ protos.emplace_back(protocol_name, std::make_pair(head, tag_path));
   __ parse_scope.protocol_defs.emplace(protocol_name,
                                        std::make_pair(head, tag_path));
 
@@ -771,36 +767,43 @@ BEGIN_ACTION(DecoderDecl) {
 }
 END_ACTION()
 
-struct ProtoParam : if_must<tok<'('>, ScopedId, tok<')'>> {};
+struct ProtoParam : ScopedId {};
 BEGIN_ACTION(ProtoParam) {
   assert(!__ proto_param.has_value());
   auto id = __ popScopedId();
-  __ proto_param = __ resolveProtocol(in, id)->second;
+  __ proto_param = __ resolveProtocol(in, id)->first;
 }
 END_ACTION()
 
-struct JitClassDecl : if_must<KEYWORD("jit"), Id, opt<ProtoParam>, tok<';'>> {};
-BEGIN_ACTION(JitClassDecl) {
-  auto jit_class_name = __ popId();
-  __ jits.push_back({jit_class_name, __ proto_param});
+struct PrecompDecl : if_must<KEYWORD("precompile"), Id, tok<':'>, ScopedId,
+                             tok<'('>, ProtoParam, tok<')'>, tok<';'>> {};
+BEGIN_ACTION(PrecompDecl) {
+  ASSERT(__ proto_param.has_value());
+  auto portal_name = __ popScopedId(/*include_space=*/false);
+  auto precomp_name = __ popScopedId();
+
+  auto portal = __ resolve(in, portal_name, __ portals);
+  if (!portal) {
+    throw parse_error("No portal named " + getPathAsString(portal_name),
+                      in.position());
+  }
+
+  // Make sure there isn't also another class of this name.
+  if (__ resolve(in, precomp_name, __ precomps, /*error_on_failure=*/false) ||
+      __ resolve(in, precomp_name, __ portals, /*error_on_failure=*/false)) {
+    throw parse_error("Redefining class " + getPathAsString(precomp_name),
+                      in.position());
+  }
+
+  __ precomps.emplace(precomp_name,
+                      std::make_pair(portal_name, *__ proto_param));
   __ proto_param = {};
 }
 END_ACTION()
 
-struct PrecompClassDecl
-    : if_must<KEYWORD("precomp"), Id, ProtoParam, tok<';'>> {};
-BEGIN_ACTION(PrecompClassDecl) {
-  assert(__ proto_param.has_value());
-  auto precomp_class_name = __ popId();
-  __ precomps.push_back({precomp_class_name, *__ proto_param});
-  __ proto_param = {};
-}
-END_ACTION()
-
-struct PortalDecl : if_must<KEYWORD("portal"), Id, LB,
-                            star<sor<SizerDecl, EncoderDecl, DecoderDecl,
-                                     JitClassDecl, PrecompClassDecl>>,
-                            RB> {};
+struct PortalDecl
+    : if_must<KEYWORD("portal"), Id, tok<':'>, ProtoParam, LB,
+              star<sor<SizerDecl, EncoderDecl, DecoderDecl>>, RB> {};
 
 BEGIN_ACTION(PortalDecl) {
   auto name = __ popScopedId();
@@ -809,39 +812,27 @@ BEGIN_ACTION(PortalDecl) {
     throw parse_error("Multiple portals", in.position());
   }
 
-  auto& portal = __ portals
+  auto& portal = __ parse_scope.portal_defs
                      .emplace(name,
-                              ParsedProtoFile::Portal{
+                              Portal{
                                   .sizers = __ sizers,
                                   .encoders = __ encoders,
                                   .decoders = __ decoders,
                               })
                      .first->second;
+  __ portals.emplace(name);
 
-  auto add_interfaces = [&](const auto& decls, auto& map) {
-    for (auto& decl : decls) {
-      if (portal.precomps.count(decl.first) || portal.jits.count(decl.first)) {
-        throw parse_error("precomp or jit class with name " + decl.first +
-                              " declared multiple times",
-                          in.position());
-      }
-      map[decl.first] = decl.second;
-    }
-  };
-
-  add_interfaces(__ precomps, portal.precomps);
-  add_interfaces(__ jits, portal.jits);
+  portal.proto = *__ proto_param;
+  __ proto_param = {};
 
   __ sizers.clear();
   __ encoders.clear();
   __ decoders.clear();
-  __ precomps.clear();
-  __ jits.clear();
 }
 END_ACTION()
 
 struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
-                     TypeDecl, SpaceDecl, PortalDecl> {};
+                     TypeDecl, SpaceDecl, PortalDecl, PrecompDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 
@@ -866,6 +857,8 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
+      .protos = parsed.proto_defs,
+      .precomps = parsed.precomps,
       .portals = parsed.portals,
   };
   file_input in(path);

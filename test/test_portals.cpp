@@ -10,7 +10,7 @@
 namespace pj {
 
 TEST_F(PJTest, PortalPrecompTest) {
-  TestPortal::Precomp precomp;
+  TestPortalPrecomp precomp;
   Int32 x{.i = 1};
   EXPECT_EQ(precomp.size(&x), 4);
   char buf[4];
@@ -21,7 +21,7 @@ TEST_F(PJTest, PortalPrecompTest) {
 }
 
 TEST_F(PJTest, PortalJitTest) {
-  TestPortal::Jit jit;
+  TestPortal jit;
   Int32 x{.i = 1};
   EXPECT_EQ(jit.size(&x), 4);
   char buf[4];
@@ -32,8 +32,8 @@ TEST_F(PJTest, PortalJitTest) {
 }
 
 TEST_F(PJTest, TwoPortalsPrecompTest) {
-  TestSender::Precomp sender;
-  TestReceiver::Precomp receiver;
+  TestSenderPrecomp sender;
+  TestReceiverPrecomp receiver;
 
   auto sender_proto = ctx->decodeProto(sender.getSchema().data());
   auto receiver_proto = ctx->decodeProto(receiver.getSchema().data());
@@ -50,8 +50,8 @@ TEST_F(PJTest, TwoPortalsPrecompTest) {
 }
 
 TEST_F(PJTest, TwoPortalsJitTest) {
-  TestSender::Jit sender;
-  TestReceiver::Jit receiver;
+  TestSender sender;
+  TestReceiver receiver;
 
   auto sender_proto = sender.getProtocol();
   auto receiver_proto = receiver.getProtocol();

@@ -23,9 +23,8 @@ patterns:
             \\bsizer\\b|\
             \\bencoder\\b|\
             \\bdecoder\\b|\
-            \\bprecomp\\b|\
+            \\bprecompile\\b|\
             \\bhandlers\\b|\
-            \\bjit\\b|\
             \\bprotocol"
     name: keyword.other
   - match: "\\bint\\d+\\b|\

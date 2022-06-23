@@ -362,5 +362,11 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   PathAttr expand(llvm::StringRef prefix) const;
 };
 
+template <typename OS>
+OS& operator<<(OS& os, PathAttr path) {
+  path.print(os);
+  return os;
+}
+
 }  // namespace types
 }  // namespace pj

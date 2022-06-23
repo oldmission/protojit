@@ -12,57 +12,6 @@ namespace pj {
 
 using SourceId = std::vector<std::string>;
 
-struct ParsedProtoFile {
-  enum class DeclKind { kType, kComposite };
-
-  struct Decl {
-    const DeclKind kind;
-    const SourceId name;
-    mlir::Type type;
-
-    // For variants, whether the variant was declared as an enum.
-    // We will generate a enum directly without the wrapper class
-    // in this case.
-    const bool is_enum = false;
-
-    bool is_external = false;
-  };
-
-  struct Portal {
-    struct Sizer {
-      std::string name;
-      const SourceId src;
-      types::PathAttr src_path;
-      bool round_up;
-    };
-
-    struct Encoder {
-      std::string name;
-      const SourceId src;
-      types::PathAttr src_path;
-    };
-
-    struct Decoder {
-      std::string name;
-      const SourceId dst;
-      std::vector<types::PathAttr> handlers;
-    };
-
-    std::vector<Sizer> sizers;
-    std::vector<Encoder> encoders;
-    std::vector<Decoder> decoders;
-
-    // class name -> protocol / default protocol
-    using Protocol = std::pair<types::ValueType, types::PathAttr>;
-    std::map<std::string, Protocol> precomps;
-    std::map<std::string, std::optional<Protocol>> jits;
-  };
-
-  std::vector<Decl> decls;
-  std::map<SourceId, Portal> portals;
-  std::vector<std::filesystem::path> imports;
-};
-
 struct SourceIdLess : std::less<SourceId> {
   using is_transparent = void;
 
@@ -81,12 +30,68 @@ struct SourceIdLess : std::less<SourceId> {
   }
 };
 
+struct Portal {
+  struct Sizer {
+    std::string name;
+    const SourceId src;
+    types::PathAttr src_path;
+    bool round_up;
+  };
+
+  struct Encoder {
+    std::string name;
+    const SourceId src;
+    types::PathAttr src_path;
+  };
+
+  struct Decoder {
+    std::string name;
+    const SourceId dst;
+    std::vector<types::PathAttr> handlers;
+  };
+
+  std::vector<Sizer> sizers;
+  std::vector<Encoder> encoders;
+  std::vector<Decoder> decoders;
+
+  SourceId proto;
+};
+
+struct ParsedProtoFile {
+  enum class DeclKind { kType, kComposite };
+
+  struct Decl {
+    const DeclKind kind;
+    const SourceId name;
+    mlir::Type type;
+
+    // For variants, whether the variant was declared as an enum.
+    // We will generate a enum directly without the wrapper class
+    // in this case.
+    const bool is_enum = false;
+
+    bool is_external = false;
+  };
+
+  using Protocol = std::pair<types::ValueType, types::PathAttr>;
+
+  // portal, protocol
+  using Precomp = std::pair<SourceId, SourceId>;
+
+  std::vector<Decl> decls;
+  std::vector<std::pair<SourceId, Protocol>> proto_defs;
+  std::set<SourceId, SourceIdLess> portals;
+  std::map<SourceId, Precomp, SourceIdLess> precomps;
+  std::vector<std::filesystem::path> imports;
+};
+
 struct ParsingScope {
   mlir::MLIRContext& ctx;
   std::map<std::filesystem::path, ParsedProtoFile> parsed_files;
   std::map<SourceId, types::ValueType, SourceIdLess> type_defs;
   std::map<SourceId, std::pair<types::ValueType, types::PathAttr>, SourceIdLess>
       protocol_defs;
+  std::map<SourceId, Portal, SourceIdLess> portal_defs;
 
   std::set<std::filesystem::path> pending_files;
   std::vector<std::filesystem::path> stack;

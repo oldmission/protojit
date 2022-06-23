@@ -1,29 +1,19 @@
 import test.ints;
 
-protocol Proto : Int32;
-protocol Proto1 : Int32;
-
-portal TestPortal {
+portal TestPortal : Proto {
   sizer size : Int32;
   encoder encode : Int32;
   decoder decode : Int32;
-  precomp Precomp(Proto);
-  jit Jit(Proto);
 }
+precompile TestPortalPrecomp : TestPortal(Proto);
 
-portal TestSender {
+portal TestSender : Proto {
   sizer size : Int32;
   encoder encode : Int32;
-  precomp Precomp(Proto);
-  jit Jit(Proto);
 }
+precompile TestSenderPrecomp : TestSender(Proto);
 
-portal TestReceiver {
+portal TestReceiver : Proto {
   decoder decode : Int32;
-
-  // Make sure multiple precomp definitions are allowed.
-  precomp Precomp(Proto);
-  precomp Precomp1(Proto1);
-  jit Jit(Proto);
-  jit Jit1(Proto1);
 }
+precompile TestReceiverPrecomp : TestReceiver(Proto);
