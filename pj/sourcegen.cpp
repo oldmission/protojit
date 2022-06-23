@@ -176,9 +176,10 @@ std::string SourceGenerator::createProtocol(
     os << "auto " << handle << " = ";
   }
   os << "ctx.plan<"
-     << getNameAsString(proto.first.cast<types::NominalType>().name()) << ">(";
+     << getNameAsString(proto.first.cast<types::NominalType>().name())
+     << ">(\"";
   proto.second.print(os);
-  os << ")";
+  os << "\")";
   if (create_handle) {
     os << ";\n";
   }
@@ -536,9 +537,14 @@ void SourceGenerator::addPortal(const SourceId& ns,
 
 std::ostream& SourceGenerator::printDecoderSig(
     std::ostream& os, const std::string& name,
-    const ParsedProtoFile::Portal::Decoder& decoder, bool state_template) {
+    const ParsedProtoFile::Portal::Decoder& decoder, bool state_template,
+    bool is_declaration) {
   if (state_template) {
-    os << "template <typename S>";
+    os << "template <typename S";
+    if (!is_declaration) {
+      os << " = void";
+    }
+    os << ">";
   }
   std::string state = state_template ? "S" : "void";
   os << "BoundedBuffer " << name << "("
@@ -580,6 +586,7 @@ void SourceGenerator::addJitClass(
   //
   // The class declaration goes into `defs_`, and the function bodies go into
   // `builders_`.
+  defs_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
   builders_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
 
   region_ = Region::kDefs;
@@ -705,11 +712,11 @@ void SourceGenerator::addJitClass(
          << decoder.name << "_;\n";
 
     printDecoderSig(fn_decls, decoder.name, decoder,
-                    /*state_template=*/true)
+                    /*state_template=*/true, /*is_declaration=*/true)
         << ";\n";
 
     printDecoderSig(builders_, name + "::" + decoder.name, decoder,
-                    /*state_template=*/true)
+                    /*state_template=*/true, /*is_declaration=*/false)
         << "{\n";
     builders_ << "return " << decoder.name
               << "_(msg, result, buffer, handlers, state);\n"
@@ -728,6 +735,7 @@ void SourceGenerator::addJitClass(
   region_ = Region::kBuilders;
   endNamespaceOf(ns, /*is_namespace_name=*/true);
 
+  defs_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
 }
 
@@ -756,6 +764,7 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   //
   // The class declaration goes into `defs_`, the function bodies go into
   // `builders_`, and the precompilation code goes into `cpp_`.
+  defs_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
   builders_ << "#ifndef PROTOJIT_NO_INTERFACES\n";
 
   region_ = Region::kDefs;
@@ -830,7 +839,8 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   }
 
   for (auto& decoder : portal.decoders) {
-    printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true)
+    printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true,
+                    /*is_declaration=*/true)
         << ";";
 
     auto bare_decoder_name =
@@ -838,11 +848,11 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
 
     builders_ << "extern \"C\" ";
     printDecoderSig(builders_, "user_" + bare_decoder_name, decoder,
-                    /*state_template=*/false)
+                    /*state_template=*/false, /*is_declaration=*/false)
         << ";\n";
 
     printDecoderSig(builders_, name + "::" + decoder.name, decoder,
-                    /*state_template=*/true)
+                    /*state_template=*/true, /*is_declaration=*/false)
         << "{\n";
     builders_ << "return user_" << bare_decoder_name
               << "(msg, result, buffer, handlers, state);\n"
@@ -873,6 +883,7 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   region_ = Region::kBuilders;
   endNamespaceOf(ns, /*is_namespace_name=*/true);
 
+  defs_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
 }
 

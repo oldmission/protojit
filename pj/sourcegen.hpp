@@ -122,7 +122,7 @@ class SourceGenerator {
 
   std::ostream& printDecoderSig(std::ostream& os, const std::string& name,
                                 const ParsedProtoFile::Portal::Decoder& decoder,
-                                bool state_template);
+                                bool state_template, bool is_declaration);
 
   // Generates a variable containing a handle to a runtime type generated using
   // the type of the in-memory type, obtained using decltype. Expects a

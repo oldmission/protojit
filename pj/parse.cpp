@@ -137,10 +137,13 @@ struct ParseState {
   }
 
   template <typename I>
-  types::ValueType resolveType(const I& in, const SourceId& id,
-                               bool error_on_failure = true) {
+  std::pair<SourceId, types::ValueType> resolveType(
+      const I& in, const SourceId& id, bool error_on_failure = true) {
     auto result = resolve(in, id, parse_scope.type_defs, error_on_failure);
-    return result ? result->second : types::ValueType{};
+    if (result) {
+      return *result;
+    }
+    return {};
   }
 
   template <typename I>
@@ -269,7 +272,7 @@ struct TypeRef : ScopedId {};
 BEGIN_ACTION(TypeRef) {
   assert(!__ type);
   auto id = __ popScopedId(false);
-  __ type = __ resolveType(in, id);
+  __ type = __ resolveType(in, id).second;
 }
 END_ACTION()
 
@@ -657,7 +660,7 @@ BEGIN_ACTION(ProtoDecl) {
                       in.position());
   }
 
-  auto head = __ resolveType(in, head_name);
+  auto head = __ resolveType(in, head_name).second;
 
   auto tag_path = __ getSinglePath();
   if (!tag_path.empty()) {
@@ -691,7 +694,7 @@ void handleSizerOrEncoderDecl(const ActionInput& in, ParseState* state) {
 
   auto src = __ popScopedId(false);
   // Check that the src type exists.
-  auto src_type = __ resolveType(in, src);
+  auto [src_name, src_type] = __ resolveType(in, src);
 
   auto name = __ popId();
 
@@ -703,14 +706,14 @@ void handleSizerOrEncoderDecl(const ActionInput& in, ParseState* state) {
   if constexpr (std::is_same_v<Decl, SizerDecl>) {
     __ sizers.push_back({
         .name = name,
-        .src = src,
+        .src = src_name,
         .src_path = src_path,
         .round_up = __ round_up,
     });
   } else {
     __ encoders.push_back({
         .name = name,
-        .src = src,
+        .src = src_name,
         .src_path = src_path,
     });
   }
@@ -743,7 +746,7 @@ struct DecoderDecl : if_must<KEYWORD("decoder"), Id, tok<':'>, ScopedId,
 BEGIN_ACTION(DecoderDecl) {
   auto dst = __ popScopedId(false);
   // Check that the dst type exists.
-  auto dst_type = __ resolveType(in, dst);
+  auto [dst_name, dst_type] = __ resolveType(in, dst);
 
   for (auto handler : __ paths) {
     checkVariantPath(in, dst_type, handler, /*check_term=*/true);
@@ -760,7 +763,7 @@ BEGIN_ACTION(DecoderDecl) {
 
   __ decoders.push_back({
       .name = __ popId(),
-      .dst = dst,
+      .dst = dst_name,
       .handlers = __ paths,
   });
 
@@ -772,7 +775,7 @@ struct ProtoParam : if_must<tok<'('>, ScopedId, tok<')'>> {};
 BEGIN_ACTION(ProtoParam) {
   assert(!__ proto_param.has_value());
   auto id = __ popScopedId();
-  __ proto_param = __ resolveProtocol(in, id).value().second;
+  __ proto_param = __ resolveProtocol(in, id)->second;
 }
 END_ACTION()
 
