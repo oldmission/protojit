@@ -93,10 +93,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    /*auto planned =*/pj::plan_protocol(ctx, it->second.first,
-                                        it->second.second);
-    // TODO: update this
-    // sourcegen.addProtocol(name, planned);
+    auto planned = pj::plan_protocol(ctx, it->second.first, it->second.second);
+    sourcegen.addWireProtocol(name, planned);
   } else {
     for (auto& decl : parsed_file.decls) {
       auto type = decl.type.cast<pj::types::ValueType>();
