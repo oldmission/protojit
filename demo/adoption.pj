@@ -56,6 +56,19 @@ struct Adoption {
 
 protocol AdoptionProto : Adoption @ animal.specifics._;
 
+portal Reader : AdoptionProto {
+  decoder decode : Adoption {
+    handlers [animal.specifics.cat, animal.specifics.dog];
+  };
+}
+
+portal Writer : AdoptionProto {
+  sizer size_cat : Adoption @ animal.specifics.cat;
+  sizer size_dog : Adoption @ animal.specifics.dog;
+  encoder encode_cat : Adoption @ animal.specifics.cat;
+  encoder encode_dog : Adoption @ animal.specifics.dog;
+}
+
 }
 
 space v2 {
@@ -145,5 +158,18 @@ struct Adoption {
 }
 
 protocol AdoptionProto : Adoption @ animal.specifics._;
+
+portal Reader : AdoptionProto {
+  decoder decode : Adoption {
+    handlers [animal.specifics.cat, animal.specifics.dog];
+  };
+}
+
+portal Writer : AdoptionProto {
+  sizer size_cat : Adoption @ animal.specifics.cat;
+  sizer size_dog : Adoption @ animal.specifics.dog;
+  encoder encode_cat : Adoption @ animal.specifics.cat;
+  encoder encode_dog : Adoption @ animal.specifics.dog;
+}
 
 }
