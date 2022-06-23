@@ -20,9 +20,12 @@ class SourceGenerator {
   // Recursively add subtypes if not added for wire types.
   void addComposite(types::ValueType type, bool is_external = false);
 
-  void addPortal(const SourceId& ns, const ParsedProtoFile::Portal& portal);
-  void addProtocol(const SourceId& name, mlir::Type proto,
-                   types::PathAttr path);
+  void addPortal(const SourceId& ns, const Portal& portal,
+                 ParsedProtoFile::Protocol proto);
+  void addProtocol(const SourceId& name, ParsedProtoFile::Protocol proto);
+  void addPrecompilation(const SourceId& name, const Portal& portal,
+                         const SourceId& proto_name,
+                         ParsedProtoFile::Protocol proto);
 
   void generate(const std::filesystem::path& header_path, std::ostream& output,
                 std::ostream* cpp,
@@ -85,19 +88,18 @@ class SourceGenerator {
   std::string getUniqueName() { return "_" + std::to_string(counter_++); }
 
   template <typename Name>
-  void beginNamespaceOf(const Name& name, bool is_namespace_name = false) {
+  void beginNamespaceOf(const Name& name) {
     for (std::string_view space : outer_namespace_) {
       stream() << "namespace " << space << "{\n";
     }
-    for (size_t i = 0; i < name.size() - !is_namespace_name; ++i) {
+    for (size_t i = 0; i < name.size() - 1; ++i) {
       stream() << "namespace " << std::string_view(name[i]) << "{\n";
     }
   }
 
   template <typename Name>
-  void endNamespaceOf(const Name& name, bool is_namespace_name = false) {
-    for (size_t i = 0;
-         i < outer_namespace_.size() + name.size() - !is_namespace_name; ++i) {
+  void endNamespaceOf(const Name& name) {
+    for (size_t i = 0; i < outer_namespace_.size() + name.size() - 1; ++i) {
       stream() << "}\n";
     }
     stream() << "\n";
@@ -121,7 +123,7 @@ class SourceGenerator {
   void printPlanName(std::ostream& os, const SourceId& plan);
 
   std::ostream& printDecoderSig(std::ostream& os, const std::string& name,
-                                const ParsedProtoFile::Portal::Decoder& decoder,
+                                const Portal::Decoder& decoder,
                                 bool state_template, bool is_declaration);
 
   // Generates a variable containing a handle to a runtime type generated using
@@ -136,13 +138,6 @@ class SourceGenerator {
   // PJContext* in scope with name ctx.
   std::string createTypeHandleFromType(types::ValueType type);
 
-  // Generates code which returns a pj::runtime::Protocol object for the
-  // provided head and tag path. If create_handle is provided, stores the result
-  // in a variable and returns the name of the variable. Expects a
-  // pj::runtime::Context in scope with name ctx.
-  std::string createProtocol(ParsedProtoFile::Portal::Protocol proto,
-                             bool create_handle);
-
   std::string buildStringArray(Span<llvm::StringRef> arr);
 
   void addStructDef(types::StructType type, bool decl_only);
@@ -154,12 +149,6 @@ class SourceGenerator {
   void addVariantBuilder(types::VariantType type, bool has_value,
                          Width tag_width, bool is_external);
   void addVariant(types::VariantType type, bool is_external);
-  void addJitClass(const SourceId& ns, const ParsedProtoFile::Portal& iface,
-                   const std::string& name,
-                   std::optional<ParsedProtoFile::Portal::Protocol> proto);
-  void addPrecompClass(const SourceId& ns, const ParsedProtoFile::Portal& iface,
-                       const std::string& name,
-                       ParsedProtoFile::Portal::Protocol proto);
 
   Region region_;
   Domain domain_ = Domain::kUnset;
@@ -169,6 +158,7 @@ class SourceGenerator {
   std::stringstream cpp_;
   std::unordered_set<const void*> generated_;
   std::vector<std::string> entrypoints_;
+  std::set<SourceId, SourceIdLess> protos_;
 
   SourceId outer_namespace_;
   size_t counter_;

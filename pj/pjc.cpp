@@ -110,8 +110,20 @@ int main(int argc, char** argv) {
       }
     }
 
-    for (auto& [ns, portal] : parsed_file.portals) {
-      sourcegen.addPortal(ns, portal);
+    for (auto& [name, proto] : parsed_file.proto_defs) {
+      sourcegen.addProtocol(name, proto);
+    }
+
+    for (auto& name : parsed_file.portals) {
+      sourcegen.addPortal(
+          name, parse_scope.portal_defs.at(name),
+          parse_scope.protocol_defs.at(parse_scope.portal_defs.at(name).proto));
+    }
+
+    for (auto& [name, precomp] : parsed_file.precomps) {
+      sourcegen.addPrecompilation(
+          name, parse_scope.portal_defs.at(precomp.first), precomp.second,
+          parse_scope.protocol_defs.at(precomp.second));
     }
   }
 
