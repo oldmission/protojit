@@ -53,6 +53,12 @@ const PJDomain* PJGetHostDomain(PJContext* ctx) {
   return reinterpret_cast<const PJDomain*>(host.getAsOpaquePointer());
 }
 
+const PJDomain* PJGetWireDomain(PJContext* ctx) {
+  auto host = pj::types::WireDomainAttr::unique(
+      &reinterpret_cast<pj::ProtoJitContext*>(ctx)->ctx_);
+  return reinterpret_cast<const PJDomain*>(host.getAsOpaquePointer());
+}
+
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
                                  Bits data_ref_width, Bits type_ref_offset,
                                  Bits type_ref_width, Bits size, Bits alignment,

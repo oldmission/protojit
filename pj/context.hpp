@@ -50,14 +50,11 @@ struct ProtoJitContext {
 
  private:
   void resetModule();
-  Portal* schemaPortal();
 
   std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
   compileToLLVM(size_t opt_level);
 
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);
-
-  std::unique_ptr<Portal> schema_portal_;
 };
 
 }  // namespace pj
