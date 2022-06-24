@@ -3,6 +3,8 @@
 #include <mlir/Dialect/StandardOps/IR/Ops.h>
 #include <mlir/Pass/Pass.h>
 
+#include <unordered_set>
+
 #include "ir.hpp"
 #include "passes.hpp"
 
@@ -31,6 +33,7 @@ struct GenSizeFunctionsPass
   void convertRegion(Region& region, bool round_up);
 
   llvm::StringMap<FuncOp> converted_fns_;
+  std::unordered_set<Operation*> to_erase_;
 };
 
 FuncOp GenSizeFunctionsPass::findOrCreateConvertedFn(llvm::StringRef name,
@@ -59,7 +62,7 @@ FuncOp GenSizeFunctionsPass::findOrCreateConvertedFn(llvm::StringRef name,
   convertRegion(func.body(), round_up);
 
   converted_fns_.try_emplace(conv_name, func);
-  orig.erase();
+  to_erase_.insert(orig);
   return func;
 }
 
@@ -132,6 +135,9 @@ void GenSizeFunctionsPass::convertRegion(Region& region, bool round_up) {
 
 void GenSizeFunctionsPass::runOnOperation() {
   module().walk([&](SizeOp op) { convertRegion(op.body(), op.round_up()); });
+  for (auto* func : to_erase_) {
+    func->erase();
+  }
 }
 
 }  // namespace
