@@ -56,6 +56,9 @@ void PJFreeContext(PJContext* ctx);
 
 const PJDomain* PJGetHostDomain(PJContext* c);
 
+// Only to be used internally.
+const PJDomain* PJGetWireDomain(PJContext* c);
+
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
 

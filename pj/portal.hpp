@@ -16,28 +16,24 @@ class Portal {
   virtual ~Portal() {}
 
   template <typename T>
-  SizeFunction<T> GetSizeFunction(const char* name,
-                                  bool internal = false) const {
-    return ResolveTarget<SizeFunction<T>>(name, internal);
+  SizeFunction<T> GetSizeFunction(const char* name) const {
+    return ResolveTarget<SizeFunction<T>>(name);
   }
   template <typename T>
-  EncodeFunction<T> GetEncodeFunction(const char* name,
-                                      bool internal = false) const {
-    return ResolveTarget<EncodeFunction<T>>(name, internal);
+  EncodeFunction<T> GetEncodeFunction(const char* name) const {
+    return ResolveTarget<EncodeFunction<T>>(name);
   }
   template <typename T, typename BBuf = BoundedBuffer>
-  DecodeFunction<T, BBuf> GetDecodeFunction(const char* name,
-                                            bool internal = false) const {
-    return ResolveTarget<DecodeFunction<T, BBuf>>(name, internal);
+  DecodeFunction<T, BBuf> GetDecodeFunction(const char* name) const {
+    return ResolveTarget<DecodeFunction<T, BBuf>>(name);
   }
 
   template <typename T>
-  T ResolveTarget(const char* name, bool internal) const {
-    return reinterpret_cast<T>(ResolveTargetArtifact(name, internal));
+  T ResolveTarget(const char* name) const {
+    return reinterpret_cast<T>(ResolveTargetArtifact(name));
   }
 
-  virtual Artifact* ResolveTargetArtifact(const char* name,
-                                          bool internal) const = 0;
+  virtual Artifact* ResolveTargetArtifact(const char* name) const = 0;
 };
 
 }  // namespace pj

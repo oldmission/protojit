@@ -37,8 +37,8 @@ int32_t reflect(types::ValueType type, llvm::BumpPtrAllocator& alloc,
     reflect(t, alloc, pool, cache);                          \
   }
 
-  if (false)
-    ;
+  if (false) {
+  }
   FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(MATCH_TYPE)
 #undef MATCH_TYPE
   else {

@@ -125,13 +125,15 @@ pj_lib(
 
 cc_library(
     name = "reflect",
-    srcs = ["reflect.cpp"],
-    hdrs = [
+    srcs = [
         "protojit.hpp",
-        "reflect.hpp",
-        "reflect.pj.hpp",
+        "reflect.cpp",
         "runtime.h",
         "runtime.hpp",
+    ],
+    hdrs = [
+        "reflect.hpp",
+        "reflect.pj.hpp",
     ],
     linkopts = ["-lstdc++fs"],
     deps = [":core"],
@@ -197,6 +199,63 @@ cc_library(
     deps = [":core"],
 )
 
+# Used to bootstrap precompiled reflection routines. Disables getProtoSize,
+# encodeProto, and decodeProto, which will be re-enabled in :runtime once
+# precompiled reflection routines are available.
+cc_library(
+    name = "runtime_noschema",
+    srcs = [
+        "context.cpp",
+        "context.hpp",
+        "lib.cpp",
+        "portal.hpp",
+        "portal_impl.hpp",
+        "runtime.cpp",
+    ],
+    hdrs = [
+        "protojit.hpp",
+        "runtime.h",
+        "runtime.hpp",
+    ],
+    local_defines = ["PROTOJIT_INTERNAL_NO_SCHEMA"],
+    linkopts = ["-lstdc++"],
+    deps = [
+        ":compiler",
+        ":plan",
+        ":reflect",
+    ],
+)
+
+cc_binary(
+    name = "reflect_precompile_gen",
+    srcs = [
+        "reflect/precompile.cpp",
+        "reflect/versions.hpp",
+        "reflect/reflect.pj.v0_1.hpp",
+    ],
+    deps = [":runtime_noschema"],
+    # TODO: see site.bzl. Why is this necessary?
+    linkstatic = False,
+)
+
+genrule(
+    name = "reflect_precompile_obj",
+    srcs = [],
+    outs = ["reflect_precompile.o"],
+    cmd = "$(location reflect_precompile_gen) $@",
+    tools = ["reflect_precompile_gen"],
+)
+
+cc_library(
+    name = "reflect_precompile",
+    srcs = [
+        ":reflect_precompile_obj",
+        "reflect/reflect.pj.v0_1.hpp",
+        "reflect/versions.hpp",
+    ],
+    hdrs = ["reflect/precompile.hpp"],
+)
+
 cc_library(
     name = "runtime",
     srcs = [
@@ -208,6 +267,7 @@ cc_library(
         "runtime.cpp",
     ],
     hdrs = [
+        "protojit.hpp",
         "runtime.h",
         "runtime.hpp",
     ],
@@ -216,6 +276,7 @@ cc_library(
         ":compiler",
         ":plan",
         ":reflect",
+        ":reflect_precompile",
     ],
 )
 
@@ -228,6 +289,7 @@ cc_shared_library(
         ":compiler",
         ":plan",
         ":reflect",
+        ":reflect_precompile",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
         "@llvm-project//llvm:AggressiveInstCombine",
