@@ -119,6 +119,8 @@ void PJEncodeProto(PJContext* ctx, const PJProtocol* proto, char* buf);
 
 const PJProtocol* PJDecodeProto(PJContext* ctx, const char* buf);
 
+void PJPrintLayout(const PJProtocol* proto);
+
 bool PJIsBinaryCompatible(const PJProtocol* a, const PJProtocol* b);
 
 void PJAddEncodeFunction(PJContext* ctx, const char* name, const void* src,
