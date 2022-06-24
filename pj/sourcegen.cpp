@@ -169,7 +169,7 @@ void SourceGenerator::addProtocol(const SourceId& name,
                                   ParsedProtoFile::Protocol proto) {
   if (protos_.count(name)) return;
   cpp_ << "auto " << getNameAsString(name, "_") << " __attribute__((unused)) = "
-       << "ctx.plan<"
+       << "ctx_.plan<"
        << getNameAsString(proto.first.cast<types::NominalType>().name())
        << ">(\"" << proto.second << "\");\n";
   protos_.emplace(name);
@@ -541,16 +541,17 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
   // Define class in the header with the following interface.
   //
   // struct ClassName {
-  //   // Returns the protocol in use.
+  //   Context* getContext();
+  //
+  //   // Returns the protocol in use (bound to the portal's context).
   //   Protocol getProtocol();
   //
   //   // Plans the protocol specified in the .pj file and JIT-compiles all
   //   // requested methods.
   //   ClassName();
   //
-  //   // JIT-compiles all requested methods using the provided protocol. Always
-  //   // present.
-  //   ClassName(Protocol proto);
+  //   // JIT-compiles all requested methods using the provided protocol.
+  //   ClassName(const char* proto);
   //
   //   // Something like this depending on what was requested:
   //   size_t mySizeFn(const T* msg) {...}
@@ -581,7 +582,7 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
     std::stringstream gets;
 
     for (auto& sizer : portal.sizers) {
-      adds << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+      adds << "ctx_.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
            << sizer.name << "\", proto_, \"";
       sizer.src_path.print(adds);
       adds << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
@@ -591,8 +592,8 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
     }
 
     for (auto& encoder : portal.encoders) {
-      adds << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
-           << encoder.name << "\", proto_, \"";
+      adds << "ctx_.addEncodeFunction<" << getNameAsString(encoder.src)
+           << ">(\"" << encoder.name << "\", proto_, \"";
       encoder.src_path.print(adds);
       adds << "\");\n";
 
@@ -613,8 +614,8 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
       }
       adds << "};\n";
 
-      adds << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
-           << decoder.name << "\", proto_, handlers);\n";
+      adds << "ctx_.addDecodeFunction<" << getNameAsString(decoder.dst)
+           << ">(\"" << decoder.name << "\", proto_, handlers);\n";
 
       adds << "}\n";  // End scope.
 
@@ -623,25 +624,25 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
            << "\");\n";
     }
 
-    builders_ << adds.str() << "portal_ = ctx.compile();\n" << gets.str();
+    builders_ << adds.str() << "portal_ = ctx_.compile();\n" << gets.str();
   };
 
   // Generate no-argument constructor.
   defs_ << ns.back() << "();\n";
 
   region_ = Region::kBuilders;
-  builders_ << ns.back() << "::" << ns.back() << "() : proto_(ctx.plan<"
+  builders_ << ns.back() << "::" << ns.back() << "() : proto_(ctx_.plan<"
             << getNameAsString(proto.first.cast<types::NominalType>().name())
             << ">(" << proto.second << ")) {\n";
   generate_constructor_body();
   builders_ << "}\n";
 
   // Generate constructor which takes an external protocol.
-  defs_ << ns.back() << "(::pj::runtime::Protocol proto);\n";
+  defs_ << ns.back() << "(const char* proto);\n";
 
   region_ = Region::kBuilders;
   builders_ << ns.back() << "::" << ns.back()
-            << "(::pj::runtime::Protocol proto) : proto_(proto) {\n";
+            << "(const char* proto) : proto_(ctx_.decodeProto(proto)) {\n";
   generate_constructor_body();
   builders_ << "}\n";
 
@@ -651,11 +652,17 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
             << "return proto_;\n"
             << "}\n";
 
+  // Generate getContext() function.
+  defs_ << "::pj::runtime::Context* getContext();";
+  builders_ << "::pj::runtime::Context* " << ns.back() << "::getContext() {\n"
+            << "return &ctx_;\n"
+            << "}\n";
+
   // Generate wrapper functions and member variables which they call into.
   std::stringstream fn_decls;
   std::stringstream vars;
 
-  vars << "::pj::runtime::Context ctx;\n"
+  vars << "::pj::runtime::Context ctx_;\n"
        << "::pj::runtime::Protocol proto_;\n"
        << "::pj::runtime::Portal portal_;\n";
 
@@ -769,7 +776,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
               << bare_schema_size_name << "};\n"
               << "}\n";
 
-    cpp_ << "ctx.addProtocolDefinition(\"" << bare_schema_ptr_name << "\", \""
+    cpp_ << "ctx_.addProtocolDefinition(\"" << bare_schema_ptr_name << "\", \""
          << bare_schema_size_name << "\", " << getNameAsString(proto_name, "_")
          << ");\n";
   }
@@ -787,7 +794,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
               << "return user_" << bare_sizer_name << "(msg);\n"
               << "}\n";
 
-    cpp_ << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+    cpp_ << "ctx_.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
          << bare_sizer_name << "\", " << getNameAsString(proto_name, "_")
          << ", \"";
     sizer.src_path.print(cpp_);
@@ -807,7 +814,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
               << "user_" << bare_encoder_name << "(msg, buf);\n"
               << "}\n";
 
-    cpp_ << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
+    cpp_ << "ctx_.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
          << bare_encoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", \"";
     encoder.src_path.print(cpp_);
@@ -844,7 +851,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
     }
     cpp_ << "};\n";
 
-    cpp_ << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
+    cpp_ << "ctx_.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
          << bare_decoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", handlers);\n";
 
@@ -890,9 +897,9 @@ void SourceGenerator::generate(
          << "    fprintf(stderr, \"No output filename given\");\n"
          << "    return 1;\n"
          << "  }\n"
-         << "  pj::runtime::Context ctx;\n"
+         << "  pj::runtime::Context ctx_;\n"
          << cpp_.str() << "\n"
-         << "  ctx.precompile(argv[1]);\n"
+         << "  ctx_.precompile(argv[1]);\n"
          << "}\n";
   }
 };
