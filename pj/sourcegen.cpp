@@ -830,41 +830,38 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
   defs_ << "struct " << name << "{\n" << name << "() {}\n";
 
   {
-    auto bare_schema_ptr_name =
+    auto schema_ptr_name =
         "protocol_ptr_" + getNameAsString(ns, "_") + "_" + name;
-    auto bare_schema_size_name =
+    auto schema_size_name =
         "protocol_size_" + getNameAsString(ns, "_") + "_" + name;
 
     defs_ << "static std::string_view getSchema();\n";
 
-    builders_ << "extern \"C\" const char user_" << bare_schema_ptr_name
-              << ";\n"
-              << "extern \"C\" size_t user_" << bare_schema_size_name << ";\n"
+    builders_ << "extern \"C\" const char " << schema_ptr_name << ";\n"
+              << "extern \"C\" size_t " << schema_size_name << ";\n"
               << "std::string_view  " << name << "::getSchema() {\n"
-              << "return {&user_" << bare_schema_ptr_name << ", user_"
-              << bare_schema_size_name << "};\n"
+              << "return {&" << schema_ptr_name << ", " << schema_size_name
+              << "};\n"
               << "}\n";
 
-    cpp_ << "ctx.addProtocolDefinition(\"" << bare_schema_ptr_name << "\", \""
-         << bare_schema_size_name << "\", " << proto_handle << ");\n";
+    cpp_ << "ctx.addProtocolDefinition(\"" << schema_ptr_name << "\", \""
+         << schema_size_name << "\", " << proto_handle << ");\n";
   }
 
   for (auto& sizer : portal.sizers) {
     defs_ << "size_t " << sizer.name << "(const " << getNameAsString(sizer.src)
           << "* msg);\n";
 
-    auto bare_sizer_name =
-        getNameAsString(ns, "_") + "_" + name + "_" + sizer.name;
+    auto sizer_name = getNameAsString(ns, "_") + "_" + name + "_" + sizer.name;
 
-    builders_ << "extern \"C\" size_t user_" << bare_sizer_name
-              << "(const void*);\n";
+    builders_ << "extern \"C\" size_t " << sizer_name << "(const void*);\n";
     builders_ << "size_t " << name << "::" << sizer.name << "(const "
               << getNameAsString(sizer.src) << "* msg) {\n"
-              << "return user_" << bare_sizer_name << "(msg);\n"
+              << "return " << sizer_name << "(msg);\n"
               << "}\n";
 
     cpp_ << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
-         << bare_sizer_name << "\", " << proto_handle << ", \"";
+         << sizer_name << "\", " << proto_handle << ", \"";
     sizer.src_path.print(cpp_);
     cpp_ << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
   }
@@ -873,18 +870,18 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
     defs_ << "void " << encoder.name << "(const "
           << getNameAsString(encoder.src) << "*, char* buf);\n";
 
-    auto bare_encoder_name =
+    auto encoder_name =
         getNameAsString(ns, "_") + "_" + name + "_" + encoder.name;
 
-    builders_ << "extern \"C\" void user_" << bare_encoder_name << "(const "
+    builders_ << "extern \"C\" void " << encoder_name << "(const "
               << getNameAsString(encoder.src) << "*, char* buf);\n";
     builders_ << "void " << name << "::" << encoder.name << "(const "
               << getNameAsString(encoder.src) << "* msg, char* buf) {\n"
-              << "user_" << bare_encoder_name << "(msg, buf);\n"
+              << "" << encoder_name << "(msg, buf);\n"
               << "}\n";
 
     cpp_ << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
-         << bare_encoder_name << "\", " << proto_handle << ", \"";
+         << encoder_name << "\", " << proto_handle << ", \"";
     encoder.src_path.print(cpp_);
     cpp_ << "\");\n";
   }
@@ -894,18 +891,18 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
                     /*is_declaration=*/true)
         << ";";
 
-    auto bare_decoder_name =
+    auto decoder_name =
         getNameAsString(ns, "_") + "_" + name + "_" + decoder.name;
 
     builders_ << "extern \"C\" ";
-    printDecoderSig(builders_, "user_" + bare_decoder_name, decoder,
+    printDecoderSig(builders_, decoder_name, decoder,
                     /*state_template=*/false, /*is_declaration=*/false)
         << ";\n";
 
     printDecoderSig(builders_, name + "::" + decoder.name, decoder,
                     /*state_template=*/true, /*is_declaration=*/false)
         << "{\n";
-    builders_ << "return user_" << bare_decoder_name
+    builders_ << "return " << decoder_name
               << "(msg, result, buffer, handlers, state);\n"
               << "}\n";
 
@@ -921,7 +918,7 @@ void SourceGenerator::addPrecompClass(const SourceId& ns,
     cpp_ << "};\n";
 
     cpp_ << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
-         << bare_decoder_name << "\", " << proto_handle << ", handlers);\n";
+         << decoder_name << "\", " << proto_handle << ", handlers);\n";
 
     cpp_ << "}\n";  // End scope.
   }
