@@ -684,7 +684,7 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
   region_ = Region::kBuilders;
   builders_ << ns.back() << "::" << ns.back() << "() : proto_(ctx_.plan<"
             << getNameAsString(proto.first.cast<types::NominalType>().name())
-            << ">(" << proto.second << ")) {\n";
+            << ">(\"" << proto.second << "\")) {\n";
   generate_constructor_body();
   builders_ << "}\n";
 
@@ -814,21 +814,20 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
   defs_ << "struct " << name.back() << "{\n" << name.back() << "() {}\n";
 
   {
-    auto bare_schema_ptr_name = "protocol_ptr_" + getNameAsString(name, "_");
-    auto bare_schema_size_name = "protocol_size_" + getNameAsString(name, "_");
+    auto schema_ptr_name = "protocol_ptr_" + getNameAsString(name, "_");
+    auto schema_size_name = "protocol_size_" + getNameAsString(name, "_");
 
     defs_ << "static std::string_view getSchema();\n";
 
-    builders_ << "extern \"C\" const char user_" << bare_schema_ptr_name
-              << ";\n"
-              << "extern \"C\" size_t user_" << bare_schema_size_name << ";\n"
+    builders_ << "extern \"C\" const char " << schema_ptr_name << ";\n"
+              << "extern \"C\" size_t " << schema_size_name << ";\n"
               << "std::string_view  " << name.back() << "::getSchema() {\n"
-              << "return {&user_" << bare_schema_ptr_name << ", user_"
-              << bare_schema_size_name << "};\n"
+              << "return {&" << schema_ptr_name << ", " << schema_size_name
+              << "};\n"
               << "}\n";
 
-    cpp_ << "ctx_.addProtocolDefinition(\"" << bare_schema_ptr_name << "\", \""
-         << bare_schema_size_name << "\", " << getNameAsString(proto_name, "_")
+    cpp_ << "ctx_.addProtocolDefinition(\"" << schema_ptr_name << "\", \""
+         << schema_size_name << "\", " << getNameAsString(proto_name, "_")
          << ");\n";
   }
 
@@ -836,18 +835,16 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
     defs_ << "size_t " << sizer.name << "(const " << getNameAsString(sizer.src)
           << "* msg);\n";
 
-    auto bare_sizer_name = getNameAsString(name, "_") + "_" + sizer.name;
+    auto sizer_name = getNameAsString(name, "_") + "_" + sizer.name;
 
-    builders_ << "extern \"C\" size_t user_" << bare_sizer_name
-              << "(const void*);\n";
+    builders_ << "extern \"C\" size_t " << sizer_name << "(const void*);\n";
     builders_ << "size_t " << name.back() << "::" << sizer.name << "(const "
               << getNameAsString(sizer.src) << "* msg) {\n"
-              << "return user_" << bare_sizer_name << "(msg);\n"
+              << "return " << sizer_name << "(msg);\n"
               << "}\n";
 
-    cpp_ << "ctx_.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
-         << bare_sizer_name << "\", " << getNameAsString(proto_name, "_")
-         << ", \"";
+    cpp_ << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+         << sizer_name << "\", " << getNameAsString(proto_name, "_") << ", \"";
     sizer.src_path.print(cpp_);
     cpp_ << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
   }
@@ -856,17 +853,17 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
     defs_ << "void " << encoder.name << "(const "
           << getNameAsString(encoder.src) << "*, char* buf);\n";
 
-    auto bare_encoder_name = getNameAsString(name, "_") + "_" + encoder.name;
+    auto encoder_name = getNameAsString(name, "_") + "_" + encoder.name;
 
-    builders_ << "extern \"C\" void user_" << bare_encoder_name << "(const "
+    builders_ << "extern \"C\" void " << encoder_name << "(const "
               << getNameAsString(encoder.src) << "*, char* buf);\n";
     builders_ << "void " << name.back() << "::" << encoder.name << "(const "
               << getNameAsString(encoder.src) << "* msg, char* buf) {\n"
-              << "user_" << bare_encoder_name << "(msg, buf);\n"
+              << "" << encoder_name << "(msg, buf);\n"
               << "}\n";
 
-    cpp_ << "ctx_.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
-         << bare_encoder_name << "\", " << getNameAsString(proto_name, "_")
+    cpp_ << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
+         << encoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", \"";
     encoder.src_path.print(cpp_);
     cpp_ << "\");\n";
@@ -877,17 +874,17 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
                     /*is_declaration=*/true)
         << ";";
 
-    auto bare_decoder_name = getNameAsString(name, "_") + "_" + decoder.name;
+    auto decoder_name = getNameAsString(name, "_") + "_" + decoder.name;
 
     builders_ << "extern \"C\" ";
-    printDecoderSig(builders_, "user_" + bare_decoder_name, decoder,
+    printDecoderSig(builders_, decoder_name, decoder,
                     /*state_template=*/false, /*is_declaration=*/false)
         << ";\n";
 
     printDecoderSig(builders_, name.back() + "::" + decoder.name, decoder,
                     /*state_template=*/true, /*is_declaration=*/false)
         << "{\n";
-    builders_ << "return user_" << bare_decoder_name
+    builders_ << "return " << decoder_name
               << "(msg, result, buffer, handlers, state);\n"
               << "}\n";
 
@@ -902,8 +899,8 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
     }
     cpp_ << "};\n";
 
-    cpp_ << "ctx_.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
-         << bare_decoder_name << "\", " << getNameAsString(proto_name, "_")
+    cpp_ << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
+         << decoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", handlers);\n";
 
     cpp_ << "}\n";  // End scope.
