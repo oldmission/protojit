@@ -513,3 +513,18 @@ cc_shared_library(
         "@llvm-project//mlir:X86VectorToLLVMIRTranslation",
     ],
 )
+
+cc_binary(
+    name = "pjcat",
+    srcs = [
+        "pjcat.cpp",
+        "arch_base.hpp",
+        "protojit.hpp",
+        "runtime.h",
+        "runtime.hpp",
+        "reflect.pj.hpp",
+    ],
+    linkopts = ["-lstdc++fs"],
+    dynamic_deps = [":protojit"],
+    deps = ["@llvm-project//llvm:Support"],
+)

@@ -156,11 +156,12 @@ struct Struct {
   ChildVector children() const {
     ChildVector children;
     for (const StructField& f : fields) {
-      children.push_back(std::make_pair(f.type, f.name.str()));
+      children.push_back(std::make_pair(
+          f.type, f.name.str() + " @ " + std::to_string(f.offset.bits())));
     }
     return children;
   }
-  bool hasDetails() const { return size == Bytes(0); }
+  bool hasDetails() const { return true; }
   void printDetails(llvm::raw_ostream& os) const {
     os << "size: " << size.bits() << ", alignment: " << alignment.bits();
   }
@@ -709,7 +710,8 @@ struct Vector {
 };
 
 inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Vector& V) {
-  os << V.elem << "[" << V.wire_min_length << ":" << V.max_length;
+  os << V.elem << "[" << V.min_length << "(" << V.wire_min_length
+     << "):" << V.max_length;
 
   if (V.elem_width != V.elem.headSize()) {
     os << "|" << V.elem_width;
