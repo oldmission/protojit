@@ -232,6 +232,7 @@ cc_binary(
         "reflect/precompile.cpp",
         "reflect/versions.hpp",
         "reflect/reflect.pj.v0_1.hpp",
+        "reflect/reflect.pj.v0_2.hpp",
     ],
     deps = [":runtime_noschema"],
     # TODO: see site.bzl. Why is this necessary?
@@ -251,6 +252,7 @@ cc_library(
     srcs = [
         ":reflect_precompile_obj",
         "reflect/reflect.pj.v0_1.hpp",
+        "reflect/reflect.pj.v0_2.hpp",
         "reflect/versions.hpp",
     ],
     hdrs = ["reflect/precompile.hpp"],
