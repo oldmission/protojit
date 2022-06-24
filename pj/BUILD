@@ -274,6 +274,7 @@ cc_library(
         ":plan",
         ":reflect",
     ],
+    alwayslink = 1,
     copts = COPTS,
 )
 
@@ -511,5 +512,16 @@ cc_shared_library(
         "@llvm-project//mlir:X86VectorConversionIncGen",
         "@llvm-project//mlir:X86VectorIncGen",
         "@llvm-project//mlir:X86VectorToLLVMIRTranslation",
+    ],
+)
+
+cc_binary(
+    name = "pjcat",
+    srcs = ["pjcat.cpp"],
+    linkopts = ["-lstdc++fs"],
+    dynamic_deps = [":protojit"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        ":core"
     ],
 )

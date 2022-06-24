@@ -76,6 +76,8 @@ class Protocol {
     return PJIsBinaryCompatible(proto_, other.proto_);
   }
 
+  void printLayout() const { return PJPrintLayout(proto_); }
+
   operator bool() const { return proto_; }
 
  private:

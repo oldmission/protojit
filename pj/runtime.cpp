@@ -295,6 +295,10 @@ const PJProtocol* PJDecodeProto(PJContext* ctx_, const char* buf) {
       ctx->decodeProto(buf).getAsOpaquePointer());
 }
 
+void PJPrintLayout(const PJProtocol* proto) {
+  ConvertProtocol(proto).printTree(llvm::errs());
+}
+
 bool PJIsBinaryCompatible(const PJProtocol* a, const PJProtocol* b) {
   return ConvertProtocol(a).isBinaryCompatibleWith(ConvertProtocol(b));
 }
