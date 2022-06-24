@@ -843,7 +843,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
               << "return " << sizer_name << "(msg);\n"
               << "}\n";
 
-    cpp_ << "ctx.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
+    cpp_ << "ctx_.addSizeFunction<" << getNameAsString(sizer.src) << ">(\""
          << sizer_name << "\", " << getNameAsString(proto_name, "_") << ", \"";
     sizer.src_path.print(cpp_);
     cpp_ << "\", " << (sizer.round_up ? "true" : "false") << ");\n";
@@ -862,7 +862,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
               << "" << encoder_name << "(msg, buf);\n"
               << "}\n";
 
-    cpp_ << "ctx.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
+    cpp_ << "ctx_.addEncodeFunction<" << getNameAsString(encoder.src) << ">(\""
          << encoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", \"";
     encoder.src_path.print(cpp_);
@@ -899,7 +899,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
     }
     cpp_ << "};\n";
 
-    cpp_ << "ctx.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
+    cpp_ << "ctx_.addDecodeFunction<" << getNameAsString(decoder.dst) << ">(\""
          << decoder_name << "\", " << getNameAsString(proto_name, "_")
          << ", handlers);\n";
 
