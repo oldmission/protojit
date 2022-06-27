@@ -140,8 +140,8 @@ class Context {
                             protocol.proto_);
   }
 
-  void precompile(const std::string& filename) {
-    return PJPrecompile(ctx_, filename.c_str());
+  void precompile(const std::string& filename, bool pic = false) {
+    return PJPrecompile(ctx_, filename.c_str(), pic);
   }
 
   Portal compile() { return Portal(PJCompile(ctx_)); }

@@ -1,4 +1,4 @@
-#include "pj/reflect/reflect.pj.v0_1.hpp"
+#include "pj/schema/reflect.pj.v0_1.hpp"
 
 #include <cstdint>
 

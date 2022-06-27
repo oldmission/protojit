@@ -199,11 +199,13 @@ cc_library(
     deps = [":core"],
 )
 
-# Used to bootstrap precompiled reflection routines. Disables getProtoSize,
-# encodeProto, and decodeProto, which will be re-enabled in :runtime once
-# precompiled reflection routines are available.
+# Contains UNREACHABLE versions of API methods getProtoSize, encodeProto, and
+# decodeProto. They are weak symbols, and are overriden by the ones provided by
+# schema_precompile when it is linked in. This library containing only the weak
+# symbols is used to bootstrap the generation of the precompiled methods
+# (:schema_precompile_gen).
 cc_library(
-    name = "runtime_noschema",
+    name = "runtime_bootstrap",
     srcs = [
         "context.cpp",
         "context.hpp",
@@ -211,13 +213,15 @@ cc_library(
         "portal.hpp",
         "portal_impl.hpp",
         "runtime.cpp",
+        "schema/reflect.pj.v0_1.hpp",
+        "schema/versions.hpp",
     ],
     hdrs = [
         "protojit.hpp",
         "runtime.h",
         "runtime.hpp",
+        "schema/precompile.hpp",
     ],
-    local_defines = ["PROTOJIT_INTERNAL_NO_SCHEMA"],
     linkopts = ["-lstdc++"],
     deps = [
         ":compiler",
@@ -227,57 +231,33 @@ cc_library(
 )
 
 cc_binary(
-    name = "reflect_precompile_gen",
+    name = "schema_precompile_gen",
     srcs = [
-        "reflect/precompile.cpp",
-        "reflect/versions.hpp",
-        "reflect/reflect.pj.v0_1.hpp",
+        "schema/precompile.cpp",
+        "schema/versions.hpp",
+        "schema/reflect.pj.v0_1.hpp",
     ],
-    deps = [":runtime_noschema"],
+    deps = [":runtime_bootstrap"],
     # TODO: see site.bzl. Why is this necessary?
     linkstatic = False,
 )
 
 genrule(
-    name = "reflect_precompile_obj",
+    name = "schema_precompile_obj",
     srcs = [],
-    outs = ["reflect_precompile.o"],
-    cmd = "$(location reflect_precompile_gen) $@",
-    tools = ["reflect_precompile_gen"],
-)
-
-cc_library(
-    name = "reflect_precompile",
-    srcs = [
-        ":reflect_precompile_obj",
-        "reflect/reflect.pj.v0_1.hpp",
-        "reflect/versions.hpp",
-    ],
-    hdrs = ["reflect/precompile.hpp"],
+    outs = ["schema_precompile.o"],
+    cmd = "$(location schema_precompile_gen) $@",
+    tools = ["schema_precompile_gen"],
 )
 
 cc_library(
     name = "runtime",
     srcs = [
-        "context.cpp",
-        "context.hpp",
-        "lib.cpp",
-        "portal.hpp",
-        "portal_impl.hpp",
-        "runtime.cpp",
+        ":runtime_bootstrap",
+        ":schema_precompile_obj",
     ],
-    hdrs = [
-        "protojit.hpp",
-        "runtime.h",
-        "runtime.hpp",
-    ],
-    linkopts = ["-lstdc++"],
-    deps = [
-        ":compiler",
-        ":plan",
-        ":reflect",
-        ":reflect_precompile",
-    ],
+    hdrs = [],
+    deps = [":runtime_bootstrap"],
 )
 
 cc_shared_library(
@@ -289,7 +269,8 @@ cc_shared_library(
         ":compiler",
         ":plan",
         ":reflect",
-        ":reflect_precompile",
+        ":runtime_bootstrap",
+        ":schema_precompile_obj",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
         "@llvm-project//llvm:AggressiveInstCombine",
