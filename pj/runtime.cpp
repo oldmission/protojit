@@ -327,8 +327,8 @@ void PJAddProtocolDefinition(PJContext* ctx, const char* name,
       name, size_name, {proto.data(), proto.size()});
 }
 
-void PJPrecompile(PJContext* ctx, const char* filename) {
-  reinterpret_cast<pj::ProtoJitContext*>(ctx)->precompile(filename);
+void PJPrecompile(PJContext* ctx, const char* filename, bool pic) {
+  reinterpret_cast<pj::ProtoJitContext*>(ctx)->precompile(filename, pic);
 }
 
 const PJPortal* PJCompile(PJContext* ctx) {

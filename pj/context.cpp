@@ -45,13 +45,41 @@
 #include "span.hpp"
 #include "util.hpp"
 
-#ifndef PROTOJIT_INTERNAL_NO_SCHEMA
-#include "reflect/precompile.hpp"
-#endif
+#include "schema/precompile.hpp"
 
 // #define DISABLE_LIBC
 
 namespace pj {
+
+namespace schema {
+namespace precomp {
+extern "C" {
+// Generate definitions for the precompiled methods that will be used in the
+// bootstrapping phase when the precompiled methods are being compiled, and
+// subsequently overriden when the precompiled methods are linked in.
+#define WEAK_DEFINITIONS(V, _)                                          \
+  size_t __attribute__((weak))                                          \
+      EXTERN_GET_PROTO_SIZE(V)(const reflect::Protocol*) {              \
+    UNREACHABLE();                                                      \
+  }                                                                     \
+  void __attribute__((weak))                                            \
+      EXTERN_ENCODE_PROTO(V)(const reflect::Protocol*, char* buf) {     \
+    UNREACHABLE();                                                      \
+  }                                                                     \
+  BoundedBuffer __attribute__((weak)) EXTERN_DECODE_PROTO(V)(           \
+      const char* msg, reflect::Protocol* result, BoundedBuffer buffer, \
+      DecodeHandler<reflect::Protocol, void> handlers[], void* state) { \
+    UNREACHABLE();                                                      \
+  }
+
+FOR_EACH_COMPATIBLE_VERSION(WEAK_DEFINITIONS)
+
+#undef WEAK_DEFINITIONS
+}
+
+}  // namespace precomp
+}  // namespace schema
+
 using namespace ir;
 
 ProtoJitContext::ProtoJitContext() : builder_(&ctx_) {
@@ -66,9 +94,6 @@ void ProtoJitContext::resetModule() {
 }
 
 uint64_t ProtoJitContext::getProtoSize(types::ProtocolType proto) {
-#ifdef PROTOJIT_INTERNAL_NO_SCHEMA
-  UNREACHABLE();
-#else
   llvm::BumpPtrAllocator alloc;
   reflect::Protocol reflected = reflect::reflect(alloc, proto);
 
@@ -80,49 +105,39 @@ uint64_t ProtoJitContext::getProtoSize(types::ProtocolType proto) {
 #define GET_SIZE_FOR_VERSION(V, _) \
   size += 8;                       \
   size += 8;                       \
-  size += reflect::GET_PROTO_SIZE(V)(&reflected);
+  size += schema::GET_PROTO_SIZE(V)(&reflected);
   FOR_EACH_COMPATIBLE_VERSION(GET_SIZE_FOR_VERSION)
 #undef GET_SIZE_FOR_VERSION
 
   return size;
-#endif
 }
 
 void ProtoJitContext::encodeProto(types::ProtocolType proto, char* buf) {
-#ifdef PROTOJIT_INTERNAL_NO_SCHEMA
-  UNREACHABLE();
-#else
   llvm::BumpPtrAllocator alloc;
   reflect::Protocol reflected = reflect::reflect(alloc, proto);
-
-  assert(reinterpret_cast<uintptr_t>(buf) % 8 == 0);
 
   char* buf_start = buf;
   buf += 8;
 
-#define ENCODE_FOR_VERSION(V, N)                                      \
-  {                                                                   \
-    auto size = RoundUp(reflect::GET_PROTO_SIZE(V)(&reflected), 8ul); \
-    *reinterpret_cast<uint64_t*>(&buf[0]) = N;                        \
-    *reinterpret_cast<uint64_t*>(&buf[8]) = size;                     \
-    reflect::ENCODE_PROTO(V)(&reflected, &buf[16]);                   \
-    buf += 16 + size;                                                 \
+#define ENCODE_FOR_VERSION(V, N)                                         \
+  {                                                                      \
+    uint64_t version = N;                                                \
+    uint64_t size = RoundUp(schema::GET_PROTO_SIZE(V)(&reflected), 8ul); \
+    std::memcpy(&buf[0], &version, 8);                                   \
+    std::memcpy(&buf[8], &size, 8);                                      \
+    schema::ENCODE_PROTO(V)(&reflected, &buf[16]);                       \
+    buf += 16 + size;                                                    \
   }
   FOR_EACH_COMPATIBLE_VERSION(ENCODE_FOR_VERSION)
 #undef ENCODE_FOR_VERSION
 
   // Encode the size in the first 8 bytes.
-  *reinterpret_cast<uint64_t*>(buf_start) = buf - buf_start;
-#endif
+  uint64_t total_size = buf - buf_start;
+  std::memcpy(buf_start, &total_size, 8);
 }
 
 types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
-#ifdef PROTOJIT_INTERNAL_NO_SCHEMA
-  UNREACHABLE();
-#else
   reflect::Protocol proto;
-
-  assert(reinterpret_cast<uintptr_t>(buf) % 8 == 0);
 
   struct {
     uint64_t version;
@@ -131,20 +146,25 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
     BoundedBuffer (*decode_fn)(const char*, reflect::Protocol*, BoundedBuffer);
   } latest_compatible = {};
 
-  const auto size = *reinterpret_cast<const uint64_t*>(buf);
+  uint64_t size;
+  std::memcpy(&size, &buf[0], 8);
+
   const char* buf_end = buf + size;
   buf += 8;
 
   while (buf < buf_end) {
-    auto version = *reinterpret_cast<const uint64_t*>(&buf[0]);
-    auto size = *reinterpret_cast<const uint64_t*>(&buf[8]);
+    uint64_t version;
+    uint64_t size;
 
-#define MATCH_VERSION(V, N)                                  \
-  else if (version == N && N > latest_compatible.version) {  \
-    latest_compatible.version = N;                           \
-    latest_compatible.size = size;                           \
-    latest_compatible.data = &buf[16];                       \
-    latest_compatible.decode_fn = &reflect::DECODE_PROTO(V); \
+    std::memcpy(&version, &buf[0], 8);
+    std::memcpy(&size, &buf[8], 8);
+
+#define MATCH_VERSION(V, N)                                 \
+  else if (version == N && N > latest_compatible.version) { \
+    latest_compatible.version = N;                          \
+    latest_compatible.size = size;                          \
+    latest_compatible.data = &buf[16];                      \
+    latest_compatible.decode_fn = &schema::DECODE_PROTO(V); \
   }
 
     if (false)
@@ -180,7 +200,6 @@ types::ProtocolType ProtoJitContext::decodeProto(const char* buf) {
       return reflect::unreflect(proto, ctx_, wire).cast<types::ProtocolType>();
     }
   }
-#endif
 }
 
 void ProtoJitContext::addEncodeFunction(std::string_view name, mlir::Type src,
@@ -231,7 +250,7 @@ void ProtoJitContext::addProtocolDefinition(std::string_view name,
 
 #define DEBUG_TYPE "pj.compile"
 
-static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
+static std::unique_ptr<llvm::TargetMachine> getTargetMachine(bool pic) {
   // Setup the machine properties from the current architecture.
   auto target_triple = llvm::sys::getDefaultTargetTriple();
   std::string error_message;
@@ -251,15 +270,11 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
     }
   }
 
-#ifdef PROTOJIT_INTERNAL_NO_SCHEMA
   // Must generate position-independent code for the precompiled schema code
   // because it is being linked into libprotojit.so, a shared library.
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      target_triple, cpu, features.getString(), {}, llvm::Reloc::Model::PIC_));
-#else
-  std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      target_triple, cpu, features.getString(), {}, {}));
-#endif
+      target_triple, cpu, features.getString(), {},
+      pic ? llvm::Reloc::Model::PIC_ : llvm::Reloc::Model::Static));
   if (!machine) {
     throw InternalError("Cannot create LLVM target machine!");
   }
@@ -268,7 +283,7 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine() {
 }
 
 std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
-ProtoJitContext::compileToLLVM(size_t opt_level) {
+ProtoJitContext::compileToLLVM(bool pic, size_t opt_level) {
   ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
@@ -319,7 +334,7 @@ ProtoJitContext::compileToLLVM(size_t opt_level) {
                       "==================================================\n";
       module_->dump());
 
-  auto machine = getTargetMachine();
+  auto machine = getTargetMachine(pic);
 
   // Lower to LLVM IR
   mlir::PassManager pm(&ctx_);
@@ -456,8 +471,9 @@ ProtoJitContext::compileToLLVM(size_t opt_level) {
   return std::make_pair(std::move(llvm_context), std::move(llvm_module));
 }
 
-void ProtoJitContext::precompile(std::string_view filename, size_t opt_level) {
-  auto [llvm_context, llvm_module] = compileToLLVM(opt_level);
+void ProtoJitContext::precompile(std::string_view filename, bool pic,
+                                 size_t opt_level) {
+  auto [llvm_context, llvm_module] = compileToLLVM(pic, opt_level);
 
   std::error_code EC;
   llvm::raw_fd_ostream dest(filename, EC, llvm::sys::fs::OF_None);
@@ -468,14 +484,14 @@ void ProtoJitContext::precompile(std::string_view filename, size_t opt_level) {
   }
 
   llvm::legacy::PassManager asm_pass;
-  auto machine = getTargetMachine();
+  auto machine = getTargetMachine(pic);
   machine->addPassesToEmitFile(asm_pass, dest, nullptr,
                                llvm::CodeGenFileType::CGFT_ObjectFile);
   asm_pass.run(*llvm_module);
 }
 
 std::unique_ptr<Portal> ProtoJitContext::compile(size_t opt_level) {
-  auto [llvm_context, llvm_module] = compileToLLVM(opt_level);
+  auto [llvm_context, llvm_module] = compileToLLVM(false, opt_level);
 
   auto jit = []() {
     auto jit = llvm::orc::LLJITBuilder().create();

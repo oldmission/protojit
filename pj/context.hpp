@@ -40,7 +40,8 @@ struct ProtoJitContext {
   void addProtocolDefinition(std::string_view name, std::string_view size_name,
                              llvm::StringRef proto_data);
 
-  void precompile(std::string_view filename, size_t opt_level = 3);
+  void precompile(std::string_view filename, bool pic = false,
+                  size_t opt_level = 3);
   std::unique_ptr<Portal> compile(size_t opt_level = 3);
 
   // TODO: make these private after removing old compile API.
@@ -52,7 +53,7 @@ struct ProtoJitContext {
   void resetModule();
 
   std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
-  compileToLLVM(size_t opt_level);
+  compileToLLVM(bool pic, size_t opt_level);
 
   DISALLOW_COPY_AND_ASSIGN(ProtoJitContext);
 };
