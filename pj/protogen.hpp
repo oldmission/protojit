@@ -58,7 +58,7 @@ struct Portal {
 };
 
 struct ParsedProtoFile {
-  enum class DeclKind { kType, kComposite };
+  enum class DeclKind { kType, kComposite, kLanguage };
 
   struct Decl {
     const DeclKind kind;
@@ -71,6 +71,9 @@ struct ParsedProtoFile {
     const bool is_enum = false;
 
     bool is_external = false;
+
+    std::string language;
+    std::string language_text;
   };
 
   using Protocol = std::pair<types::ValueType, types::PathAttr>;

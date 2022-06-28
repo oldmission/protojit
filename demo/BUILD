@@ -1,11 +1,15 @@
-load("//:site.bzl", "pj_exe", "pj_lib")
+load("//:site.bzl", "pj_library")
 
 package(default_visibility = ["//visibility:public"])
 
-pj_exe(
+pj_library(
+    name = "adoption",
+    srcs = ["adoption.pj"],
+)
+
+cc_binary(
     name = "demo",
     srcs = ["main.cpp"],
     linkopts = ["-lstdc++fs"],
-    proto = "adoption.pj",
-    deps = ["@llvm-project//llvm:Support"],
+    deps = [":adoption"],
 )

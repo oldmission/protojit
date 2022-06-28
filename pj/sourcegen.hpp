@@ -20,6 +20,7 @@ class SourceGenerator {
   // Recursively add subtypes if not added for wire types.
   void addWireProtocol(const SourceId& name, types::ProtocolType proto);
   void addComposite(types::ValueType type, bool is_external = false);
+  void addText(const std::string& text);
 
   void addPortal(const SourceId& ns, const Portal& portal,
                  ParsedProtoFile::Protocol proto);

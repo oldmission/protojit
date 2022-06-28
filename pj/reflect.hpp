@@ -9,6 +9,5 @@ types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx,
                            types::WireDomainAttr domain);
 types::ValueType reflectableTypeFor(types::ValueType,
                                     types::ReflectDomainAttr domain);
-
 }  // namespace reflect
 }  // namespace pj

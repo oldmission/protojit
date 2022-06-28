@@ -1,6 +1,5 @@
 load("@rules_cc//examples:experimental_cc_shared_library.bzl", "cc_shared_library")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
-load("//:site.bzl", "pj_lib")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -68,8 +67,11 @@ gentbl_cc_library(
 cc_library(
     name = "core",
     srcs = [
+        "enums.cpp.inc",
+        "enums.hpp.inc",
         "ir.cpp",
         "ir.cpp.inc",
+        "ir.hpp.inc",
         "type_support.cpp",
         "types.cpp",
     ],
@@ -77,11 +79,8 @@ cc_library(
         "arch.hpp",
         "arch_base.hpp",
         "defer.hpp",
-        "enums.cpp.inc",
-        "enums.hpp.inc",
         "exceptions.hpp",
         "ir.hpp",
-        "ir.hpp.inc",
         "span.hpp",
         "type_domain.hpp",
         "type_support.hpp",
@@ -94,6 +93,26 @@ cc_library(
         "@llvm-project//mlir:StandardOps",
         "@llvm-project//mlir:Transforms",
     ],
+)
+
+cc_library(
+    name = "plan",
+    srcs = [
+        "convert_internal.cpp",
+        "convert_internal.hpp",
+        "plan.cpp",
+        "variant_outlining.cpp",
+        "variant_outlining.hpp",
+        "vector_hoisting.cpp",
+        "vector_hoisting.hpp",
+        "wire_layout.cpp",
+        "wire_layout.hpp",
+    ],
+    hdrs = [
+        "plan.hpp",
+    ],
+    linkopts = ["-lstdc++"],
+    deps = [":core"],
 )
 
 cc_binary(
@@ -117,26 +136,30 @@ cc_binary(
     ],
 )
 
-pj_lib(
+genrule(
     name = "reflect_pj",
-    nolib = True,
-    proto = "reflect.pj",
+    srcs = ["reflect.pj"],
+    outs = ["reflect.pj.hpp"],
+    cmd = "$(location //pj:pjc) $(location reflect.pj) --hpp $@",
+    tools = ["//pj:pjc"],
 )
 
 cc_library(
     name = "reflect",
     srcs = [
-        "protojit.hpp",
         "reflect.cpp",
+        "reflect.pj.hpp",
+    ],
+    hdrs = [
+        "protojit.hpp",
+        "reflect.hpp",
         "runtime.h",
         "runtime.hpp",
     ],
-    hdrs = [
-        "reflect.hpp",
-        "reflect.pj.hpp",
-    ],
     linkopts = ["-lstdc++fs"],
-    deps = [":core"],
+    deps = [
+        ":core",
+    ],
 )
 
 cc_library(
@@ -179,26 +202,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "plan",
-    srcs = [
-        "convert_internal.cpp",
-        "plan.cpp",
-        "variant_outlining.cpp",
-        "vector_hoisting.cpp",
-        "wire_layout.cpp",
-    ],
-    hdrs = [
-        "convert_internal.hpp",
-        "plan.hpp",
-        "variant_outlining.hpp",
-        "vector_hoisting.hpp",
-        "wire_layout.hpp",
-    ],
-    linkopts = ["-lstdc++"],
-    deps = [":core"],
-)
-
 # Contains UNREACHABLE versions of API methods getProtoSize, encodeProto, and
 # decodeProto. They are weak symbols, and are overriden by the ones provided by
 # schema_precompile when it is linked in. This library containing only the weak
@@ -209,7 +212,6 @@ cc_library(
     srcs = [
         "context.cpp",
         "context.hpp",
-        "lib.cpp",
         "portal.hpp",
         "portal_impl.hpp",
         "runtime.cpp",
@@ -234,12 +236,10 @@ cc_binary(
     name = "schema_precompile_gen",
     srcs = [
         "schema/precompile.cpp",
-        "schema/versions.hpp",
         "schema/reflect.pj.v0_1.hpp",
+        "schema/versions.hpp",
     ],
     deps = [":runtime_bootstrap"],
-    # TODO: see site.bzl. Why is this necessary?
-    linkstatic = False,
 )
 
 genrule(
@@ -262,8 +262,15 @@ cc_library(
         ":runtime_bootstrap",
         ":schema_precompile_obj",
     ],
-    hdrs = [],
-    deps = [":runtime_bootstrap"],
+    hdrs = [
+        "protojit.hpp",
+        "runtime.h",
+        "runtime.hpp",
+    ],
+    linkopts = ["-lstdc++"],
+    deps = [
+        ":runtime_bootstrap",
+    ],
 )
 
 cc_shared_library(

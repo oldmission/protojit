@@ -25,6 +25,8 @@ patterns:
             \\bdecoder\\b|\
             \\bprecompile\\b|\
             \\bhandlers\\b|\
+            \\bimport\\b|\
+            \\blanguage\\b|\
             \\bprotocol"
     name: keyword.other
   - match: "\\bint\\d+\\b|\
@@ -34,4 +36,7 @@ patterns:
   - match: "//.*$"
     name: comment
   - match: "'.'"
+    name: string.quoted
+  - begin: '"""'
+    end: '"""'
     name: string.quoted

@@ -10,6 +10,7 @@
 #include <llvm/Support/Host.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 #include <llvm/Support/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
 #include <llvm/Transforms/IPO.h>
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Transforms/Scalar.h>
@@ -54,56 +55,53 @@
 
 // #define DISABLE_LIBC
 
-namespace pj {
-
-namespace schema {
-namespace precomp {
 extern "C" {
 // Generate definitions for the precompiled methods that will be used in the
 // bootstrapping phase when the precompiled methods are being compiled, and
 // subsequently overriden when the precompiled methods are linked in. If the
 // precompiled methods are not statically linked in, attempts to find them
 // dynamically using dlsym().
-#define WEAK_DEFINITIONS(V, _)                                            \
-  size_t __attribute__((weak))                                            \
-      EXTERN_GET_PROTO_SIZE(V)(const reflect::Protocol* proto) {          \
-    static std::once_flag flag;                                           \
-    static SizeFunction<reflect::Protocol> size;                          \
-    std::call_once(flag, []() {                                           \
-      size = reinterpret_cast<SizeFunction<reflect::Protocol>>(           \
-          dlsym(RTLD_NEXT, STR(EXTERN_GET_PROTO_SIZE(V))));               \
-    });                                                                   \
-    return size(proto);                                                   \
-  }                                                                       \
-  void __attribute__((weak))                                              \
-      EXTERN_ENCODE_PROTO(V)(const reflect::Protocol* proto, char* buf) { \
-    static std::once_flag flag;                                           \
-    static EncodeFunction<reflect::Protocol> encode;                      \
-    std::call_once(flag, []() {                                           \
-      encode = reinterpret_cast<EncodeFunction<reflect::Protocol>>(       \
-          dlsym(RTLD_NEXT, STR(EXTERN_ENCODE_PROTO(V))));                 \
-    });                                                                   \
-    encode(proto, buf);                                                   \
-  }                                                                       \
-  BoundedBuffer __attribute__((weak)) EXTERN_DECODE_PROTO(V)(             \
-      const char* msg, reflect::Protocol* result, BoundedBuffer buffer,   \
-      DecodeHandler<reflect::Protocol, void> handlers[], void* state) {   \
-    static std::once_flag flag;                                           \
-    static DecodeFunction<reflect::Protocol, void> decode;                \
-    std::call_once(flag, []() {                                           \
-      decode = reinterpret_cast<DecodeFunction<reflect::Protocol, void>>( \
-          dlsym(RTLD_NEXT, STR(EXTERN_DECODE_PROTO(V))));                 \
-    });                                                                   \
-    return decode(msg, result, buffer, handlers, state);                  \
+#define WEAK_DEFINITIONS(V, _)                                                \
+  size_t __attribute__((weak))                                                \
+      EXTERN_GET_PROTO_SIZE(V)(const pj::reflect::Protocol* proto) {          \
+    static std::once_flag flag;                                               \
+    static pj::SizeFunction<pj::reflect::Protocol> size;                      \
+    std::call_once(flag, []() {                                               \
+      size = reinterpret_cast<pj::SizeFunction<pj::reflect::Protocol>>(       \
+          dlsym(RTLD_NEXT, STR(EXTERN_GET_PROTO_SIZE(V))));                   \
+    });                                                                       \
+    return size(proto);                                                       \
+  }                                                                           \
+  void __attribute__((weak))                                                  \
+      EXTERN_ENCODE_PROTO(V)(const pj::reflect::Protocol* proto, char* buf) { \
+    static std::once_flag flag;                                               \
+    static pj::EncodeFunction<pj::reflect::Protocol> encode;                  \
+    std::call_once(flag, []() {                                               \
+      encode = reinterpret_cast<pj::EncodeFunction<pj::reflect::Protocol>>(   \
+          dlsym(RTLD_NEXT, STR(EXTERN_ENCODE_PROTO(V))));                     \
+    });                                                                       \
+    encode(proto, buf);                                                       \
+  }                                                                           \
+  BoundedBuffer __attribute__((weak)) EXTERN_DECODE_PROTO(V)(                 \
+      const char* msg, pj::reflect::Protocol* result, BoundedBuffer buffer,   \
+      pj::DecodeHandler<pj::reflect::Protocol, void> handlers[],              \
+      void* state) {                                                          \
+    static std::once_flag flag;                                               \
+    static pj::DecodeFunction<pj::reflect::Protocol, void> decode;            \
+    std::call_once(flag, []() {                                               \
+      decode =                                                                \
+          reinterpret_cast<pj::DecodeFunction<pj::reflect::Protocol, void>>(  \
+              dlsym(RTLD_NEXT, STR(EXTERN_DECODE_PROTO(V))));                 \
+    });                                                                       \
+    return decode(msg, result, buffer, handlers, state);                      \
   }
 
 FOR_EACH_COMPATIBLE_VERSION(WEAK_DEFINITIONS)
 
 #undef WEAK_DEFINITIONS
-}  // namespace precomp
+}  // extern "C"
 
-}  // namespace precomp
-}  // namespace schema
+namespace pj {
 
 using namespace ir;
 
@@ -307,8 +305,44 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine(bool pic) {
   return machine;
 }
 
+std::once_flag g_has_initialized_llvm;
+
+void initializeLLVM() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+
+#ifndef NDEBUG
+  const char* env = getenv("PROTOJIT_INTERNAL_DEBUG_TYPES");
+  if (env != nullptr && env[0] != '\0') {
+    if (!std::strcmp(env, "ON") || !std::strcmp(env, "1")) {
+      llvm::DebugFlag = 1;
+    } else {
+      std::istringstream str(env);
+      std::string type;
+      std::vector<std::string> types;
+      std::vector<const char*> types_p;
+      while (getline(str, type, ',')) {
+        types.push_back(type);
+      }
+
+      for (const std::string& type : types) {
+        types_p.push_back(type.c_str());
+      }
+
+      if (types.size() > 0) {
+        llvm::DebugFlag = 1;
+        llvm::setCurrentDebugTypes(types_p.data(), types_p.size());
+      }
+    }
+  }
+#endif
+}
+
 std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
+
 ProtoJitContext::compileToLLVM(bool pic, size_t opt_level) {
+  std::call_once(g_has_initialized_llvm, initializeLLVM);
+
   ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
