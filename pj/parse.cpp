@@ -770,7 +770,7 @@ END_ACTION()
 struct ProtoParam : ScopedId {};
 BEGIN_ACTION(ProtoParam) {
   assert(!__ proto_param.has_value());
-  auto id = __ popScopedId();
+  auto id = __ popScopedId(/*include_space=*/false);
   __ proto_param = __ resolveProtocol(in, id)->first;
 }
 END_ACTION()
@@ -782,8 +782,8 @@ BEGIN_ACTION(PrecompDecl) {
   auto portal_name = __ popScopedId(/*include_space=*/false);
   auto precomp_name = __ popScopedId();
 
-  auto portal = __ resolve(in, portal_name, __ portals);
-  if (!portal) {
+  auto resolved_portal = __ resolve(in, portal_name, __ portals);
+  if (!resolved_portal) {
     throw parse_error("No portal named " + getPathAsString(portal_name),
                       in.position());
   }
@@ -796,7 +796,7 @@ BEGIN_ACTION(PrecompDecl) {
   }
 
   __ precomps.emplace(precomp_name,
-                      std::make_pair(portal_name, *__ proto_param));
+                      std::make_pair(*resolved_portal, *__ proto_param));
   __ proto_param = {};
 }
 END_ACTION()
