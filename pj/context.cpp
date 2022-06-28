@@ -31,6 +31,11 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/Passes.h>
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <dlfcn.h>
+
 #include <cstring>
 
 #include "ir.hpp"
@@ -56,26 +61,46 @@ namespace precomp {
 extern "C" {
 // Generate definitions for the precompiled methods that will be used in the
 // bootstrapping phase when the precompiled methods are being compiled, and
-// subsequently overriden when the precompiled methods are linked in.
-#define WEAK_DEFINITIONS(V, _)                                          \
-  size_t __attribute__((weak))                                          \
-      EXTERN_GET_PROTO_SIZE(V)(const reflect::Protocol*) {              \
-    UNREACHABLE();                                                      \
-  }                                                                     \
-  void __attribute__((weak))                                            \
-      EXTERN_ENCODE_PROTO(V)(const reflect::Protocol*, char* buf) {     \
-    UNREACHABLE();                                                      \
-  }                                                                     \
-  BoundedBuffer __attribute__((weak)) EXTERN_DECODE_PROTO(V)(           \
-      const char* msg, reflect::Protocol* result, BoundedBuffer buffer, \
-      DecodeHandler<reflect::Protocol, void> handlers[], void* state) { \
-    UNREACHABLE();                                                      \
+// subsequently overriden when the precompiled methods are linked in. If the
+// precompiled methods are not statically linked in, attempts to find them
+// dynamically using dlsym().
+#define WEAK_DEFINITIONS(V, _)                                            \
+  size_t __attribute__((weak))                                            \
+      EXTERN_GET_PROTO_SIZE(V)(const reflect::Protocol* proto) {          \
+    static std::once_flag flag;                                           \
+    static SizeFunction<reflect::Protocol> size;                          \
+    std::call_once(flag, []() {                                           \
+      size = reinterpret_cast<SizeFunction<reflect::Protocol>>(           \
+          dlsym(RTLD_NEXT, STR(EXTERN_GET_PROTO_SIZE(V))));               \
+    });                                                                   \
+    return size(proto);                                                   \
+  }                                                                       \
+  void __attribute__((weak))                                              \
+      EXTERN_ENCODE_PROTO(V)(const reflect::Protocol* proto, char* buf) { \
+    static std::once_flag flag;                                           \
+    static EncodeFunction<reflect::Protocol> encode;                      \
+    std::call_once(flag, []() {                                           \
+      encode = reinterpret_cast<EncodeFunction<reflect::Protocol>>(       \
+          dlsym(RTLD_NEXT, STR(EXTERN_ENCODE_PROTO(V))));                 \
+    });                                                                   \
+    encode(proto, buf);                                                   \
+  }                                                                       \
+  BoundedBuffer __attribute__((weak)) EXTERN_DECODE_PROTO(V)(             \
+      const char* msg, reflect::Protocol* result, BoundedBuffer buffer,   \
+      DecodeHandler<reflect::Protocol, void> handlers[], void* state) {   \
+    static std::once_flag flag;                                           \
+    static DecodeFunction<reflect::Protocol, void> decode;                \
+    std::call_once(flag, []() {                                           \
+      decode = reinterpret_cast<DecodeFunction<reflect::Protocol, void>>( \
+          dlsym(RTLD_NEXT, STR(EXTERN_DECODE_PROTO(V))));                 \
+    });                                                                   \
+    return decode(msg, result, buffer, handlers, state);                  \
   }
 
 FOR_EACH_COMPATIBLE_VERSION(WEAK_DEFINITIONS)
 
 #undef WEAK_DEFINITIONS
-}
+}  // namespace precomp
 
 }  // namespace precomp
 }  // namespace schema

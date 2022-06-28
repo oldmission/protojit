@@ -4,9 +4,6 @@
 #include "pj/schema/precompile.hpp"
 #include "pj/util.hpp"
 
-#define STR_INNER(X) #X
-#define STR(X) STR_INNER(X)
-
 int main(int argc, char** argv) {
   if (argc != 2) {
     fprintf(stderr, "No output filename given");
