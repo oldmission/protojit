@@ -32,8 +32,8 @@ TEST_F(PJTest, PortalJitTest) {
 }
 
 TEST_F(PJTest, TwoPortalsPrecompTest) {
-  TestSenderPrecomp sender;
-  TestReceiverPrecomp receiver;
+  Separated::TestSenderPrecomp sender;
+  Separated::TestReceiverPrecomp receiver;
 
   auto sender_proto = ctx->decodeProto(sender.getSchema().data());
   auto receiver_proto = ctx->decodeProto(receiver.getSchema().data());
@@ -50,8 +50,8 @@ TEST_F(PJTest, TwoPortalsPrecompTest) {
 }
 
 TEST_F(PJTest, TwoPortalsJitTest) {
-  TestSender sender;
-  TestReceiver receiver;
+  Separated::TestSender sender;
+  Separated::TestReceiver receiver;
 
   auto sender_proto = sender.getProtocol();
   auto receiver_proto = receiver.getProtocol();
