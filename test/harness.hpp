@@ -5,7 +5,6 @@
 
 #include <functional>
 
-#include "pj/portal.hpp"
 #include "pj/runtime.hpp"
 
 namespace pj {

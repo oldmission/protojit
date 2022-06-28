@@ -1,0 +1,13 @@
+language cpp """
+  #include "test/external.hpp"
+"""
+
+struct CoordinateA external {
+  x: int64;
+  y: int64;
+}
+
+struct CoordinateB external {
+  x: int64;
+  y: int64;
+}

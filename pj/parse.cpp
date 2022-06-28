@@ -96,6 +96,8 @@ struct ParseState {
   // Populated after parsing ProtoParam. Cleared by PrecompDecl and PortalDecl.
   std::optional<SourceId> proto_param;
 
+  std::string language_text;
+
   // Returns PathAttr::none if paths is empty, paths[0] if it's not empty, and
   // asserts if there is more than one entry.
   types::PathAttr getSinglePath() {
@@ -831,8 +833,30 @@ BEGIN_ACTION(PortalDecl) {
 }
 END_ACTION()
 
-struct TopDecl : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl,
-                     TypeDecl, SpaceDecl, PortalDecl, PrecompDecl> {};
+struct LanguageLiteralDelimiter : string<'"', '"', '"'> {};
+
+struct LanguageText : any {};
+
+BEGIN_ACTION(LanguageText) { __ language_text += in.string(); }
+END_ACTION()
+
+struct LanguageDecl : if_must<KEYWORD("language"), Id, space_or_comment,
+                              LanguageLiteralDelimiter,
+                              until<LanguageLiteralDelimiter, LanguageText>> {};
+
+BEGIN_ACTION(LanguageDecl) {
+  __ decls.emplace_back(ParsedProtoFile::Decl{
+      .kind = ParsedProtoFile::DeclKind::kLanguage,
+      .language = __ popId(),
+      .language_text = __ language_text,
+  });
+  __ language_text.clear();
+}
+END_ACTION()
+
+struct TopDecl
+    : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl, TypeDecl,
+          SpaceDecl, LanguageDecl, PortalDecl, PrecompDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 

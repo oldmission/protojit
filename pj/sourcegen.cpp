@@ -773,6 +773,8 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
   builders_ << "#endif  // PROTOJIT_NO_INTERFACES\n";
 }
 
+void SourceGenerator::addText(const std::string& text) { defs_ << text; }
+
 void SourceGenerator::addPrecompilation(const SourceId& name,
                                         const Portal& portal,
                                         const SourceId& proto_name,
@@ -937,17 +939,18 @@ void SourceGenerator::generate(
 
   if (cpp) {
     *cpp << "#include <cstdio>\n"
+         << "#include <cstring>\n"
          << "#define PROTOJIT_NO_INTERFACES\n"
          << "#include \"pj/runtime.hpp\"\n"
          << "#include " << path.filename() << "\n"
          << "int main(int argc, char** argv) {\n"
-         << "  if (argc != 2) {\n"
-         << "    fprintf(stderr, \"No output filename given\");\n"
+         << "  if (argc != 3) {\n"
+         << "    fprintf(stderr, \"Usage: <precompiler> o/pic <filename>\\n\");\n"
          << "    return 1;\n"
          << "  }\n"
          << "  pj::runtime::Context ctx_;\n"
          << cpp_.str() << "\n"
-         << "  ctx_.precompile(argv[1]);\n"
+         << "  ctx_.precompile(argv[2], !strcmp(argv[1], \"pic\"));\n"
          << "}\n";
   }
 };

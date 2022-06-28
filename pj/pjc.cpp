@@ -105,6 +105,11 @@ int main(int argc, char** argv) {
         case pj::ParsedProtoFile::DeclKind::kComposite:
           sourcegen.addComposite(type, decl.is_external);
           break;
+        case pj::ParsedProtoFile::DeclKind::kLanguage:
+          if (decl.language == "cpp") {
+            sourcegen.addText(decl.language_text);
+          }
+          break;
       }
     }
 

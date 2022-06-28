@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("//:site.bzl", "pj_lib", "pj_test")
+load("//:site.bzl", "pj_library")
+load("test.bzl", "pj_test")
 
 cc_library(
     name = "test_base",
@@ -13,86 +14,75 @@ cc_library(
 pj_test(
     name = "test_ints",
     srcs = ["test_ints.cpp"],
-    proto = "ints.pj",
+    protos = ["ints.pj"],
 )
 
 pj_test(
     name = "test_structs",
     srcs = ["test_structs.cpp"],
-    proto = "structs.pj",
+    protos = ["structs.pj"],
 )
 
 pj_test(
     name = "test_variants",
-    size = "medium",
     srcs = ["test_variants.cpp"],
-    proto = "variants.pj",
+    protos = ["variants.pj"],
 )
 
 pj_test(
     name = "test_arrays",
     srcs = ["test_arrays.cpp"],
-    proto = "arrays.pj",
+    protos = ["arrays.pj"],
 )
 
 pj_test(
     name = "test_spaces",
     srcs = ["test_spaces.cpp"],
-    proto = "spaces.pj",
+    protos = ["spaces.pj"],
 )
 
 pj_test(
     name = "test_imports",
-    srcs = [
-        "ints.pj.hpp",
-        "spaces.pj.hpp",
-        "test_imports.cpp",
-    ],
-    proto = "imports.pj",
-    proto_deps = [
-        "ints.pj",
-        "spaces.pj",
-    ],
+    srcs = ["test_imports.cpp"],
+    protos = ["imports.pj"],
     deps = [
-        "test_ints_lib",
-        "test_spaces_lib",
+        "test_ints_pj",
+        "test_spaces_pj",
     ],
 )
 
 pj_test(
     name = "test_vectors",
-    size = "medium",
     srcs = ["test_vectors.cpp"],
-    proto = "vectors.pj",
+    protos = ["vectors.pj"],
 )
 
 pj_test(
     name = "test_sizing",
     srcs = ["test_sizing.cpp"],
-    proto = "sizing.pj",
+    protos = ["sizing.pj"],
 )
 
 pj_test(
     name = "test_hoisting",
-    size = "medium",
     srcs = ["test_hoisting.cpp"],
-    proto = "hoisting.pj",
+    protos = ["hoisting.pj"],
 )
 
-pj_lib(
+pj_library(
     name = "protocols1",
-    proto = "protocols.pj",
+    srcs = ["protocols.pj"],
 )
 
-pj_lib(
+pj_library(
     name = "protocols2",
-    proto = "protocols2.pj",
+    srcs = ["protocols2.pj"],
 )
 
 pj_test(
     name = "test_any",
     srcs = ["test_any.cpp"],
-    proto = "any.pj",
+    protos = ["any.pj"],
 )
 
 # TODO: restore test
@@ -100,21 +90,35 @@ pj_test(
 #     name = "test_protocols",
 #     srcs = ["test_protocols.cpp"],
 #     deps = [
-#         "protocols1",
-#         "protocols2",
-#         "test_base",
+#         ":protocols1",
+#         ":protocols2",
+#         ":test_base",
 #     ],
 # )
 
 pj_test(
     name = "test_portals",
-    srcs = [
-        "ints.pj.hpp",
-        "test_portals.cpp",
-    ],
-    proto = "portals.pj",
-    proto_deps = ["ints.pj"],
+    srcs = ["test_portals.cpp"],
+    protos = ["portals.pj"],
+    deps = [":test_ints_pj"],
+)
+
+cc_library(
+    name = "external",
+    hdrs = ["external.hpp"],
+)
+
+pj_library(
+    name = "external_pj",
+    srcs = ["external.pj"],
+    cc_deps = ["external"],
+)
+
+cc_test(
+    name = "test_external",
+    srcs = ["test_external.cpp"],
     deps = [
-        "test_ints_lib",
+        ":external_pj",
+        ":test_base",
     ],
 )

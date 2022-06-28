@@ -4,7 +4,7 @@
   "scopeName": "source.protojit",
   "patterns": [
     {
-      "match": "\\bstruct\\b|\\bvariant\\b|\\btype\\b|\\bspace\\b|\\bexternal\\b|\\benum\\b|\\bimport\\b|\\bportal\\b|\\bsizer\\b|\\bencoder\\b|\\bdecoder\\b|\\bprecompile\\b|\\bhandlers\\b|\\bprotocol",
+      "match": "\\bstruct\\b|\\bvariant\\b|\\btype\\b|\\bspace\\b|\\bexternal\\b|\\benum\\b|\\bimport\\b|\\bportal\\b|\\bsizer\\b|\\bencoder\\b|\\bdecoder\\b|\\bprecompile\\b|\\bhandlers\\b|\\bimport\\b|\\blanguage\\b|\\bprotocol",
       "name": "keyword.other"
     },
     {
@@ -17,6 +17,11 @@
     },
     {
       "match": "'.'",
+      "name": "string.quoted"
+    },
+    {
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
       "name": "string.quoted"
     }
   ]
