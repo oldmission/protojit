@@ -250,6 +250,12 @@ genrule(
     tools = ["schema_precompile_gen"],
 )
 
+# When this library is used directly as a dependency for a test, Bazel wrongly
+# optimizes the linking phase out and just dynamically links the test with
+# several component .so files. This causes the weak symbols to not be overriden
+# by the symbols from :schema_precompile_obj. Therefore, at runtime, the
+# precompiled symbols will be resolved using dlsym() instead, which incurs a
+# minor performance penalty.
 cc_library(
     name = "runtime",
     srcs = [

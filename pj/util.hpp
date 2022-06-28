@@ -22,6 +22,9 @@ namespace pj {
   }
 #endif
 
+#define STR_INNER(X) #X
+#define STR(X) STR_INNER(X)
+
 template <typename T>
 inline T DivideUp(T x, T multiple);
 

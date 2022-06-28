@@ -6,7 +6,6 @@ cc_library(
     srcs = ["harness.hpp"],
     deps = [
         "//pj:runtime",
-        "//pj:reflect_precompile_obj",
         "@gtest//:gtest_main",
     ],
 )
