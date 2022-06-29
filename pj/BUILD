@@ -245,23 +245,20 @@ cc_binary(
 genrule(
     name = "schema_precompile_obj",
     srcs = [],
-    outs = ["schema_precompile.o"],
+    outs = ["schema_precompile.a"],
     cmd = "$(location schema_precompile_gen) $@",
     tools = ["schema_precompile_gen"],
 )
 
-# When this library is used directly as a dependency for a test, Bazel wrongly
-# optimizes the linking phase out and just dynamically links the test with
-# several component .so files. This causes the weak symbols to not be overriden
-# by the symbols from :schema_precompile_obj. Therefore, at runtime, the
-# precompiled symbols will be resolved using dlsym() instead, which incurs a
-# minor performance penalty.
+cc_import(
+    name = "schema_precompile",
+    static_library = "schema_precompile.a",
+    alwayslink = 1,
+)
+
 cc_library(
     name = "runtime",
-    srcs = [
-        ":runtime_bootstrap",
-        ":schema_precompile_obj",
-    ],
+    srcs = [],
     hdrs = [
         "protojit.hpp",
         "runtime.h",
@@ -270,6 +267,7 @@ cc_library(
     linkopts = ["-lstdc++"],
     deps = [
         ":runtime_bootstrap",
+        ":schema_precompile",
     ],
 )
 
