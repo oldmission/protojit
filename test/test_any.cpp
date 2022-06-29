@@ -19,6 +19,8 @@ TEST_F(PJTest, IntSameTest) {
   // Pointers don't work because the string constant gets moved around
   // during compilation.
   // TODO: the data pointer isn't getting set for some reason.
+  asm("int3");
+  (void)y;
 }
 
 }  // namespace pj

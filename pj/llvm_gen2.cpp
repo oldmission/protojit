@@ -1093,7 +1093,13 @@ LogicalResult ReflectOpLowering::matchAndRewrite(
   // Create binary representation of the source schema in the host's self
   // representation.
   llvm::BumpPtrAllocator alloc;
-  auto rf_proto = reflect::reflect(alloc, op.src().getType().cast<ValueType>());
+  auto rf_proto = reflect::reflect(
+      alloc,
+      types::ProtocolType::get(_.getContext(),
+                               Protocol{
+                                   .head = op.src().getType().cast<ValueType>(),
+                                   .buffer_offset = Bytes(0),
+                               }));
   llvm::SmallVector<char, 0> buf;
   {
     auto re_ctx = runtime::Context();
