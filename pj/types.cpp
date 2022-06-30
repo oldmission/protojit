@@ -73,7 +73,7 @@ std::string Term::toString() const {
 }
 
 template <typename T, typename Eq = std::equal_to<T>>
-bool isBinaryCompatible(Span<T> a, Span<T> b, Eq&& eq = {}) {
+bool isBinaryCompatible(ArrayRef<T> a, ArrayRef<T> b, Eq&& eq = {}) {
   if (a.size() != b.size()) return false;
 
   std::vector<T> vec_a{a.begin(), a.end()};
@@ -103,7 +103,7 @@ bool Struct::isBinaryCompatibleWith(const Struct& other) const {
   return size == other.size && alignment == other.alignment;
 }
 
-bool isBinaryCompatible(Span<Term> a, Span<Term> b) {
+bool isBinaryCompatible(ArrayRef<Term> a, ArrayRef<Term> b) {
   return isBinaryCompatible(a, b, [](const Term& a, const Term& b) {
     return a.name == b.name && a.type.isBinaryCompatibleWith(a.type) &&
            a.tag == b.tag && isBinaryCompatible(a.attributes, b.attributes);

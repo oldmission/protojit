@@ -10,8 +10,8 @@
 namespace pj {
 
 TEST_F(PJTest, ArraySameTest) {
-  A1 x = {.arr = {'a', 'b', 'c', 'd'}};
-  A1 y = {.arr = {0x7f, 0x7f, 0x7f, 0x7f}};
+  A1 x = {.arr = {{'a', 'b', 'c', 'd'}}};
+  A1 y = {.arr = {{0x7f, 0x7f, 0x7f, 0x7f}}};
 
   transcode(Options<A1>{.from = &x, .to = &y});
 
@@ -21,8 +21,8 @@ TEST_F(PJTest, ArraySameTest) {
 }
 
 TEST_F(PJTest, ArrayExtendTest) {
-  A1 x = {.arr = {'a', 'b', 'c', 'd'}};
-  A2 y = {.arr = {0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f}};
+  A1 x = {.arr = {{'a', 'b', 'c', 'd'}}};
+  A2 y = {.arr = {{0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f}}};
 
   transcode(Options<A1, A2>{.from = &x, .to = &y});
 
@@ -34,11 +34,18 @@ TEST_F(PJTest, ArrayExtendTest) {
 }
 
 TEST_F(PJTest, ArrayDefaultTest) {
-  A1 x = {.arr = {'a', 'b', 'c', 'd'}};
-  A3 y = {.arr = {-1, -1, -1, -1},
-          .arr2 = {A2{.arr = {-1, -1, -1, -1, -1, -1}},
-                   A2{.arr = {-1, -1, -1, -1, -1, -1}},
-                   A2{.arr = {-1, -1, -1, -1, -1, -1}}}};
+  A1 x = {.arr = {{'a', 'b', 'c', 'd'}}};
+  A3 y = {
+      .arr = {{-1, -1, -1, -1}},
+      .arr2 =
+          {
+              {
+                  A2{.arr = {{-1, -1, -1, -1, -1, -1}}},
+                  A2{.arr = {{-1, -1, -1, -1, -1, -1}}},
+                  A2{.arr = {{-1, -1, -1, -1, -1, -1}}},
+              },
+          },
+  };
 
   transcode(Options<A1, A3>{.from = &x, .to = &y});
 

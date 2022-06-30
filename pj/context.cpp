@@ -48,7 +48,6 @@
 #include "protojit.hpp"
 #include "reflect.hpp"
 #include "runtime.h"
-#include "span.hpp"
 #include "util.hpp"
 
 #include "schema/precompile.hpp"

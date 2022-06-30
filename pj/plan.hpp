@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "span.hpp"
+#include "array_ref.hpp"
 #include "types.hpp"
 
 namespace pj {

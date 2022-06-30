@@ -15,7 +15,12 @@ TEST_P(PJVariantTest, HoistingInline) {
       .tag = A::Kind::f};
   A b{.value = {.f = {}}, .tag = A::Kind::undef};
 
-  auto results = transcode(Options<A>{.from = &a, .to = &b, .tag_path = "_"});
+  auto results = transcode(Options<A>{
+      .from = &a,
+      .to = &b,
+      .tag_path = "_",
+      .expect_dec_buffer = true,
+  });
 
   // Length is 1 byte because hoisting makes the max size the same as the inline
   // size.
@@ -61,7 +66,12 @@ TEST_P(PJVariantTest, MultipleHoistingDifferentTermInline) {
       .tag = B::Kind::s};
   B b{.value = {.f = {}}, .tag = B::Kind::undef};
 
-  auto results = transcode(Options<B>{.from = &a, .to = &b, .tag_path = "_"});
+  auto results = transcode(Options<B>{
+      .from = &a,
+      .to = &b,
+      .tag_path = "_",
+      .expect_dec_buffer = true,
+  });
 
   if (no_tag) {
     // f_short is the largest of the terms in the inline variant.
@@ -118,7 +128,12 @@ TEST_P(PJVariantTest, MultipleHoistingSameTermInline) {
       .tag = C::Kind::t};
   C b{.value = {.f = {}}, .tag = C::Kind::undef};
 
-  auto results = transcode(Options<C>{.from = &a, .to = &b, .tag_path = "_"});
+  auto results = transcode(Options<C>{
+      .from = &a,
+      .to = &b,
+      .tag_path = "_",
+      .expect_dec_buffer = true,
+  });
 
   // The largest term in C is t, which contains FirstInner (x) and SecondInner
   // (y). The inline and outline versions are the same since the vectors are the

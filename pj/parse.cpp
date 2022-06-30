@@ -4,8 +4,8 @@
 #include <pegtl/contrib/analyze.hpp>
 
 #include "arch.hpp"
+#include "array_ref.hpp"
 #include "protogen.hpp"
-#include "span.hpp"
 #include "types.hpp"
 #include "validate.hpp"
 
@@ -355,26 +355,40 @@ END_ACTION()
 
 struct TopDecl;
 
-struct TypeDecl : if_must<KEYWORD("type"), Id, tok<'='>, Type, tok<';'>> {};
-
-BEGIN_ACTION(TypeDecl) {
-  assert(__ type);
-  auto name = __ popScopedId();
-  __ defineType(in, name, __ type);
-
-  __ decls.emplace_back(ParsedProtoFile::Decl{
-      .kind = ParsedProtoFile::DeclKind::kType,
-      .name = name,
-      .type = __ type,
-  });
-  __ type = nullptr;
-}
-END_ACTION();
-
 struct ExternalDecl : KEYWORD("external") {};
 
 BEGIN_ACTION(ExternalDecl) { __ is_external = true; }
 END_ACTION()
+
+struct TypeDecl : if_must<KEYWORD("type"), Id, opt<ExternalDecl>, tok<'='>,
+                          Type, tok<';'>> {};
+
+BEGIN_ACTION(TypeDecl) {
+  assert(__ type);
+  auto name = __ popScopedId();
+  auto type = __ type;
+  __ type = nullptr;
+
+  if (__ is_external) {
+    // Don't define this type as the type written in the .pj source;
+    // rather, define it as an empty struct with the given name. Also
+    // don't add it as a declaration; it is up to the user provide one.
+    ArrayRefConverter<llvm::StringRef> name_converter{name};
+    type = types::StructType::get(
+        &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
+  } else {
+    __ decls.emplace_back(ParsedProtoFile::Decl{
+        .kind = ParsedProtoFile::DeclKind::kType,
+        .name = name,
+        .type = type,
+    });
+  }
+
+  __ defineType(in, name, type);
+
+  __ is_external = false;
+}
+END_ACTION();
 
 struct StructDecl : if_must<KEYWORD("struct"), Id, opt<ExternalDecl>, LB,
                             star<FieldDecl>, RB> {};
@@ -393,12 +407,12 @@ BEGIN_ACTION(StructDecl) {
   }
 
   auto name = __ popScopedId();
-  SpanConverter<llvm::StringRef> name_converter{name};
+  ArrayRefConverter<llvm::StringRef> name_converter{name};
   auto type = types::StructType::get(
       &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
 
   types::Struct data{
-      .fields = Span<types::StructField>{fields.data(), fields.size()}};
+      .fields = ArrayRef<types::StructField>{fields.data(), fields.size()}};
   validate(data, in.position());
   type.setTypeData(data);
 
@@ -491,12 +505,12 @@ static void handleVariant(const ActionInput& in, ParseState* state,
   }
 
   auto name = __ popScopedId();
-  SpanConverter<llvm::StringRef> name_converter{name};
+  ArrayRefConverter<llvm::StringRef> name_converter{name};
   auto type = types::InlineVariantType::get(
       &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
 
-  types::InlineVariant data{.terms =
-                                Span<types::Term>{terms.data(), terms.size()}};
+  types::InlineVariant data{
+      .terms = ArrayRef<types::Term>{terms.data(), terms.size()}};
   validate(data, in.position());
   type.setTypeData(data);
 

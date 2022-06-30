@@ -12,7 +12,7 @@
 #include <iterator>
 
 #include "arch.hpp"
-#include "span.hpp"
+#include "array_ref.hpp"
 #include "type_domain.hpp"
 #include "util.hpp"
 
@@ -20,7 +20,7 @@ namespace pj {
 namespace types {
 
 // Contains the pieces of a fully qualified name
-using Name = Span<llvm::StringRef>;
+using Name = ArrayRef<llvm::StringRef>;
 
 }  // namespace types
 }  // namespace pj
@@ -285,7 +285,7 @@ struct NominalTypeBase : public Base {
 };
 
 struct PathAttrStorage : public mlir::AttributeStorage {
-  using KeyTy = Span<llvm::StringRef>;
+  using KeyTy = ArrayRef<llvm::StringRef>;
 
   PathAttrStorage(KeyTy key) : key(key) {}
 
@@ -313,7 +313,7 @@ struct PathAttrStorage : public mlir::AttributeStorage {
     }
 
     return new (allocator.allocate<PathAttrStorage>())
-        PathAttrStorage(Span<llvm::StringRef>{list, key.size()});
+        PathAttrStorage(ArrayRef<llvm::StringRef>{list, key.size()});
   }
 
   KeyTy key;
@@ -339,7 +339,7 @@ struct PathAttr : public mlir::Attribute::AttrBase<PathAttr, mlir::Attribute,
   static PathAttr none(mlir::MLIRContext* C);
   static PathAttr fromString(mlir::MLIRContext* C, llvm::StringRef src_path);
   std::string toString() const;
-  Span<llvm::StringRef> getValue() const { return getImpl()->key; }
+  ArrayRef<llvm::StringRef> getValue() const { return getImpl()->key; }
   size_t unique_code() const { return reinterpret_cast<size_t>(impl); }
 
   bool empty() const { return getValue().size() == 0; }

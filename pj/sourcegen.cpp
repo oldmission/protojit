@@ -23,28 +23,43 @@ std::string convertSign(Sign sign) {
   }
 }
 
-void SourceGenerator::printIntTypeRef(Width width, Sign sign) {
+void SourceGenerator::printIntTypeRef(Width width, Sign sign, bool wrap,
+                                      std::string decl) {
   assert(width.bytes() > 0);
 
   auto& os = stream();
-  if (region_ == Region::kBuilders) os << "Integer<";
+  if (wrap && !decl.empty()) {
+    os << "::pj::integer_validate<decltype(" << decl << "), ";
+  }
+
+  if (wrap) os << "::pj::integer<";
 
   if (sign == Sign::kSignless) {
     // TODO: maybe use wchar_t?
   }
-  if (sign == Sign::kUnsigned) os << "unsigned ";
+  if (!wrap && sign == Sign::kUnsigned) os << "unsigned ";
+  if (!wrap && sign == Sign::kSigned) os << "signed ";
 
   auto log = static_cast<uintptr_t>(std::ceil(std::log2(width.bytes())));
 
   // TODO: platform-specific
   std::array<std::string_view, 4> kIntTypes{"char", "short", "int", "long"};
   assert(log <= kIntTypes.size());
-  os << kIntTypes[log];
+  if (wrap) {
+    os << width.bits() << " ";
+  } else {
+    os << kIntTypes[log];
+  }
 
-  if (region_ == Region::kBuilders) os << ", " << convertSign(sign) << ">";
+  if (wrap) os << ", " << convertSign(sign) << ">";
+
+  if (wrap && !decl.empty()) {
+    os << ">::type";
+  }
 }
 
-void SourceGenerator::printTypeRef(types::ValueType type) {
+void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
+                                   std::string decl) {
   auto& os = stream();
 
   if (auto named = type.dyn_cast<types::NominalType>()) {
@@ -53,7 +68,7 @@ void SourceGenerator::printTypeRef(types::ValueType type) {
   }
 
   if (auto I = type.dyn_cast<types::IntType>()) {
-    printIntTypeRef(I->width, I->sign);
+    printIntTypeRef(I->width, I->sign, wrap, decl);
     return;
   }
 
@@ -63,106 +78,40 @@ void SourceGenerator::printTypeRef(types::ValueType type) {
   }
 
   if (auto A = type.dyn_cast<types::ArrayType>()) {
-    os << "std::array<";
-    printTypeRef(A->elem);
+    os << "pj::array<";
+    printTypeRef(A->elem, true);
     os << ", " << A->length << ">";
     return;
   }
 
   if (auto V = type.dyn_cast<types::VectorType>()) {
-    os << "pj::ArrayView<";
-    printTypeRef(V->elem);
-    os << ", " << V->min_length << ", " << V->max_length << ">";
+    os << "pj::span<";
+    printTypeRef(V->elem, true);
+    auto max_length = V->max_length == kNone ? "::pj::unbounded_length"
+                                             : std::to_string(V->max_length);
+    os << ", " << max_length << ", " << V->min_length << ">";
     return;
   }
 
   UNREACHABLE();
 }
 
-std::string SourceGenerator::createTypeHandleFromDecl(std::string decl) {
-  assert(region_ == Region::kBuilders);
-  assert(domain_ == Domain::kHost);
-
-  std::string handle;
-  stream() << "const auto* " << (handle = getUniqueName())
-           << " = BuildPJType<decltype(" << decl << ")>::build(ctx, domain);\n";
-  return handle;
-}
-
-std::string SourceGenerator::createTypeHandleFromType(types::ValueType type) {
-  assert(region_ == Region::kBuilders);
-  auto& os = stream();
+std::string SourceGenerator::createTypeHandle(std::string decl,
+                                              types::ValueType type) {
+  ASSERT(region_ == Region::kBuilders);
+  ASSERT(domain_ == Domain::kHost);
 
   std::string handle = getUniqueName();
 
-  // BuildPJType is always used for NominalTypes under the assumption that pjc
-  // is not used for host and wire types at once.
-  if (domain_ == Domain::kHost || type.isa<types::NominalType>()) {
-    os << "const auto* " << handle << " = BuildPJType<";
-    printTypeRef(type);
-    os << ">::build(ctx, domain);\n";
-    return handle;
+  stream() << "const auto* " << handle << " = BuildPJType<";
+  if (decl.empty() || type.isa<types::IntType>() ||
+      type.isa<types::UnitType>()) {
+    printTypeRef(type, /*wrap=*/true, decl);
+  } else {
+    stream() << "decltype(" << decl << ")";
   }
-
-  // Copy the type information exactly as-is.
-  if (auto I = type.dyn_cast<types::IntType>()) {
-    os << "const auto* " << handle << " = PJCreateIntType(ctx";
-    os << ", /*width=*/" << I->width.bits();
-    os << ", /*alignment=*/" << I->alignment.bits();
-    os << ", /*sign=*/" << convertSign(I->sign) << ");\n";
-    return handle;
-  }
-
-  if (auto U = type.dyn_cast<types::UnitType>()) {
-    os << "const PJUnitType* " << handle << " = PJCreateUnitType(ctx);\n";
-    return handle;
-  }
-
-  if (auto A = type.dyn_cast<types::ArrayType>()) {
-    std::string elem_handle = createTypeHandleFromType(A->elem);
-    os << "const auto* " << handle << " = PJCreateArrayType(ctx";
-    os << ", /*elem=*/" << elem_handle;
-    os << ", /*length=*/" << A->length;
-    os << ", /*elem_size=*/" << A->elem_size.bits();
-    os << ", /*alignment=*/" << A->alignment.bits() << ");\n";
-    return handle;
-  }
-
-  if (auto V = type.dyn_cast<types::VectorType>()) {
-    std::string elem_handle = createTypeHandleFromType(V->elem);
-    os << "const auto* " << handle << " = PJCreateVectorType(ctx";
-    os << ", /*elem=*/" << elem_handle;
-    os << ", /*min_length=*/" << V->min_length;
-    os << ", /*max_length=*/" << V->max_length;
-    os << ", /*wire_min_length=*/" << V->min_length;
-    os << ", /*ppl_count=*/" << V->ppl_count;
-    os << ", /*length_offset=*/" << V->length_offset.bits();
-    os << ", /*length_size=*/" << V->length_size.bits();
-    os << ", /*ref_offset=*/" << V->ref_offset.bits();
-    os << ", /*ref_size=*/" << V->ref_size.bits();
-    os << ", /*reference_mode=*/";
-    switch (V->reference_mode) {
-      case ReferenceMode::kOffset:
-        os << "PJ_REFERENCE_MODE_OFFSET";
-        break;
-      case ReferenceMode::kPointer:
-        os << "PJ_REFERENCE_MODE_POINTER";
-        break;
-      default:
-        UNREACHABLE();
-    }
-    os << ", /*inline_payload_offset=*/" << V->inline_payload_offset.bits();
-    os << ", /*inline_payload_size=*/" << V->inline_payload_size.bits();
-    os << ", /*partial_payload_offset=*/" << V->partial_payload_offset.bits();
-    os << ", /*partial_payload_size=*/" << V->partial_payload_size.bits();
-    os << ", /*size=*/" << V->size.bits();
-    os << ", /*alignment=*/" << V->alignment.bits();
-    os << ", /*outlined_payload_alignment=*/"
-       << V->outlined_payload_alignment.bits() << ");\n";
-    return handle;
-  }
-
-  UNREACHABLE();
+  stream() << ">::build(ctx, domain);\n";
+  return handle;
 }
 
 void SourceGenerator::addProtocol(const SourceId& name,
@@ -175,7 +124,7 @@ void SourceGenerator::addProtocol(const SourceId& name,
   protos_.emplace(name);
 }
 
-std::string SourceGenerator::buildStringArray(Span<llvm::StringRef> arr) {
+std::string SourceGenerator::buildStringArray(ArrayRef<llvm::StringRef> arr) {
   auto& os = stream();
   std::string var;
   os << "const char* " << (var = getUniqueName()) << "[" << arr.size()
@@ -245,7 +194,7 @@ void SourceGenerator::addWireProtocol(const SourceId& name,
   os << ";\n";
 
   os << "static const auto* build(PJContext* ctx, const PJDomain* domain) {\n";
-  std::string head_handle = createTypeHandleFromType(proto->head);
+  std::string head_handle = createTypeHandle("Head", proto->head);
   os << "return PJCreateProtocolType(ctx, " << head_handle << ", "
      << proto->buffer_offset.bits() << ");\n";
   os << "}\n";
@@ -310,19 +259,10 @@ void SourceGenerator::addStructBuilder(types::StructType type,
   os << "const PJStructField* fields[" << type->fields.size() << "];\n";
   uintptr_t field_num = 0;
   for (auto& field : type->fields) {
-    std::string field_handle = [&]() {
-      // Ints are excluded because they are generated as regular C++ int types,
-      // but their BuildPJType methods must use the Integer class, which
-      // contains the Sign enum.
-      if (domain_ == Domain::kHost && is_external &&
-          !field.type.isa<types::IntType>()) {
-        std::vector<llvm::StringRef> field_name{name.begin(), name.end()};
-        field_name.emplace_back(field.name);
-        return createTypeHandleFromDecl(getNameAsString(field_name));
-      } else {
-        return createTypeHandleFromType(field.type);
-      }
-    }();
+    std::vector<llvm::StringRef> field_name{name.begin(), name.end()};
+    field_name.emplace_back(field.name);
+    auto field_handle =
+        createTypeHandle(getNameAsString(field_name), field.type);
 
     os << "fields[" << field_num++ << "] = PJCreateStructField(";
     os << "/*name=*/\"" << std::string_view(field.name) << "\"";
@@ -452,20 +392,8 @@ void SourceGenerator::addVariantBuilder(types::VariantType type, bool has_value,
   os << "const PJTerm* terms[" << type.terms().size() << "];\n";
   size_t term_num = 0;
   for (const auto& term : type.terms()) {
-    std::string term_handle = [&]() {
-      // In addition to excluding ints, same as in structs, Unit types are also
-      // excluded because they have no corresponding C++ type.
-      if (domain_ == Domain::kHost && is_external &&
-          !term.type.isa<types::IntType>() &&
-          !term.type.isa<types::UnitType>()) {
-        std::vector<llvm::StringRef> union_name{name.begin(), name.end()};
-        union_name.emplace_back("value");
-        return createTypeHandleFromDecl(getNameAsString(union_name) + "." +
-                                        term.name.str());
-      } else {
-        return createTypeHandleFromType(term.type);
-      }
-    }();
+    std::vector<llvm::StringRef> union_name{name.begin(), name.end()};
+    auto term_handle = createTypeHandle({}, term.type);
 
     os << "terms[" << term_num++ << "] = PJCreateTerm(";
     os << "/*name=*/\"" << std::string_view(term.name) << "\"";
@@ -945,7 +873,8 @@ void SourceGenerator::generate(
          << "#include " << path.filename() << "\n"
          << "int main(int argc, char** argv) {\n"
          << "  if (argc != 3) {\n"
-         << "    fprintf(stderr, \"Usage: <precompiler> o/pic <filename>\\n\");\n"
+         << "    fprintf(stderr, \"Usage: <precompiler> o/pic "
+            "<filename>\\n\");\n"
          << "    return 1;\n"
          << "  }\n"
          << "  pj::runtime::Context ctx_;\n"

@@ -1,15 +1,14 @@
 #pragma once
 
+#include <memory>
+
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Support/LLVM.h>
 
-#include <llvm/Support/raw_ostream.h>
-
-#include <memory>
-
-#include "span.hpp"
+#include "array_ref.hpp"
 
 namespace mlir {
 class Operation;
@@ -31,7 +30,7 @@ class SideEffectAnalysis {
     return effect_functions.contains(op) or effect_points.contains(op);
   }
 
-  Span<size_t> flattenedBufferArguments(llvm::StringRef callee) const;
+  ArrayRef<size_t> flattenedBufferArguments(llvm::StringRef callee) const;
 
   mlir::Operation* effectProviderFor(mlir::Operation* op) const {
     if (auto it = effect_providers.find(op); it != effect_providers.end()) {

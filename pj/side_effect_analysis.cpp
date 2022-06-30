@@ -4,9 +4,9 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 
+#include "array_ref.hpp"
 #include "ir.hpp"
 #include "side_effect_analysis.hpp"
-#include "span.hpp"
 
 namespace pj {
 
@@ -98,11 +98,11 @@ SideEffectAnalysis::SideEffectAnalysis(Operation* root) {
   });
 }
 
-Span<size_t> SideEffectAnalysis::flattenedBufferArguments(
+ArrayRef<size_t> SideEffectAnalysis::flattenedBufferArguments(
     llvm::StringRef callee) const {
   if (auto it = flattened_buffer_args.find(callee);
       it != flattened_buffer_args.end()) {
-    return Span<size_t>{it->second.data(), it->second.size()};
+    return ArrayRef<size_t>{it->second.data(), it->second.size()};
   }
   return {};
 }

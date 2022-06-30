@@ -50,10 +50,10 @@ v1::Adoption SampleCatV1{
     .fee = 100,
 };
 
+auto kBeagleBreed = std::array{v1::DogBreed::BEAGLE};
 v1::Adoption SampleDogV1{
-    .animal = {.specifics = {.value = {.dog = {.breed =
-                                                   std::array{
-                                                       v1::DogBreed::BEAGLE}}},
+    .animal = {.specifics = {.value = {.dog = {.breed = {kBeagleBreed.data(),
+                                                         kBeagleBreed.size()}}},
                              .tag = v1::Specifics::Kind::dog},
                .name = v1::Name{DogName.data(), DogName.length()},
                .age = 36,
@@ -77,12 +77,12 @@ v2::Adoption SampleCatV2{
     .fee = 100,
 };
 
+auto kTwoBreeds = std::array{v2::DogBreed::BEAGLE, v2::DogBreed::HUSKY};
 v2::Adoption SampleDogV2{
-    .animal = {.specifics =
-                   {.value = {.dog = {.coat = v2::DogCoat::SHORT,
-                                      .breed = std::array{v2::DogBreed::BEAGLE,
-                                                          v2::DogBreed::HUSKY}}},
-                    .tag = v2::Specifics::Kind::dog},
+    .animal = {.specifics = {.value = {.dog = {.coat = v2::DogCoat::SHORT,
+                                               .breed = {kTwoBreeds.data(),
+                                                         kTwoBreeds.size()}}},
+                             .tag = v2::Specifics::Kind::dog},
                .name = v2::Name{DogName.data(), DogName.length()},
                .age = 36,
                .weight = 45,

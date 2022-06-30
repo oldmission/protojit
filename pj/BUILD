@@ -77,11 +77,15 @@ cc_library(
     ],
     hdrs = [
         "arch.hpp",
+        "span.hpp",
         "arch_base.hpp",
         "defer.hpp",
         "exceptions.hpp",
+        "integer.hpp",
         "ir.hpp",
-        "span.hpp",
+        "protojit.hpp",
+        "array_ref.hpp",
+        "traits.hpp",
         "type_domain.hpp",
         "type_support.hpp",
         "types.hpp",
@@ -151,7 +155,6 @@ cc_library(
         "reflect.pj.hpp",
     ],
     hdrs = [
-        "protojit.hpp",
         "reflect.hpp",
         "runtime.h",
         "runtime.hpp",
@@ -185,7 +188,6 @@ cc_library(
         "passes.hpp",
         "scope.hpp",
         "side_effect_analysis.hpp",
-        "span.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [
