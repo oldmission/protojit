@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "pj/protojit.hpp"
 
 struct CoordinateA {
   int64_t x;
@@ -12,3 +13,31 @@ struct CoordinateB {
   long _;
   int64_t y;
 };
+
+struct Point {
+  int32_t x;
+  int32_t y;
+};
+
+namespace pj {
+namespace gen {
+template <>
+struct BuildPJType<Point> {
+  static const PJStructType* build(PJContext* ctx, const PJDomain* domain) {
+    const PJStructField* fields[2];
+    const auto* int_type =
+        BuildPJType<integer<32, PJ_SIGN_SIGNED>>::build(ctx, domain);
+    fields[0] = PJCreateStructField(/*name=*/"x", /*type=*/int_type,
+                                    /*offset=*/offsetof(Point, x) << 3);
+    fields[1] = PJCreateStructField(/*name=*/"y", /*type=*/int_type,
+                                    /*offset=*/offsetof(Point, y) << 3);
+    const char* typname[1] = {"Point"};
+    return PJCreateStructType(ctx, /*name_size=*/1, /*name=*/typname,
+                              /*type_domain=*/domain,
+                              /*num_fields=*/2, /*fields=*/fields,
+                              /*size=*/sizeof(Point) << 3,
+                              /*alignment=*/alignof(Point) << 3);
+  }
+};
+}  // namespace gen
+}  // namespace pj

@@ -1,10 +1,10 @@
 #include "runtime.h"
 #include "arch.hpp"
+#include "array_ref.hpp"
 #include "context.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
 #include "runtime.hpp"
-#include "span.hpp"
 #include "types.hpp"
 
 #include <cstring>
@@ -112,8 +112,8 @@ const PJStructType* PJCreateStructType(PJContext* c, uintptr_t name_size,
                                        Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::SpanConverter<pj::types::StructField> fields_converter{
+  pj::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::ArrayRefConverter<pj::types::StructField> fields_converter{
       fields, num_fields, [](const PJStructField* f) {
         auto casted = reinterpret_cast<const pj::types::StructField*>(f);
         DEFER(delete casted);
@@ -146,8 +146,8 @@ const PJInlineVariantType* PJCreateInlineVariantType(
     Bits size, Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::SpanConverter<pj::types::Term> terms_converter{
+  pj::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::ArrayRefConverter<pj::types::Term> terms_converter{
       terms, num_terms, [](const PJTerm* t) {
         auto casted = reinterpret_cast<const pj::types::Term*>(t);
         DEFER(delete casted);
@@ -173,8 +173,8 @@ const PJOutlineVariantType* PJCreateOutlineVariantType(
     Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
-  pj::SpanConverter<llvm::StringRef> name_converter{name, name_size};
-  pj::SpanConverter<pj::types::Term> terms_converter{
+  pj::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
+  pj::ArrayRefConverter<pj::types::Term> terms_converter{
       terms, num_terms, [](const PJTerm* t) {
         auto casted = reinterpret_cast<const pj::types::Term*>(t);
         DEFER(delete casted);

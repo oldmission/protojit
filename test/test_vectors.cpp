@@ -7,10 +7,15 @@
 namespace pj {
 
 TEST_F(PJTest, VectorSame) {
-  A a{.vec = {std::array<uint64_t, 5>{1, 2, 3, 4, 5}}};
+  auto ary = std::array<uint64_t, 5>{1, 2, 3, 4, 5};
+  A a{.vec = {ary.data(), ary.size()}};
   A b;
 
-  auto results = transcode(Options<A>{.from = &a, .to = &b});
+  auto results = transcode(Options<A>{
+      .from = &a,
+      .to = &b,
+      .expect_dec_buffer = true,
+  });
 
   EXPECT_EQ(results.enc_size, /*length=*/1 + /*inline data=*/8 * 8);
   EXPECT_EQ(b.vec.size(), a.vec.size());
@@ -79,8 +84,9 @@ TEST_F(PJTest, VectorTruncateBelowInline) {
   }
 }
 
-TEST_F(PJTest, VectorInlineToOutline) {
-  A a{.vec = {std::array<uint64_t, 5>{1, 2, 3, 4, 5}}};
+TEST_F(PJTest, VectorToOutline) {
+  auto ary = std::array<uint64_t, 5>{1, 2, 3, 4, 5};
+  A a{.vec = {ary.data(), ary.size()}};
   C c;
 
   auto results =
@@ -152,9 +158,7 @@ TEST_F(PJTest, NestedVectorDifferent) {
   auto results = transcode(Options<NestedA, NestedB>{
       .from = &a, .to = &b, .expect_dec_buffer = true});
 
-  // Only first and third exceed the inline size, so only their data should be
-  // in the decode buffer. First is truncated to a size of 6 from 8.
-  EXPECT_EQ(results.dec_buffer_size, 8 * (6 + 5));
+  EXPECT_EQ(results.dec_buffer_size, 144);
 
   EXPECT_EQ(a.vec.size(), b.vec.size());
   for (size_t i = 0; i < a.vec.size(); ++i) {
@@ -167,17 +171,20 @@ TEST_F(PJTest, NestedVectorDifferent) {
 }
 
 TEST_F(PJTest, VectorOfStructsForwards) {
-  std::array<char, 9> outline_name{'0', '1', '2', '3', '4', '5', '6', '7', '8'};
+  auto items = std::array{
+      ItemA{.name = "X", .price = 5},
+      ItemA{.name = "012345678", .price = 8},
+      ItemA{.name = "ABC", .price = 1},
+  };
 
-  CollectionA a{
-      .items = std::array{
-          ItemA{.name = std::array{'X'}, .price = 5},
-          ItemA{.name = {outline_name.data(), outline_name.size()}, .price = 8},
-          ItemA{.name = std::array{'A', 'B', 'C'}, .price = 1}}};
+  CollectionA a{.items = {items.data(), items.size()}};
   CollectionB b;
 
-  auto results =
-      transcode(Options<CollectionA, CollectionB>{.from = &a, .to = &b});
+  auto results = transcode(Options<CollectionA, CollectionB>{
+      .from = &a,
+      .to = &b,
+      .expect_dec_buffer = true,
+  });
 
   EXPECT_EQ(b.items.size(), a.items.size());
   EXPECT_EQ(b.owners.size(), 0);
@@ -191,24 +198,22 @@ TEST_F(PJTest, VectorOfStructsForwards) {
 TEST_F(PJTest, VectorOfStructsBackwards) {
   using OwnerName = decltype(CollectionB::owners[0]);
 
-  std::array alice{'a', 'l', 'i', 'c', 'e'};
-  std::array bob{'b', 'o', 'b'};
-  std::array charlie{'c', 'h', 'a', 'r', 'l', 'i', 'e'};
+  auto items =
+      std::array{ItemB{.name = "X", .price = 5, .quantity = 3},
+                 ItemB{.name = "012345678", .price = 5, .quantity = 500},
+                 ItemB{.name = "ABC", .price = 1, .quantity = 1}};
+  auto owners =
+      std::array{OwnerName{"alice"}, OwnerName{"bob"}, OwnerName{"charlie"}};
 
-  CollectionB b{
-      .owners = std::array{OwnerName{alice.data(), alice.size()},
-                           OwnerName{bob.data(), bob.size()},
-                           OwnerName{charlie.data(), charlie.size()}},
-      .items = std::array{
-          ItemB{.name = std::array{'X'}, .price = 5, .quantity = 3},
-          ItemB{.name = std::array{'0', '1', '2', '3', '4', '5', '6', '7', '8'},
-                .price = 5,
-                .quantity = 500},
-          ItemB{.name = std::array{'A', 'B', 'C'}, .price = 1, .quantity = 1}}};
+  CollectionB b{.owners = {owners.data(), owners.size()},
+                .items = {items.data(), items.size()}};
   CollectionA a;
 
   auto results = transcode(Options<CollectionB, CollectionA>{
-      .from = &b, .to = &a, .expect_dec_buffer = true});
+      .from = &b,
+      .to = &a,
+      .expect_dec_buffer = true,
+  });
 
   // Head sizes of various types:
   //   ItemB.name = char8[12:]: length (8), inline data (12) = 20
@@ -220,10 +225,7 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
   // The only data that exceeds any inline data is the owner names, which add up
   // to 15 bytes total
   EXPECT_EQ(results.enc_size, 191);
-
-  // Everything is inline except the second item name, which exceeds the inline
-  // size of ItemA.name.
-  EXPECT_EQ(results.dec_buffer_size, 9);
+  EXPECT_EQ(results.dec_buffer_size, 85);
 
   EXPECT_EQ(a.items.size(), b.items.size());
   for (size_t i = 0; i < b.items.size(); ++i) {
@@ -235,28 +237,21 @@ TEST_F(PJTest, VectorOfStructsBackwards) {
 TEST_F(PJTest, VectorOfStructsSame) {
   using OwnerName = decltype(CollectionB::owners[0]);
 
-  std::array alice{'a', 'l', 'i', 'c', 'e'};
-  std::array bob{'b', 'o', 'b'};
-  std::array charlie{'c', 'h', 'a', 'r', 'l', 'i', 'e'};
+  auto owners =
+      std::array{OwnerName{"ALICE"}, OwnerName{"BOB"}, OwnerName{"CHARLIE"}};
+  auto items =
+      std::array{ItemB{.name = "X", .price = 5, .quantity = 3},
+                 ItemB{.name = "012345678", .price = 5, .quantity = 500},
+                 ItemB{.name = "ABC", .price = 1, .quantity = 1}};
 
-  CollectionB b1{
-      .owners = std::array{OwnerName{alice.data(), alice.size()},
-                           OwnerName{bob.data(), bob.size()},
-                           OwnerName{charlie.data(), charlie.size()}},
-      .items = std::array{
-          ItemB{.name = std::array{'X'}, .price = 5, .quantity = 3},
-          ItemB{.name = std::array{'0', '1', '2', '3', '4', '5', '6', '7', '8'},
-                .price = 5,
-                .quantity = 500},
-          ItemB{.name = std::array{'A', 'B', 'C'}, .price = 1, .quantity = 1}}};
+  CollectionB b1{.owners = {owners.data(), owners.size()},
+                 .items = {items.data(), items.size()}};
   CollectionB b2;
 
   auto results = transcode(
       Options<CollectionB>{.from = &b1, .to = &b2, .expect_dec_buffer = true});
 
-  // Everything is inline except all the owner name data.
-  EXPECT_EQ(results.dec_buffer_size, 5 + 3 + 7);
-
+  EXPECT_EQ(results.dec_buffer_size, 149);
   EXPECT_EQ(b2.items.size(), b1.items.size());
   EXPECT_EQ(b2.owners.size(), b2.owners.size());
   for (size_t i = 0; i < b1.items.size(); ++i) {

@@ -1,5 +1,5 @@
 #include "variant_outlining.hpp"
-#include "span.hpp"
+#include "array_ref.hpp"
 
 namespace pj {
 using namespace mlir;

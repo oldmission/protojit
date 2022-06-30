@@ -26,4 +26,16 @@ TEST_F(PJTest, ExternalTestB2A) {
   EXPECT_EQ(a.y, 43);
 }
 
+TEST_F(PJTest, ExternalTestBoundingBox) {
+  BoundingBox bb0{.tl = {.x = 3, .y = 4}, .br = {.x = 10, .y = 20}};
+  BoundingBox bb1;
+
+  transcode(Options<BoundingBox>{.from = &bb0, .to = &bb1});
+
+  EXPECT_EQ(bb1.tl.x, 3);
+  EXPECT_EQ(bb1.tl.y, 4);
+  EXPECT_EQ(bb1.br.x, 10);
+  EXPECT_EQ(bb1.br.y, 20);
+}
+
 }  // namespace pj

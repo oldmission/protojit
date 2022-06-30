@@ -1,7 +1,7 @@
 #include <unordered_set>
 
+#include "array_ref.hpp"
 #include "defer.hpp"
-#include "span.hpp"
 #include "vector_hoisting.hpp"
 
 namespace pj {
@@ -45,11 +45,13 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
     auto get_struct = [&](ValueType inner) {
       auto data = Struct(str);
 
-      SpanConverter<StructField> field_conv{data.fields, data.fields.size()};
+      ArrayRefConverter<StructField> field_conv{data.fields,
+                                                data.fields.size()};
       field_conv.storage()[i].type = inner;
       data.fields = field_conv.get();
 
-      SpanConverter<llvm::StringRef> name_conv{str.name(), str.name().size()};
+      ArrayRefConverter<llvm::StringRef> name_conv{str.name(),
+                                                   str.name().size()};
       std::string back =
           str.name().back().str() + std::to_string(reinterpret_cast<uintptr_t>(
                                         inner.getAsOpaquePointer()));
@@ -70,7 +72,7 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
 }
 
 bool VectorHoisting::hoistVectors(VariantType var) {
-  Span<Term> terms = var.terms();
+  ArrayRef<Term> terms = var.terms();
   std::unordered_set<uint64_t> tags;
 
   for (const Term& t : terms) {
@@ -84,7 +86,7 @@ bool VectorHoisting::hoistVectors(VariantType var) {
       continue;
     }
 
-    SpanConverter<Term> term_conv{terms, terms.size()};
+    ArrayRefConverter<Term> term_conv{terms, terms.size()};
     Term& short_term = term_conv.storage().emplace_back(t);
     Term& long_term = term_conv.storage()[i];
 
@@ -101,8 +103,8 @@ bool VectorHoisting::hoistVectors(VariantType var) {
     // encoding.
     auto set_attribute = [&split](Term& t,
                                   TermAttribute::VectorSplit::Type type) {
-      SpanConverter<TermAttribute> attributes{t.attributes,
-                                              t.attributes.size()};
+      ArrayRefConverter<TermAttribute> attributes{t.attributes,
+                                                  t.attributes.size()};
       attributes.storage().push_back(TermAttribute{
           .value = TermAttribute::VectorSplit{
               .type = type,

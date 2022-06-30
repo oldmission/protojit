@@ -2,6 +2,7 @@
 #include <llvm/Support/Debug.h>
 
 #include "harness.hpp"
+#include "pj/protojit.hpp"
 #include "test/sizing.pj.hpp"
 
 namespace pj {

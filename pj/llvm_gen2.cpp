@@ -208,7 +208,7 @@ struct ProtoJitTypeConverter : public mlir::LLVMTypeConverter {
                  LLVMGenPass* pass)                                          \
         : OpConversionPattern<OP>(converter, ctx), pass(pass) {}             \
                                                                              \
-    LogicalResult matchAndRewrite(OP op, ArrayRef<Value> operands,           \
+    LogicalResult matchAndRewrite(OP op, llvm::ArrayRef<Value> operands,     \
                                   ConversionPatternRewriter& _) const final; \
                                                                              \
     LLVMGenPass* const pass;                                                 \
@@ -243,7 +243,8 @@ Value LLVMGenPass::getBufPtr(Location loc, ConversionPatternRewriter& _,
 }
 
 LogicalResult FuncOpLowering::matchAndRewrite(
-    FuncOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    FuncOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto* ctx = _.getContext();
   auto loc = op.getLoc();
 
@@ -332,7 +333,7 @@ LogicalResult FuncOpLowering::matchAndRewrite(
 }
 
 LogicalResult ProjectOpLowering::matchAndRewrite(
-    ProjectOp op, ArrayRef<Value> operands,
+    ProjectOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto base = operands[0];
@@ -376,7 +377,7 @@ LogicalResult ProjectOpLowering::matchAndRewrite(
 }
 
 LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
-    TranscodePrimitiveOp op, ArrayRef<Value> operands,
+    TranscodePrimitiveOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto src_type = op.src().getType().cast<ValueType>();
@@ -408,6 +409,7 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
       val = _.create<TruncOp>(loc, dst.toMLIR(), val);
     }
 
+    ASSERT(llvm::isPowerOf2_64(dst->alignment.bytes()));
     _.create<StoreOp>(op.getLoc(), val, dst_ptr, dst->alignment.bytes());
 
     _.eraseOp(op);
@@ -418,7 +420,8 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
 }
 
 LogicalResult TagOpLowering::matchAndRewrite(
-    TagOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    TagOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
   auto var_type = op.dst().getType().cast<VariantType>();
@@ -433,7 +436,7 @@ LogicalResult TagOpLowering::matchAndRewrite(
 }
 
 LogicalResult CopyTagOpLowering::matchAndRewrite(
-    CopyTagOp op, ArrayRef<Value> operands,
+    CopyTagOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   Value src = operands[0], dst = operands[1];
@@ -530,7 +533,8 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
 }
 
 LogicalResult MatchOpLowering::matchAndRewrite(
-    MatchOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    MatchOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
   // LLVM SwitchOp does not support 0 cases, so it must be handled explicitly.
@@ -575,7 +579,7 @@ LogicalResult MatchOpLowering::matchAndRewrite(
 }
 
 LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
-    InvokeCallbackOp op, ArrayRef<Value> operands,
+    InvokeCallbackOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
@@ -626,7 +630,8 @@ LogicalResult InvokeCallbackOpLowering::matchAndRewrite(
 }
 
 LogicalResult ThrowOpLowering::matchAndRewrite(
-    ThrowOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    ThrowOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
   auto [check_store, __] = pass->getEffectDefsFor(op);
@@ -639,7 +644,7 @@ LogicalResult ThrowOpLowering::matchAndRewrite(
 }
 
 LogicalResult SetCallbackOpLowering::matchAndRewrite(
-    SetCallbackOp op, ArrayRef<Value> operands,
+    SetCallbackOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto [__, callback_store] = pass->getEffectDefsFor(op);
@@ -653,7 +658,7 @@ LogicalResult SetCallbackOpLowering::matchAndRewrite(
 }
 
 LogicalResult ArrayIndexOpLowering::matchAndRewrite(
-    ArrayIndexOp op, ArrayRef<Value> operands,
+    ArrayIndexOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   Value offset = _.create<MulOp>(
@@ -666,7 +671,7 @@ LogicalResult ArrayIndexOpLowering::matchAndRewrite(
 }
 
 LogicalResult VectorIndexOpLowering::matchAndRewrite(
-    VectorIndexOp op, ArrayRef<Value> operands,
+    VectorIndexOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto type = op.vec().getType().cast<VectorType>();
@@ -714,7 +719,8 @@ LogicalResult VectorIndexOpLowering::matchAndRewrite(
 }
 
 LogicalResult AlignOpLowering::matchAndRewrite(
-    AlignOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    AlignOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   assert(op.alignment() == 1 || op.alignment() == 2 || op.alignment() == 4 ||
          op.alignment() == 8);
 
@@ -747,7 +753,7 @@ LogicalResult AlignOpLowering::matchAndRewrite(
 }
 
 LogicalResult AllocateOpLowering::matchAndRewrite(
-    AllocateOp op, ArrayRef<Value> operands,
+    AllocateOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto buf = operands[0];
@@ -785,7 +791,8 @@ LogicalResult AllocateOpLowering::matchAndRewrite(
 }
 
 LogicalResult LengthOpLowering::matchAndRewrite(
-    LengthOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    LengthOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto type = op.vec().getType().cast<VectorType>();
 
@@ -811,7 +818,7 @@ LogicalResult LengthOpLowering::matchAndRewrite(
 }
 
 LogicalResult StoreLengthOpLowering::matchAndRewrite(
-    StoreLengthOp op, ArrayRef<Value> operands,
+    StoreLengthOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto type = op.vec().getType().cast<VectorType>();
@@ -827,7 +834,7 @@ LogicalResult StoreLengthOpLowering::matchAndRewrite(
 }
 
 LogicalResult StoreRefOpLowering::matchAndRewrite(
-    StoreRefOp op, ArrayRef<Value> operands,
+    StoreRefOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto type = op.vec().getType().cast<VectorType>();
@@ -854,7 +861,7 @@ LogicalResult StoreRefOpLowering::matchAndRewrite(
 }
 
 LogicalResult DecodeCatchOpLowering::matchAndRewrite(
-    DecodeCatchOp op, ArrayRef<Value> operands,
+    DecodeCatchOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto* ctx = _.getContext();
   auto loc = op.getLoc();
@@ -940,7 +947,7 @@ LogicalResult DecodeCatchOpLowering::matchAndRewrite(
 }
 
 LogicalResult CallOpLowering::matchAndRewrite(
-    mlir::CallOp op, ArrayRef<Value> operands,
+    mlir::CallOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
@@ -1001,7 +1008,7 @@ LogicalResult CallOpLowering::matchAndRewrite(
 }
 
 LogicalResult DefaultOpLowering::matchAndRewrite(
-    DefaultOp op, ArrayRef<Value> operands,
+    DefaultOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
@@ -1010,6 +1017,7 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
         _.create<BitcastOp>(loc, LLVMPointerType::get(type.toMLIR()), op.dst());
     auto zero = _.create<LLVM::ConstantOp>(loc, type.toMLIR(),
                                            _.getIntegerAttr(type.toMLIR(), 0));
+    ASSERT(llvm::isPowerOf2_64(type->alignment.bytes()));
     _.create<StoreOp>(loc, zero, ptr, type->alignment.bytes());
 
     _.eraseOp(op);
@@ -1029,14 +1037,16 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
 }
 
 LogicalResult UnitOpLowering::matchAndRewrite(
-    UnitOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    UnitOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto null = _.create<LLVM::NullOp>(op.getLoc(), pass->bytePtrType());
   _.replaceOp(op, ValueRange{null});
   return success();
 }
 
 LogicalResult PoisonOpLowering::matchAndRewrite(
-    PoisonOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    PoisonOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
   auto ptr = pass->buildOffsetPtr(loc, _, operands[0], op.offset(), Bytes(1));
@@ -1049,7 +1059,8 @@ LogicalResult PoisonOpLowering::matchAndRewrite(
 }
 
 LogicalResult SizeOpLowering::matchAndRewrite(
-    SizeOp op, ArrayRef<Value> operands, ConversionPatternRewriter& _) const {
+    SizeOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
 
   // Get the result buffer from the SizeOp body
@@ -1083,7 +1094,7 @@ LogicalResult SizeOpLowering::matchAndRewrite(
 }
 
 LogicalResult ReflectOpLowering::matchAndRewrite(
-    ReflectOp op, ArrayRef<Value> operands,
+    ReflectOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   // TODO:
   // 1. Create binary representation of the source schema in the host's self
@@ -1096,7 +1107,7 @@ LogicalResult ReflectOpLowering::matchAndRewrite(
 }
 
 LogicalResult AssumeOpLowering::matchAndRewrite(
-    ir::AssumeOp op, ArrayRef<Value> operands,
+    ir::AssumeOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   _.create<LLVM::AssumeOp>(op.getLoc(), operands[0]);
   _.eraseOp(op);
@@ -1104,7 +1115,7 @@ LogicalResult AssumeOpLowering::matchAndRewrite(
 }
 
 LogicalResult DefineProtocolOpLowering::matchAndRewrite(
-    ir::DefineProtocolOp op, ArrayRef<Value> operands,
+    ir::DefineProtocolOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto proto_cst_type =
       LLVMArrayType::get(pass->intType(Bytes(1)), op.proto().size());

@@ -4,7 +4,7 @@
 #include <variant>
 
 #include "arch.hpp"
-#include "span.hpp"
+#include "array_ref.hpp"
 #include "type_support.hpp"
 #include "util.hpp"
 
@@ -73,6 +73,7 @@ inline ::llvm::hash_code hash_value(const Int& I) {
 inline Int type_intern(__attribute__((unused))
                        mlir::TypeStorageAllocator& allocator,
                        const Int& I) {
+  ASSERT(I.alignment.bits() != kNone);
   return I;
 }
 
@@ -135,7 +136,7 @@ struct StructField {
 struct Struct {
   /*** Parsed ***/
   // Invariant: fields are listed in alphabetical order.
-  Span<StructField> fields = {};
+  ArrayRef<StructField> fields = {};
 
   /*** Generated ***/
   Width size = Width::None();
@@ -216,7 +217,7 @@ struct Term {
   uint64_t tag;  // Must be >0. 0 is reserved for UNDEF.
 
   /*** Generated ***/
-  Span<TermAttribute> attributes;
+  ArrayRef<TermAttribute> attributes;
 
   bool operator==(const Term& other) const {
     return name == other.name && type == other.type && tag == other.tag &&
@@ -235,7 +236,7 @@ struct Term {
 // is at least as large as the size of the largest term.
 struct InlineVariant {
   /*** Parsed ***/
-  Span<Term> terms = {};
+  ArrayRef<Term> terms = {};
 
   /*** Generated ***/
   // Invariant: term and tag should not overlap.
@@ -281,7 +282,7 @@ struct InlineVariant {
 //
 // This representation may only be used on the wire.
 struct OutlineVariant {
-  Span<Term> terms = {};
+  ArrayRef<Term> terms = {};
 
   Width tag_width = Width::None();
   Width tag_alignment = Width::None();
@@ -331,7 +332,7 @@ inline V internVariant(mlir::TypeStorageAllocator& allocator,
         .name = allocator.copyInto(type_data.terms[i].name),
         .type = type_data.terms[i].type,
         .tag = type_data.terms[i].tag,
-        .attributes = Span<TermAttribute>{allocator.copyInto(
+        .attributes = ArrayRef<TermAttribute>{allocator.copyInto(
             type_data.terms[i].attributes)},
     };
     if (is_enum && !type_data.terms[i].type.isUnit()) {
@@ -367,7 +368,7 @@ struct VariantType : public NominalType {
 
   static bool classof(mlir::Type val);
 
-  Span<Term> terms() const;
+  ArrayRef<Term> terms() const;
   Width tag_width() const;
   Width tag_offset() const;
   Width term_offset() const;
@@ -393,7 +394,7 @@ struct InlineVariantType
   using Base::classof;
   using Base::get;
 
-  Span<Term> terms() const { return (*this)->terms; }
+  ArrayRef<Term> terms() const { return (*this)->terms; }
 
   friend struct NominalTypeBase<VariantType, InlineVariant, InlineVariantType>;
 };
@@ -407,13 +408,13 @@ struct OutlineVariantType
   using Base::classof;
   using Base::get;
 
-  Span<Term> terms() const { return (*this)->terms; }
+  ArrayRef<Term> terms() const { return (*this)->terms; }
 
   friend struct NominalTypeBase<VariantType, OutlineVariant,
                                 OutlineVariantType>;
 };
 
-inline Span<Term> VariantType::terms() const {
+inline ArrayRef<Term> VariantType::terms() const {
   if (auto v = dyn_cast<OutlineVariantType>()) {
     return v->terms;
   } else if (auto v = dyn_cast<InlineVariantType>()) {

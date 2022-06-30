@@ -11,3 +11,10 @@ struct CoordinateB external {
   x: int64;
   y: int64;
 }
+
+type Point external = CoordinateA;
+
+struct BoundingBox {
+  tl: Point;
+  br: Point;
+}

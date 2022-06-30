@@ -5,7 +5,7 @@
 #include "convert_internal.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
-#include "span.hpp"
+#include "array_ref.hpp"
 #include "util.hpp"
 #include "variant_outlining.hpp"
 #include "vector_hoisting.hpp"
@@ -19,7 +19,7 @@ void TypePass::replaceStructField(StructType type, intptr_t index,
                                   llvm::StringRef field_name) const {
   auto data = Struct(type);
 
-  SpanConverter<StructField> field_conv{data.fields, data.fields.size()};
+  ArrayRefConverter<StructField> field_conv{data.fields, data.fields.size()};
   if (!field_name.empty()) {
     field_conv.storage()[index].name = field_name;
   }
@@ -34,7 +34,7 @@ void replaceVariantTermGeneric(V type, intptr_t index, ValueType term_type,
                                llvm::StringRef term_name) {
   auto data = type.getTypeData();
 
-  SpanConverter<Term> term_conv{data.terms, data.terms.size()};
+  ArrayRefConverter<Term> term_conv{data.terms, data.terms.size()};
   if (!term_name.empty()) {
     term_conv.storage()[index].name = term_name;
   }

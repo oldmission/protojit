@@ -91,7 +91,7 @@ struct GeneratePass
                     PathAttr path_attr, bool frozen);
 
   Value generateTermCondition(mlir::OpBuilder& _, mlir::Location loc, Value src,
-                              Span<TermAttribute> dst_attributes);
+                              ArrayRef<TermAttribute> dst_attributes);
 
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                      VariantType src_type, VariantType dst_type,
@@ -200,9 +200,9 @@ Value GeneratePass::projectPath(mlir::OpBuilder& _, mlir::Location loc,
   return projectPath(_, loc, body, path_attr.narrow(), frozen);
 }
 
-Value GeneratePass::generateTermCondition(mlir::OpBuilder& _,
-                                          mlir::Location loc, Value src,
-                                          Span<TermAttribute> dst_attributes) {
+Value GeneratePass::generateTermCondition(
+    mlir::OpBuilder& _, mlir::Location loc, Value src,
+    ArrayRef<TermAttribute> dst_attributes) {
   auto cond = buildBool(loc, _, true);
   for (const TermAttribute& attr : dst_attributes) {
     Value cur_cond;
@@ -837,12 +837,13 @@ mlir::FuncOp GeneratePass::getOrCreateVectorTranscodeFn(
 struct EncodeFunctionLowering : public OpConversionPattern<EncodeFunctionOp> {
   using OpConversionPattern<EncodeFunctionOp>::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(EncodeFunctionOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(EncodeFunctionOp op,
+                                llvm::ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 };
 
 LogicalResult EncodeFunctionLowering::matchAndRewrite(
-    EncodeFunctionOp op, ArrayRef<Value> operands,
+    EncodeFunctionOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   _.eraseOp(op);
 
@@ -888,12 +889,13 @@ LogicalResult EncodeFunctionLowering::matchAndRewrite(
 struct DecodeFunctionLowering : public OpConversionPattern<DecodeFunctionOp> {
   using OpConversionPattern<DecodeFunctionOp>::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(DecodeFunctionOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(DecodeFunctionOp op,
+                                llvm::ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 };
 
 LogicalResult DecodeFunctionLowering::matchAndRewrite(
-    DecodeFunctionOp op, ArrayRef<Value> operands,
+    DecodeFunctionOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   _.eraseOp(op);
 
@@ -950,12 +952,13 @@ LogicalResult DecodeFunctionLowering::matchAndRewrite(
 struct SizeFunctionLowering : public OpConversionPattern<SizeFunctionOp> {
   using OpConversionPattern<SizeFunctionOp>::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(SizeFunctionOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(SizeFunctionOp op,
+                                llvm::ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 };
 
 LogicalResult SizeFunctionLowering::matchAndRewrite(
-    SizeFunctionOp op, ArrayRef<Value> operands,
+    SizeFunctionOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   _.eraseOp(op);
 
@@ -1003,14 +1006,14 @@ struct TranscodeOpLowering : public OpConversionPattern<TranscodeOp> {
     setHasBoundedRewriteRecursion(true);
   }
 
-  LogicalResult matchAndRewrite(TranscodeOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(TranscodeOp op, llvm::ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 
   GeneratePass* pass;
 };
 
 LogicalResult TranscodeOpLowering::matchAndRewrite(
-    TranscodeOp op, ArrayRef<Value> operands,
+    TranscodeOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
   auto src_type = op.src().getType().cast<ValueType>();
@@ -1112,12 +1115,12 @@ struct DefaultOpLowering : public OpConversionPattern<DefaultOp> {
     setHasBoundedRewriteRecursion(true);
   }
 
-  LogicalResult matchAndRewrite(DefaultOp op, ArrayRef<Value> operands,
+  LogicalResult matchAndRewrite(DefaultOp op, llvm::ArrayRef<Value> operands,
                                 ConversionPatternRewriter& _) const final;
 };
 
 LogicalResult DefaultOpLowering::matchAndRewrite(
-    DefaultOp op, ArrayRef<Value> operands,
+    DefaultOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto* ctx = _.getContext();
   auto loc = op.getLoc();
