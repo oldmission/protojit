@@ -1,6 +1,7 @@
 #include <cstdint>
 
 #include "pj/protojit.hpp"
+#include "pj/reflect.pj.hpp"
 #include "pj/schema/versions.hpp"
 
 #define GET_PROTO_SIZE(V) V##_getProtoSize

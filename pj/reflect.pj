@@ -25,10 +25,8 @@ enum ReferenceMode external {
 
 space reflect {
 
-type Name = char8[:][:];
-
 type Offset = int32;
-
+type Name = char8[:][:];
 type Path = char8[:][:];
 
 struct Int {
@@ -39,7 +37,7 @@ struct Int {
 
 struct Unit {}
 
-struct StructField {
+struct StructField external {
   type: Offset;
   name: char8[:];
   offset: Width;

@@ -1,3 +1,4 @@
+#include "pj/reflect.pj.hpp"
 #include "protojit.hpp"
 #include "util.hpp"
 
@@ -44,7 +45,7 @@ struct Any {
     }
   }
 
- protected:
+  //   protected: // SAMIR_TODO2
   Any(const reflect::Protocol* protocol, const char* data, int32_t offset)
       : protocol_(protocol), data_(data), offset_(offset) {}
   friend AnyStruct;

@@ -147,7 +147,6 @@ cc_library(
     srcs = [
         "reflect.cpp",
         "reflect.pj.hpp",
-        "reflect_types.cpp",
     ],
     hdrs = [
         "any.hpp",

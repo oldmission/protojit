@@ -34,6 +34,69 @@ struct Integer {
 
 struct Unit {};
 
+template <typename T, typename P = T>
+struct offset_span {  // NOLINT
+  offset_span() : offset_(0), size_(0) {}
+
+  offset_span(const T* data, size_t size) : size_(size) {
+    offset_ =
+        reinterpret_cast<intptr_t>(data) - reinterpret_cast<intptr_t>(this);
+  }
+
+  ~offset_span() {}
+
+  const T* base() const {
+    return reinterpret_cast<const T*>(reinterpret_cast<intptr_t>(this) +
+                                      offset_);
+  }
+
+  size_t size() const { return size_; }
+
+  offset_span(const offset_span& other) : size_(other.size_) {
+    offset_ = other.offset_ + reinterpret_cast<intptr_t>(&other) -
+              reinterpret_cast<intptr_t>(this);
+  }
+
+  offset_span& operator=(const offset_span& other) = delete;
+  offset_span(offset_span&& other) = delete;
+  offset_span& operator=(offset_span&& other) = delete;
+
+ private:
+  friend gen::BuildPJType<offset_span>;
+
+  intptr_t offset_;
+  size_t size_;
+};
+
+namespace gen {
+
+template <typename T, typename P>
+struct BuildPJType<offset_span<T, P>> {
+  static const PJVectorType* build(PJContext* ctx, const PJDomain* domain) {
+    using Span = offset_span<T, P>;
+    return PJCreateVectorType(ctx,
+                              /*elem=*/BuildPJType<P>::build(ctx, domain),
+                              /*min_length=*/0,
+                              /*max_length=*/kNone,
+                              /*wire_min_length=*/0,
+                              /*ppl_count=*/0,
+                              /*length_offset=*/offsetof(Span, size_) * 8,
+                              /*length_size=*/sizeof(Span::size_) * 8,
+                              /*ref_offset=*/offsetof(Span, offset_) * 8,
+                              /*ref_size=*/sizeof(Span::offset_) * 8,
+                              /*reference_mode=*/PJ_REFERENCE_MODE_OFFSET,
+                              /*inline_payload_offset=*/kNone,
+                              /*inline_payload_size=*/kNone,
+                              /*partial_payload_offset=*/kNone,
+                              /*partial_payload_size=*/kNone,
+                              /*size=*/sizeof(Span) * 8,
+                              /*alignment=*/alignof(Span) * 8,
+                              /*outlined_payload_alignment=*/alignof(T) * 8);
+  }
+};
+
+}  // namespace gen
+
 template <typename T, size_t MinLength, intptr_t MaxLength>
 class ArrayView {
  public:
@@ -216,7 +279,5 @@ struct BuildPJType<::pj::ArrayView<Elem, MinLength, MaxLength>> {
 
 }  // namespace gen
 }  // namespace pj
-
-#include "pj/reflect.pj.hpp"
 
 #endif  // PROTOJIT_PROTOJIT_HPP
