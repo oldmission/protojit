@@ -88,7 +88,7 @@ Protocol reflect(llvm::BumpPtrAllocator& alloc, types::ProtocolType protocol) {
 
 types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx,
                            types::WireDomainAttr domain) {
-  Span<Type> pool{type.types.begin(), type.types.size()};
+  Span<Type> pool{type.types.base(), type.types.size()};
   const Type& head = pool[type.head];
   return types::ProtocolType::get(
       &ctx, types::Protocol{

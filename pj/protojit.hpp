@@ -141,15 +141,6 @@ class ArrayView<T, 0, MaxLength> {
   friend struct gen::BuildPJType;
 };
 
-struct Any {
- private:
-  const void* type_;
-  const void* data_;
-
-  template <typename U>
-  friend struct gen::BuildPJType;
-};
-
 template <typename T, typename S>
 using DecodeHandler = void (*)(const T* msg, S* state);
 
@@ -227,22 +218,5 @@ struct BuildPJType<::pj::ArrayView<Elem, MinLength, MaxLength>> {
 }  // namespace pj
 
 #include "pj/reflect.pj.hpp"
-
-namespace pj {
-namespace gen {
-
-template <>
-struct BuildPJType<Any> {
-  static const auto* build(PJContext* ctx, const PJDomain* domain) {
-    return PJCreateAnyType(
-        ctx, offsetof(Any, data_) << 3, sizeof(Any::data_) << 3,
-        offsetof(Any, type_) << 3, sizeof(Any::type_) << 3, sizeof(Any) << 3,
-        alignof(Any) << 3,
-        ::pj::gen::BuildPJType<::pj::reflect::Protocol>::build(ctx, domain));
-  }
-};
-
-}  // namespace gen
-}  // namespace pj
 
 #endif  // PROTOJIT_PROTOJIT_HPP

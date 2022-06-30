@@ -3,24 +3,24 @@
 
 #include <functional>
 
-#include "harness.hpp"
+#include "pj/any.hpp"
 
-#include "test/any.pj.hpp"
+#include "harness.hpp"
+#include "pj/protojit.hpp"
+
+#include "test/ints.pj.hpp"
 
 namespace pj {
 
 TEST_F(PJTest, IntSameTest) {
-  Int32 x{.i = 1};
+  Int32 x{.i = 42};
   Any y;
 
   auto results = transcode(Options<Int32, Any>{.from = &x, .to = &y});
 
-  // TODO: use offsets instead of pointers in the type representation.
-  // Pointers don't work because the string constant gets moved around
-  // during compilation.
-  // TODO: the data pointer isn't getting set for some reason.
-  asm("int3");
-  (void)y;
+  EXPECT_EQ(y.kind(), Any::Kind::Struct);
+  EXPECT_EQ(AnyStruct(y).numFields(), 1);
+  EXPECT_EQ(AnyStruct(y).getField(0).name(), "i");
 }
 
 }  // namespace pj

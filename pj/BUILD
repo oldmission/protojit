@@ -126,9 +126,7 @@ cc_binary(
         "validate.cpp",
         "validate.hpp",
     ],
-    linkopts = [
-        "-lstdc++fs",
-    ],
+    linkopts = ["-lstdc++fs"],
     deps = [
         ":core",
         ":plan",
@@ -141,7 +139,7 @@ genrule(
     srcs = ["reflect.pj"],
     outs = ["reflect.pj.hpp"],
     cmd = "$(location //pj:pjc) $(location reflect.pj) --hpp $@",
-    tools = ["//pj:pjc"],
+    tools = [":pjc"],
 )
 
 cc_library(
@@ -149,17 +147,18 @@ cc_library(
     srcs = [
         "reflect.cpp",
         "reflect.pj.hpp",
+        "reflect_types.cpp",
     ],
     hdrs = [
+        "any.hpp",
         "protojit.hpp",
         "reflect.hpp",
+        "reflect_types.hpp",
         "runtime.h",
         "runtime.hpp",
     ],
     linkopts = ["-lstdc++fs"],
-    deps = [
-        ":core",
-    ],
+    deps = [":core"],
 )
 
 cc_library(

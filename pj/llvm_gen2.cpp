@@ -14,6 +14,7 @@
 #include "portal.hpp"
 #include "protojit.hpp"
 #include "reflect.hpp"
+#include "reflect_types.hpp"
 #include "side_effect_analysis.hpp"
 #include "util.hpp"
 
@@ -1139,18 +1140,32 @@ LogicalResult ReflectOpLowering::matchAndRewrite(
       _.create<GEPOp>(op.getLoc(), pass->bytePtrType(), operands[1],
                       pass->buildWordConstant(
                           op.getLoc(), _, dst_any->data_ref_offset.bytes()));
-  save_data_ptr = _.create<BitcastOp>(
-      op.getLoc(), LLVMPointerType::get(pass->bytePtrType()), operands[1]);
 
-  Value save_schema_ptr =
-      _.create<GEPOp>(op.getLoc(), pass->bytePtrType(), operands[1],
-                      pass->buildWordConstant(
-                          op.getLoc(), _, dst_any->type_ref_offset.bytes()));
+  save_data_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(pass->bytePtrType()), save_data_ptr);
+
+  Value save_schema_ptr = _.create<GEPOp>(
+      op.getLoc(), pass->bytePtrType(), operands[1],
+      pass->buildWordConstant(op.getLoc(), _,
+                              dst_any->protocol_ref_offset.bytes()));
+
   save_schema_ptr = _.create<BitcastOp>(
       op.getLoc(), LLVMPointerType::get(schema_ptr.getType()), save_schema_ptr);
 
+  Value save_offset_ptr = _.create<GEPOp>(
+      op.getLoc(), pass->bytePtrType(), operands[1],
+      pass->buildWordConstant(op.getLoc(), _, dst_any->offset_offset.bytes()));
+
+  save_offset_ptr = _.create<BitcastOp>(
+      op.getLoc(), LLVMPointerType::get(pass->intType(dst_any->offset_width)),
+      save_offset_ptr);
+
   _.create<StoreOp>(op.getLoc(), operands[0], save_data_ptr);
   _.create<StoreOp>(op.getLoc(), schema_ptr, save_schema_ptr);
+  _.create<StoreOp>(op.getLoc(),
+                    pass->buildIntConstant(
+                        op.getLoc(), _, dst_any->offset_width, rf_proto.head),
+                    save_offset_ptr);
 
   _.eraseOp(op);
   return success();

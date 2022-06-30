@@ -2,6 +2,10 @@
 // it has a cyclic dependency on 'protojit.hpp'. Just include 'protojit.hpp'
 // instead.
 
+language cpp """
+  #include "pj/reflect_types.hpp"
+"""
+
 space pj {
 
 enum Sign external {
@@ -126,7 +130,7 @@ variant Type {
   Vector: Vector;
 }
 
-struct Protocol {
+struct Protocol external {
   pj_version: int32;
   head: int32;
   buffer_offset: Width;

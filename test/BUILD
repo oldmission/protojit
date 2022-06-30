@@ -82,7 +82,8 @@ pj_library(
 pj_test(
     name = "test_any",
     srcs = ["test_any.cpp"],
-    protos = ["any.pj"],
+    protos = [],
+    deps = [":test_ints_pj"],
 )
 
 # TODO: restore test

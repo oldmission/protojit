@@ -736,8 +736,11 @@ struct Any {
   Width data_ref_width;
   Width data_ref_offset;
 
-  Width type_ref_width;
-  Width type_ref_offset;
+  Width protocol_ref_width;
+  Width protocol_ref_offset;
+
+  Width offset_width;
+  Width offset_offset;
 
   Width size;
   Width alignment;
@@ -747,8 +750,10 @@ struct Any {
   bool operator==(const Any& other) const {
     return data_ref_width == other.data_ref_width &&
            data_ref_offset == other.data_ref_offset &&
-           type_ref_width == other.type_ref_width &&
-           type_ref_offset == other.type_ref_offset && size == other.size &&
+           protocol_ref_width == other.protocol_ref_width &&
+           protocol_ref_offset == other.protocol_ref_offset &&
+           offset_width == other.offset_width &&
+           offset_offset == other.offset_offset && size == other.size &&
            alignment == other.alignment && self == other.self;
   }
 
@@ -770,7 +775,8 @@ inline ::llvm::hash_code hash_value(const Any& A) {
   using ::llvm::hash_value;
   return llvm::hash_combine(
       hash_value(A.data_ref_width), hash_value(A.data_ref_offset),
-      hash_value(A.type_ref_width), hash_value(A.type_ref_offset),
+      hash_value(A.protocol_ref_width), hash_value(A.protocol_ref_offset),
+      hash_value(A.offset_width), hash_value(A.offset_offset),
       hash_value(A.size), hash_value(A.alignment), hash_value(A.self));
 }
 

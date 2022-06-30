@@ -60,15 +60,18 @@ const PJDomain* PJGetWireDomain(PJContext* ctx) {
 }
 
 const PJAnyType* PJCreateAnyType(PJContext* c, Bits data_ref_offset,
-                                 Bits data_ref_width, Bits type_ref_offset,
-                                 Bits type_ref_width, Bits size, Bits alignment,
+                                 Bits data_ref_width, Bits protocol_ref_offset,
+                                 Bits protocol_ref_width, Bits offset_offset,
+                                 Bits offset_width, Bits size, Bits alignment,
                                  const void* self_type) {
   auto* ctx = &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_;
   auto any = pj::types::Any{
       .data_ref_width = pj::Bits(data_ref_width),
       .data_ref_offset = pj::Bits(data_ref_offset),
-      .type_ref_width = pj::Bits(type_ref_width),
-      .type_ref_offset = pj::Bits(type_ref_offset),
+      .protocol_ref_width = pj::Bits(protocol_ref_width),
+      .protocol_ref_offset = pj::Bits(protocol_ref_offset),
+      .offset_width = pj::Bits(offset_width),
+      .offset_offset = pj::Bits(offset_offset),
       .size = pj::Bits(size),
       .alignment = pj::Bits(alignment),
       .self = pj::types::ProtocolType::get(
