@@ -415,6 +415,7 @@ types::ValueType unreflect(const InlineVariant& type, int32_t index,
   auto result = types::InlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::InlineVariant{
       .terms = unreflectTerms(type.terms, index, ctx, alloc, domain, pool),
+      .default_term = type.default_term,
       .term_offset = type.term_offset,
       .term_size = type.term_size,
       .tag_offset = type.tag_offset,
@@ -449,6 +450,7 @@ types::ValueType unreflect(const OutlineVariant& type, int32_t index,
   auto result = types::OutlineVariantType::get(&ctx, domain, name_conv.get());
   result.setTypeData(types::OutlineVariant{
       .terms = unreflectTerms(type.terms, index, ctx, alloc, domain, pool),
+      .default_term = type.default_term,
       .tag_width = type.tag_width,
       .tag_alignment = type.tag_alignment,
       .term_offset = type.term_offset,
@@ -530,6 +532,7 @@ types::ValueType reflectableTypeFor(types::ValueType type,
     if (auto outl = type.dyn_cast<types::OutlineVariantType>()) {
       types::InlineVariant result{
           .terms = terms,
+          .default_term = outl->default_term,
           .term_offset = Bytes(0),
           .term_size = term_max_size,
           .tag_offset = term_max_size,

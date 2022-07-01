@@ -84,13 +84,14 @@ const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag);
 const PJInlineVariantType* PJCreateInlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
     const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_size, Bits size,
-    Bits alignment);
+    uintptr_t default_term, Bits term_offset, Bits term_size, Bits tag_offset,
+    Bits tag_size, Bits size, Bits alignment);
 
 const PJOutlineVariantType* PJCreateOutlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
     const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment);
+    uintptr_t default_term, Bits tag_width, Bits tag_alignment,
+    Bits term_offset, Bits term_alignment);
 
 const PJArrayType* PJCreateArrayType(PJContext* c, const void* type,
                                      uint64_t length, Bits elem_size,

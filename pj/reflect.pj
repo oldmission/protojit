@@ -76,6 +76,7 @@ struct Term {
 struct InlineVariant {
   name: Name;
   terms: Term[:];
+  default_term: uint64;
   term_offset: Width;
   term_size: Width;
   tag_offset: Width;
@@ -87,6 +88,7 @@ struct InlineVariant {
 struct OutlineVariant {
   name: Name;
   terms: Term[:];
+  default_term: uint64;
   tag_width: Width;
   tag_alignment: Width;
   term_offset: Width;

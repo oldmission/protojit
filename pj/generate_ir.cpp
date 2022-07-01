@@ -95,7 +95,7 @@ struct GeneratePass
 
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                      VariantType src_type, VariantType dst_type,
-                     const Term* src_term,
+                     ValueType src_term_type,
                      llvm::SmallVector<const Term*, 1> dst_terms, Value src,
                      Value dst, Value& buffer,
                      llvm::StringMap<uint64_t>& handler_map);
@@ -228,14 +228,16 @@ Value GeneratePass::generateTermCondition(
 
 void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
                                  VariantType src_type, VariantType dst_type,
-                                 const Term* src_term,
+                                 ValueType src_term_type,
                                  llvm::SmallVector<const Term*, 1> dst_terms,
                                  Value src, Value dst, Value& buffer,
                                  llvm::StringMap<uint64_t>& handler_map) {
   auto* ctx = _.getContext();
 
+  const Term& default_term = dst_type.terms()[dst_type.default_term()];
+
   if (!dst_terms.empty()) {
-    auto src_body = _.create<ir::ProjectOp>(loc, src_term->type, src,
+    auto src_body = _.create<ir::ProjectOp>(loc, src_term_type, src,
                                             src_type.term_offset(), true);
 
     mlir::OpBuilder::InsertPoint ip;
@@ -281,11 +283,11 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
 
     _.restoreInsertionPoint(ip);
   } else {
-    _.create<TagOp>(loc, dst, VariantType::kUndefTag);
+    _.create<TagOp>(loc, dst, default_term.tag);
   }
 
-  if (auto it =
-          handler_map.find(dst_terms.empty() ? "undef" : dst_terms[0]->name);
+  if (auto it = handler_map.find(dst_terms.empty() ? default_term.name
+                                                   : dst_terms[0]->name);
       it != handler_map.end()) {
     assert(dst_terms.size() <= 1);
     _.create<SetCallbackOp>(
@@ -404,6 +406,8 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     it->second.emplace_back(&term);
   }
 
+  const Term* default_term = &dst_type.terms()[dst_type.default_term()];
+
   llvm::StringMap<uint64_t> handler_map;
   for (auto& attr : handlers) {
     auto handler = attr.cast<DispatchHandlerAttr>();
@@ -413,24 +417,22 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
   llvm::SmallVector<std::pair<intptr_t, mlir::Block*>, 4> blocks;
 
   if (path.getValue().size() > 0) {
-    // Source term is known. Encode it, or encode undef if missing in the
-    // target.
+    // Source term is known, so encode it immediately.
     auto src_term_name = path.getValue()[0];
 
-    const Term* src_term = nullptr;
-    for (auto& term : src_type.terms()) {
-      if (term.name == src_term_name) src_term = &term;
-    }
-    assert(src_term_name == "undef" || src_term != nullptr);
+    const Term* src_term =
+        std::find_if(src_type.terms().begin(), src_type.terms().end(),
+                     [&](const Term& t) { return t.name == src_term_name; });
+    assert(src_term != nullptr);
 
     Value result_buf = func.getArgument(2);
     if (auto it = dst_terms.find(src_term_name.str()); it != dst_terms.end()) {
-      assert(src_term_name != "undef");
-      transcodeTerm(_, loc, src_type, dst_type, src_term, it->second, src, dst,
-                    result_buf, handler_map);
+      transcodeTerm(_, loc, src_type, dst_type, src_term->type, it->second, src,
+                    dst, result_buf, handler_map);
+
     } else {
-      transcodeTerm(_, loc, src_type, dst_type, src_term, {}, src, dst,
-                    result_buf, handler_map);
+      transcodeTerm(_, loc, src_type, dst_type, src_term->type, {default_term},
+                    src, dst, result_buf, handler_map);
     }
 
     _.create<ReturnOp>(loc, result_buf);
@@ -438,30 +440,29 @@ mlir::FuncOp GeneratePass::getOrCreateVariantTranscodeFn(
     // Source term is not known; dispatch on it.
     llvm::SmallVector<std::pair<intptr_t, mlir::Block*>, 4> blocks;
 
-    // Check for undef in the source.
     auto* default_block = _.createBlock(&func.body());
     {
       _.setInsertionPointToStart(default_block);
-      Value result_buf = func.getArgument(2);
 
-      transcodeTerm(_, loc, src_type, dst_type, nullptr, {}, src, dst,
-                    result_buf, handler_map);
+      Value result_buf = func.getArgument(2);
+      transcodeTerm(_, loc, src_type, dst_type, UnitType::get(_.getContext()),
+                    {default_term}, src, dst, result_buf, handler_map);
 
       _.create<ReturnOp>(loc, result_buf);
     }
 
-    for (auto& src_term : src_type.terms()) {
+    for (const auto& src_term : src_type.terms()) {
       auto* block = _.createBlock(&func.body());
       _.setInsertionPointToStart(block);
-      Value result_buf = func.getArgument(2);
 
+      Value result_buf = func.getArgument(2);
       if (auto it = dst_terms.find(src_term.name.str());
           it != dst_terms.end()) {
-        transcodeTerm(_, loc, src_type, dst_type, &src_term, it->second, src,
-                      dst, result_buf, handler_map);
+        transcodeTerm(_, loc, src_type, dst_type, src_term.type, it->second,
+                      src, dst, result_buf, handler_map);
       } else {
-        transcodeTerm(_, loc, src_type, dst_type, &src_term, {}, src, dst,
-                      result_buf, handler_map);
+        transcodeTerm(_, loc, src_type, dst_type, src_term.type, {default_term},
+                      src, dst, result_buf, handler_map);
       }
 
       _.create<ReturnOp>(loc, result_buf);

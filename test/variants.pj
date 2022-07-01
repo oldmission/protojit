@@ -64,3 +64,28 @@ struct VecVar {
   vec: uint64[:];
   var: Var4;
 }
+
+struct Header {
+  id: uint64;
+}
+
+struct MessageA {
+  id: uint64;
+  number: uint64;
+}
+
+struct MessageB {
+  id: uint64;
+  character: char8;
+}
+
+variant DefaultA {
+  default unknown: Header;
+  a: MessageA;
+}
+
+variant DefaultAB {
+  default unknown: Header;
+  a: MessageA;
+  b: MessageB;
+}
