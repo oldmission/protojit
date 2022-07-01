@@ -283,7 +283,7 @@ cc_shared_library(
         ":plan",
         ":reflect",
         ":runtime_bootstrap",
-        ":schema_precompile_obj",
+        ":schema_precompile",
         "@llvm_terminfo//:terminfo",
         "@llvm_zlib//:zlib",
         "@llvm-project//llvm:AggressiveInstCombine",
