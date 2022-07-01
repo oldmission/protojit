@@ -457,7 +457,7 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
 
   bool exact_match = true;
 
-  std::vector<std::pair<uint64_t, uint64_t>> tag_mapping{{0, 0}};
+  std::vector<std::pair<uint64_t, uint64_t>> tag_mapping;
   for (auto& term : src_terms) {
     if (auto it = dst_terms.find(term.name); it != dst_terms.end()) {
       exact_match &= it->second->tag == term.tag;
@@ -521,11 +521,13 @@ LogicalResult CopyTagOpLowering::matchAndRewrite(
     _.create<scf::YieldOp>(loc, result);
   }
 
-  // src_tag is not in bounds, use undef.
+  // src_tag is not in bounds, use default.
   {
     _.setInsertionPointToStart(dst_tag.thenBlock());
-    Value undef_tag = pass->buildIntConstant(loc, _, dst_type->tag_width, 0);
-    _.create<scf::YieldOp>(loc, undef_tag);
+    Value default_tag =
+        pass->buildIntConstant(loc, _, dst_type->tag_width,
+                               dst_type->terms[dst_type->default_term].tag);
+    _.create<scf::YieldOp>(loc, default_tag);
   }
 
   _.eraseOp(op);

@@ -253,6 +253,49 @@ TEST_F(PJTest, VariantToEnum) {
   EXPECT_EQ(T, EnumA::x);
 }
 
+TEST_P(PJVariantTest, DefaultForwards) {
+  DefaultA F = {
+      .value = {.a = {.id = 42, .number = 22}},
+      .tag = DefaultA::Kind::a,
+  };
+  DefaultAB T;
+
+  auto results = transcode(Options<DefaultA, DefaultAB>{
+      .from = &F, .to = &T, .src_path = "a", .tag_path = "_"});
+
+  EXPECT_EQ(T.tag, DefaultAB::Kind::a);
+  EXPECT_EQ(T.value.a.id, 42);
+  EXPECT_EQ(T.value.a.number, 22);
+}
+
+TEST_P(PJVariantTest, DefaultBackwards) {
+  DefaultAB F = {
+      .value = {.b = {.id = 42, .character = 'A'}},
+      .tag = DefaultAB::Kind::b,
+  };
+  DefaultA T;
+
+  auto results = transcode(Options<DefaultAB, DefaultA>{
+      .from = &F, .to = &T, .src_path = "b", .tag_path = "_"});
+
+  EXPECT_EQ(T.tag, DefaultA::Kind::unknown);
+  EXPECT_EQ(T.value.unknown.id, 42);
+}
+
+TEST_P(PJVariantTest, EncodeDefault) {
+  DefaultA F = {
+      .value = {.unknown = {.id = 42}},
+      .tag = DefaultA::Kind::unknown,
+  };
+  DefaultAB T;
+
+  auto results = transcode(Options<DefaultA, DefaultAB>{
+      .from = &F, .to = &T, .src_path = "unknown", .tag_path = "_"});
+
+  EXPECT_EQ(T.tag, DefaultAB::Kind::unknown);
+  EXPECT_EQ(T.value.a.id, 42);
+}
+
 // Automatically tests all combinations of src_path and tag_path being provided
 // or not being provided.
 INSTANTIATE_TEST_SUITE_P(Variants, PJVariantTest,

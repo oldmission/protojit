@@ -47,6 +47,14 @@ struct ParseState {
   // Cleared after parsing a `VariantDecl` or `EnumDecl` rule.
   std::map<std::string, uint64_t> explicit_tags;
 
+  // Populated after parsing a DefaultDecl.
+  // Cleared after parsing VariantFieldDecl or EnumFieldDecl.
+  bool is_default;
+
+  // Populated after parsing a VariantFieldDecl or EnumFieldDecl.
+  // Cleared after parsing VariantDecl or EnumDecl.
+  std::string default_term;
+
   // Used when parsing int types and modifiers.
   // Populated after parsing a 'Type' rule.
   types::ValueType type;
@@ -451,22 +459,49 @@ BEGIN_ACTION(ExplicitTag) {
 }
 END_ACTION()
 
+struct DefaultDecl : KEYWORD("default") {};
+
+BEGIN_ACTION(DefaultDecl) { __ is_default = true; }
+END_ACTION()
+
 struct ExplicitTagDecl : opt<if_must<tok<'='>, ExplicitTag>> {};
 
-struct VariantFieldDecl
-    : if_must<Id, opt<tok<':'>, Type>, ExplicitTagDecl, tok<';'>> {};
-
-BEGIN_ACTION(VariantFieldDecl) {
+template <typename ActionInput>
+static void handleVariantField(const ActionInput& in, ParseState* state,
+                               bool is_enum) {
   auto field_name = __ popId();
-  // The type may be null, indicating no payload is attached.
-  __ fields[field_name] = __ type ? __ type : types::UnitType::get(&__ ctx);
-  __ type = nullptr;
+  if (is_enum) {
+    __ fields[field_name] = types::UnitType::get(&__ ctx);
+  } else {
+    // The type may be null, indicating no payload is attached.
+    __ fields[field_name] = __ type ? __ type : types::UnitType::get(&__ ctx);
+    __ type = nullptr;
+  }
   __ field_order.push_back(field_name);
   if (__ explicit_tag) {
     __ explicit_tags[field_name] = __ explicit_tag;
     __ explicit_tag = 0;
   }
+  if (__ is_default) {
+    if (!__ default_term.empty()) {
+      throw parse_error("Cannot have multiple default terms.\n", in.position());
+    }
+    __ default_term = field_name;
+    __ is_default = false;
+  }
 }
+
+struct VariantFieldDecl
+    : if_must<sor<if_must<DefaultDecl, Id>, Id>, opt<tok<':'>, Type>,
+              ExplicitTagDecl, tok<';'>> {};
+
+BEGIN_ACTION(VariantFieldDecl) { handleVariantField(in, state, false); }
+END_ACTION()
+
+struct EnumFieldDecl
+    : if_must<sor<if_must<DefaultDecl, Id>, Id>, ExplicitTagDecl, tok<';'>> {};
+
+BEGIN_ACTION(EnumFieldDecl) { handleVariantField(in, state, true); }
 END_ACTION()
 
 template <typename ActionInput>
@@ -480,7 +515,22 @@ static void handleVariant(const ActionInput& in, ParseState* state,
     reserved_tags.insert(tag);
   }
 
-  uint64_t cur_tag = 1;
+  // Add undef default term if there is no default term, and move the default
+  // term to the beginning if there is.
+  size_t default_term_idx;
+  if (__ default_term.empty()) {
+    __ fields["undef"] = types::UnitType::get(&__ ctx);
+    __ field_order.insert(__ field_order.begin(), "undef");
+    default_term_idx = 0;
+  } else {
+    auto it = std::find(__ field_order.begin(), __ field_order.end(),
+                        __ default_term);
+    assert(it != __ field_order.end());
+    default_term_idx = std::distance(__ field_order.begin(), it);
+  }
+
+  // Set tag values that were not explicitly provided.
+  uint64_t cur_tag = 0;
   for (const auto& name : __ field_order) {
     auto it = __ fields.find(name);
     assert(it != __ fields.end());
@@ -510,7 +560,9 @@ static void handleVariant(const ActionInput& in, ParseState* state,
       &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
 
   types::InlineVariant data{
-      .terms = ArrayRef<types::Term>{terms.data(), terms.size()}};
+      .terms = ArrayRef<types::Term>{terms.data(), terms.size()},
+      .default_term = default_term_idx,
+  };
   validate(data, in.position());
   type.setTypeData(data);
 
@@ -527,25 +579,13 @@ static void handleVariant(const ActionInput& in, ParseState* state,
   __ field_order.clear();
   __ explicit_tags.clear();
   __ is_external = false;
+  __ default_term.clear();
 }
 
 struct VariantDecl : if_must<KEYWORD("variant"), Id, opt<ExternalDecl>, LB,
                              star<VariantFieldDecl>, RB> {};
 
 BEGIN_ACTION(VariantDecl) { handleVariant(in, state, /*is_enum=*/false); }
-END_ACTION()
-
-struct EnumFieldDecl : if_must<Id, ExplicitTagDecl, tok<';'>> {};
-
-BEGIN_ACTION(EnumFieldDecl) {
-  auto field_name = __ popId();
-  __ fields[field_name] = types::UnitType::get(&__ ctx);
-  __ field_order.push_back(field_name);
-  if (__ explicit_tag) {
-    __ explicit_tags[field_name] = __ explicit_tag;
-    __ explicit_tag = 0;
-  }
-}
 END_ACTION()
 
 struct EnumDecl : if_must<KEYWORD("enum"), Id, opt<ExternalDecl>, LB,

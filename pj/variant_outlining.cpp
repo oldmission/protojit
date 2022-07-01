@@ -26,6 +26,7 @@ ValueType VariantOutlining::tryOutlineVariant(Type type, PathAttr path) {
     // OutlineVariantOffsetGeneration. tag_alignment and term_alignment will be
     // similarly set in WireLayout.
     outline.setTypeData({.terms = var->terms,
+                         .default_term = var->default_term,
                          .tag_width = var->tag_width,
                          .tag_alignment = Width::None(),
                          .term_offset = Bytes(0),

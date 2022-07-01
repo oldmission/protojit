@@ -142,8 +142,8 @@ const PJTerm* PJCreateTerm(const char* name, const void* type, uint64_t tag) {
 const PJInlineVariantType* PJCreateInlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
     const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits term_offset, Bits term_size, Bits tag_offset, Bits tag_width,
-    Bits size, Bits alignment) {
+    uintptr_t default_term, Bits term_offset, Bits term_size, Bits tag_offset,
+    Bits tag_width, Bits size, Bits alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
   pj::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
@@ -156,6 +156,7 @@ const PJInlineVariantType* PJCreateInlineVariantType(
   auto inline_variant_type = pj::types::InlineVariantType::get(
       &ctx->ctx_, ConvertDomain(domain), name_converter.get());
   inline_variant_type.setTypeData({.terms = terms_converter.get(),
+                                   .default_term = default_term,
                                    .term_offset = pj::Bits(term_offset),
                                    .term_size = pj::Bits(term_size),
                                    .tag_offset = pj::Bits(tag_offset),
@@ -170,7 +171,8 @@ const PJInlineVariantType* PJCreateInlineVariantType(
 const PJOutlineVariantType* PJCreateOutlineVariantType(
     PJContext* c, uintptr_t name_size, const char* name[],
     const PJDomain* domain, uintptr_t num_terms, const PJTerm* terms[],
-    Bits tag_width, Bits tag_alignment, Bits term_offset, Bits term_alignment) {
+    uintptr_t default_term, Bits tag_width, Bits tag_alignment,
+    Bits term_offset, Bits term_alignment) {
   pj::ProtoJitContext* ctx = reinterpret_cast<pj::ProtoJitContext*>(c);
 
   pj::ArrayRefConverter<llvm::StringRef> name_converter{name, name_size};
@@ -184,6 +186,7 @@ const PJOutlineVariantType* PJCreateOutlineVariantType(
       &ctx->ctx_, ConvertDomain(domain), name_converter.get());
   outline_variant_type.setTypeData(
       {.terms = terms_converter.get(),
+       .default_term = default_term,
        .tag_width = pj::Bits(tag_width),
        .tag_alignment = pj::Bits(tag_alignment),
        .term_offset = pj::Bits(term_offset),

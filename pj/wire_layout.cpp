@@ -54,6 +54,7 @@ ValueType WireLayout::visitVariant(Variant type) {
     auto packed = OutlineVariantType::get(&ctx_, wire_domain_, type.name());
     // term_offset will be set in OutlineVariantOffsetGeneration.
     packed.setTypeData({.terms = terms,
+                        .default_term = type.default_term(),
                         .tag_width = tag_width,
                         .tag_alignment = tag_align,
                         .term_offset = Bytes(0),
@@ -64,6 +65,7 @@ ValueType WireLayout::visitVariant(Variant type) {
     const Width tag_offset = RoundUp(term_offset + term_size, tag_align);
     auto packed = InlineVariantType::get(&ctx_, wire_domain_, type.name());
     packed.setTypeData({.terms = terms,
+                        .default_term = type.default_term(),
                         .term_offset = term_offset,
                         .term_size = term_size,
                         .tag_offset = tag_offset,

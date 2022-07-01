@@ -1,5 +1,6 @@
 #pragma once
 
+#include <numeric>
 #include <sstream>
 #include <variant>
 
@@ -237,6 +238,7 @@ struct Term {
 struct InlineVariant {
   /*** Parsed ***/
   ArrayRef<Term> terms = {};
+  uint64_t default_term;
 
   /*** Generated ***/
   // Invariant: term and tag should not overlap.
@@ -283,6 +285,7 @@ struct InlineVariant {
 // This representation may only be used on the wire.
 struct OutlineVariant {
   ArrayRef<Term> terms = {};
+  uint64_t default_term;
 
   Width tag_width = Width::None();
   Width tag_alignment = Width::None();
@@ -323,27 +326,41 @@ struct OutlineVariant {
 template <typename V>
 inline V internVariant(mlir::TypeStorageAllocator& allocator,
                        const V& type_data) {
+  // Must at least contain a default term.
+  assert(type_data.terms.size() > 0);
+
+  V result = type_data;
+
+  // Sort the indices of the terms in alphabetical order of the terms.
+  std::vector<size_t> indices(type_data.terms.size());
+  std::iota(indices.begin(), indices.end(), 0);
+  std::sort(indices.begin(), indices.end(), [&](size_t l, size_t r) {
+    return type_data.terms[l].name < type_data.terms[r].name;
+  });
+
+  result.default_term = std::distance(
+      indices.begin(),
+      std::find(indices.begin(), indices.end(), type_data.default_term));
+
+  // Intern the terms in order of indices.
   auto* terms = reinterpret_cast<Term*>(
       allocator.allocate(sizeof(Term) * type_data.terms.size(), alignof(Term)));
 
   bool is_enum = true;
   for (uintptr_t i = 0; i < type_data.terms.size(); ++i) {
+    const auto& term = type_data.terms[indices[i]];
     terms[i] = Term{
-        .name = allocator.copyInto(type_data.terms[i].name),
-        .type = type_data.terms[i].type,
-        .tag = type_data.terms[i].tag,
-        .attributes = ArrayRef<TermAttribute>{allocator.copyInto(
-            type_data.terms[i].attributes)},
+        .name = allocator.copyInto(term.name),
+        .type = term.type,
+        .tag = term.tag,
+        .attributes =
+            ArrayRef<TermAttribute>{allocator.copyInto(term.attributes)},
     };
-    if (is_enum && !type_data.terms[i].type.isUnit()) {
+    if (is_enum && !term.type.isUnit()) {
       is_enum = false;
     }
   }
 
-  std::sort(terms, terms + type_data.terms.size(),
-            [&](const Term& l, const Term& r) { return l.name < r.name; });
-
-  V result = type_data;
   result.terms = {terms, type_data.terms.size()};
   if constexpr (std::is_same_v<V, InlineVariant>) {
     result.is_enum = is_enum;
@@ -364,11 +381,10 @@ inline OutlineVariant type_intern(mlir::TypeStorageAllocator& allocator,
 struct VariantType : public NominalType {
   using NominalType::NominalType;
 
-  static constexpr intptr_t kUndefTag = 0;
-
   static bool classof(mlir::Type val);
 
   ArrayRef<Term> terms() const;
+  size_t default_term() const;
   Width tag_width() const;
   Width tag_offset() const;
   Width term_offset() const;
@@ -419,6 +435,16 @@ inline ArrayRef<Term> VariantType::terms() const {
     return v->terms;
   } else if (auto v = dyn_cast<InlineVariantType>()) {
     return v->terms;
+  } else {
+    UNREACHABLE();
+  }
+}
+
+inline size_t VariantType::default_term() const {
+  if (auto v = dyn_cast<OutlineVariantType>()) {
+    return v->default_term;
+  } else if (auto v = dyn_cast<InlineVariantType>()) {
+    return v->default_term;
   } else {
     UNREACHABLE();
   }

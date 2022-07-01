@@ -355,7 +355,6 @@ void SourceGenerator::addVariantDef(types::VariantType type, bool has_value,
 
   if (!decl_only) {
     os << " {\n";
-    os << "undef = " << 0 << ",\n";
     for (const auto& term : type.terms()) {
       std::string term_name = term.name.str();
       os << term_name << " = " << term.tag << ",\n";
@@ -416,6 +415,7 @@ void SourceGenerator::addVariantBuilder(types::VariantType type, bool has_value,
   os << ", /*type_domain=*/domain";
   os << ", /*num_terms=*/" << type.terms().size();
   os << ", /*terms=*/terms";
+  os << ", /*default_term=*/" << type.default_term();
   if (domain_ == Domain::kHost) {
     assert(type.isa<types::InlineVariantType>());
     if (!has_value) {

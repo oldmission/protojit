@@ -120,6 +120,9 @@ bool VectorHoisting::hoistVectors(VariantType var) {
     DEFER_DESTRUCTION(
         set_attribute(long_term, TermAttribute::VectorSplit::kOutline));
 
+    // default_term stays the same. If it pointed to a different term, it
+    // doesn't matter. If it pointed to the same term, the default will now
+    // point to the long version.
     if (auto as_inline = var.dyn_cast<InlineVariantType>()) {
       auto data = InlineVariant(as_inline);
       data.terms = term_conv.get();
