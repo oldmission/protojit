@@ -9,8 +9,8 @@
 namespace pj {
 
 TEST_P(PJVariantTest, VariantSame) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var1 T{.value = {.x = 0xffffffff}, .tag = static_cast<Var1::Kind>(0x7f)};
+  Var1 F{Var1::x(), 42};
+  Var1 T{};
 
   onMatch<0, Var1>("x", [&](const Var1& T) {
     EXPECT_EQ(T.value.x, 42);
@@ -25,8 +25,8 @@ TEST_P(PJVariantTest, VariantSame) {
 }
 
 TEST_P(PJVariantTest, VariantMismatch) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var2 T{.value = {.y = -1}, .tag = Var2::Kind::y};
+  Var1 F(Var1::x(), 42);
+  Var2 T(Var2::y(), -1);
 
   onNoMatch<0, Var2>("y", [&](const Var2& T) {});
   onMatch<1, Var2>("undef",
@@ -37,8 +37,8 @@ TEST_P(PJVariantTest, VariantMismatch) {
 }
 
 TEST_P(PJVariantTest, VariantInvalidHandler) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var2 T{.value = {.y = 0}, .tag = Var2::Kind::undef};
+  Var1 F{Var1::x(), 42};
+  Var2 T{};
 
   onNoMatch<0, Var2>("x", [&](const Var2& T) {});
 
@@ -47,8 +47,8 @@ TEST_P(PJVariantTest, VariantInvalidHandler) {
 }
 
 TEST_P(PJVariantTest, VariantAddCaseBig) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var3 T{.value = {.x = 0}, .tag = Var3::Kind::undef};
+  Var1 F{Var1::x(), 42};
+  Var3 T{};
 
   onMatch<0, Var3>("x", [&](const Var3& T) {
     EXPECT_EQ(T.value.x, 42);
@@ -62,8 +62,8 @@ TEST_P(PJVariantTest, VariantAddCaseBig) {
 }
 
 TEST_P(PJVariantTest, VariantMissingHandler) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var3 T{.value = {.x = 0}, .tag = Var3::Kind::undef};
+  Var1 F{Var1::x(), 42};
+  Var3 T{};
 
   onNoMatch<0, Var3>("y", [&](const Var3& T) {});
   onNoMatch<0, Var3>("undef", [&](const Var3& T) {});
@@ -73,8 +73,8 @@ TEST_P(PJVariantTest, VariantMissingHandler) {
 }
 
 TEST_P(PJVariantTest, VariantMoveCase) {
-  Var1 F{.value = {.x = 42}, .tag = Var1::Kind::x};
-  Var4 T{.value = {.x = -1}, .tag = Var4::Kind::undef};
+  Var1 F{Var1::x(), 42};
+  Var4 T{};
 
   onMatch<0, Var4>("x", [&](const Var4& T) {
     EXPECT_EQ(T.tag, Var4::Kind::x);
@@ -86,8 +86,8 @@ TEST_P(PJVariantTest, VariantMoveCase) {
 }
 
 TEST_P(PJVariantTest, VariantMoveCase2) {
-  Var3 F{.value = {.x = 42}, .tag = Var3::Kind::x};
-  Var4 T{.value = {.x = -1}, .tag = Var4::Kind::undef};
+  Var3 F{Var3::x(), 42};
+  Var4 T{};
 
   onMatch<0, Var4>("x", [&](const Var4& T) {
     EXPECT_EQ(T.tag, Var4::Kind::x);
@@ -102,7 +102,7 @@ TEST_P(PJVariantTest, VariantMoveCase2) {
 
 TEST_F(PJTest, VariantAddTagField) {
   Outer2 F{.z = 0xab};
-  Outer T{.v = {.value = {.x = 42}, .tag = Var4::Kind::x}, .z = 0};
+  Outer T{.v = {Var4::x(), 42}, .z = 0};
 
   transcode(Options<Outer2, Outer>{.from = &F, .to = &T});
 
@@ -111,7 +111,7 @@ TEST_F(PJTest, VariantAddTagField) {
 }
 
 TEST_P(PJVariantTest, VariantRemoveTagField) {
-  Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
+  Outer F{.v = {}, .z = 0xab};
   Outer2 T{.z = 0};
 
   auto results = transcode(Options<Outer, Outer2>{
@@ -122,8 +122,8 @@ TEST_P(PJVariantTest, VariantRemoveTagField) {
 }
 
 TEST_P(PJVariantTest, VariantSameNestedPath) {
-  Outer F{.v = Var4{.value = {.x = 42}, .tag = Var4::Kind::x}, .z = 0xab};
-  Outer T{.v = Var4{.value = {.x = -1}, .tag = Var4::Kind::undef}, .z = 0};
+  Outer F{.v = {Var4::x(), 42}, .z = 0xab};
+  Outer T{.v = {}, .z = 0};
 
   onMatch<0, Outer>("v.x", [&](const Outer& T) {
     EXPECT_EQ(T.v.tag, Var4::Kind::x);
@@ -139,7 +139,7 @@ TEST_P(PJVariantTest, VariantSameNestedPath) {
 
 TEST_F(PJTest, VariantDispatchDefault) {
   Outer2 F{.z = 0xab};
-  Outer T{.v = {.tag = Var4::Kind::w}, .z = 0};
+  Outer T{.v = {Var4::w(), 33}, .z = 0};
 
   onMatch<0, Outer>("v.undef", [&](const Outer& T) {
     EXPECT_EQ(T.v.tag, Var4::Kind::undef);
@@ -150,8 +150,8 @@ TEST_F(PJTest, VariantDispatchDefault) {
 }
 
 TEST_P(PJVariantTest, VariantDispatchUndef) {
-  Outer F{.v = {.tag = Var4::Kind::undef}, .z = 0xab};
-  Outer T{.v = {.value = {.w = 0}, .tag = Var4::Kind::w}, .z = 0};
+  Outer F{.v = {}, .z = 0xab};
+  Outer T{.v = {Var4::w(), 0}, .z = 0};
 
   onMatch<0, Outer>("v.undef", [&](const Outer& T) {
     EXPECT_EQ(T.v.tag, Var4::Kind::undef);
@@ -159,7 +159,11 @@ TEST_P(PJVariantTest, VariantDispatchUndef) {
   });
 
   transcode(Options<Outer>{
-      .from = &F, .to = &T, .src_path = "v.undef", .tag_path = "v._"});
+      .from = &F,
+      .to = &T,
+      .src_path = "v.undef",
+      .tag_path = "v._",
+  });
 }
 
 TEST_F(PJTest, VariantDispatchDefaultNested) {
@@ -177,13 +181,10 @@ TEST_F(PJTest, VariantDispatchDefaultNested) {
 
 TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
   Outer3 F{
-      .a = {.value = {.w = 0x11}, .tag = Var4::Kind::w},
-      .b = {.value = {.x = 0x22222222}, .tag = Var4::Kind::x},
+      .a = {Var4::w(), 0x11},
+      .b = {Var4::x(), 0x22222222},
   };
-  Outer3 T{
-      .a = {.tag = Var4::Kind::undef},
-      .b = {.tag = Var4::Kind::undef},
-  };
+  Outer3 T{.a = {}, .b = {}};
 
   onMatch<0, Outer3>("b.x", [&T](const Outer3& T2) {
     EXPECT_EQ(&T, &T2);
@@ -201,8 +202,7 @@ TEST_P(PJVariantTest, VariantDifferentDispatchTag) {
 
 TEST_P(PJVariantTest, VariantAfterVector) {
   std::array<uint64_t, 4> values{1, 2, 3, 4};
-  VecVar F{.vec = {values.data(), values.size()},
-           .var = {.value = {.w = 42}, .tag = Var4::Kind::w}};
+  VecVar F{.vec = {values.data(), values.size()}, .var = {Var4::w(), 42}};
   VecVar T;
 
   onMatch<0, VecVar>("var.w", [&](const VecVar& T) {
@@ -234,7 +234,7 @@ TEST_F(PJTest, EnumTableTest) {
 
 TEST_F(PJTest, EnumToVariant) {
   EnumA F = EnumA::x;
-  NotAnEnum T = {.value = {.x = 42}, .tag = NotAnEnum::Kind::x};
+  NotAnEnum T = {NotAnEnum::x(), 42};
 
   auto results = transcode(Options<EnumA, NotAnEnum>{.from = &F, .to = &T});
 
@@ -244,7 +244,7 @@ TEST_F(PJTest, EnumToVariant) {
 }
 
 TEST_F(PJTest, VariantToEnum) {
-  NotAnEnum F = {.value = {.x = 42}, .tag = NotAnEnum::Kind::x};
+  NotAnEnum F = {NotAnEnum::x(), 42};
   EnumA T = EnumA::z;
 
   auto results = transcode(Options<NotAnEnum, EnumA>{.from = &F, .to = &T});
@@ -253,8 +253,8 @@ TEST_F(PJTest, VariantToEnum) {
   EXPECT_EQ(T, EnumA::x);
 }
 
-// Automatically tests all combinations of src_path and tag_path being provided
-// or not being provided.
+// Automatically tests all combinations of src_path and tag_path being
+// provided or not being provided.
 INSTANTIATE_TEST_SUITE_P(Variants, PJVariantTest,
                          testing::Values(std::make_pair(false, false),
                                          std::make_pair(false, true),

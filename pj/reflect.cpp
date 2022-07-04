@@ -100,12 +100,12 @@ types::ValueType unreflect(const Protocol& type, mlir::MLIRContext& ctx,
 void reflect(types::IntType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
-  Type result{.tag = Type::Kind::Int};
-  result.value.Int = Int{
-      .width = type->width,
-      .alignment = type->alignment,
-      .sign = type->sign,
-  };
+  Type result(Type::Int{},  //
+              Int{
+                  .width = type->width,
+                  .alignment = type->alignment,
+                  .sign = type->sign,
+              });
   pool.emplace_back(result);
 }
 
@@ -122,7 +122,7 @@ types::ValueType unreflect(const Int& type, int32_t index,
 void reflect(types::UnitType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
-  pool.emplace_back(Type{.tag = Type::Kind::Unit});
+  pool.emplace_back(Type::Unit{});
 }
 
 types::ValueType unreflect(const Unit& type, int32_t index,
@@ -161,14 +161,14 @@ void reflect(types::StructType type, llvm::BumpPtrAllocator& alloc,
   for (size_t i = 0; i < type->fields.size(); ++i) {
     fields[i].type = fields[i].type - this_offset;
   }
-  Type typ{.tag = Type::Kind::Struct};
-  typ.value.Struct = {
-      .name = reflectName(type.name(), alloc),
-      .fields = {fields, type->fields.size()},
-      .size = type->size,
-      .alignment = type->alignment,
-  };
-  pool.emplace_back(typ);
+  pool.emplace_back(   //
+      Type::Struct{},  //
+      Struct{
+          .name = reflectName(type.name(), alloc),
+          .fields = {fields, type->fields.size()},
+          .size = type->size,
+          .alignment = type->alignment,
+      });
 }
 
 types::ValueType unreflect(const Struct& type, int32_t index,
@@ -198,14 +198,14 @@ void reflect(types::ArrayType type, llvm::BumpPtrAllocator& alloc,
              std::unordered_map<const void*, int32_t>& cache) {
   const int32_t elem = reflect(type->elem, alloc, pool, cache);
   const int32_t elem_offset = elem - pool.size();
-  Type typ{.tag = Type::Kind::Array};
-  typ.value.Array = {
-      .elem = elem_offset,
-      .length = type->length,
-      .elem_size = type->elem_size,
-      .alignment = type->alignment,
-  };
-  pool.emplace_back(typ);
+  pool.emplace_back(  //
+      Type::Array{},  //
+      Array{
+          .elem = elem_offset,
+          .length = type->length,
+          .elem_size = type->elem_size,
+          .alignment = type->alignment,
+      });
 }
 
 types::ValueType unreflect(const Array& type, int32_t index,
@@ -226,23 +226,23 @@ void reflect(types::VectorType type, llvm::BumpPtrAllocator& alloc,
              std::unordered_map<const void*, int32_t>& cache) {
   const int32_t elem = reflect(type->elem, alloc, pool, cache);
   const int32_t elem_offset = elem - pool.size();
-  Type typ{.tag = Type::Kind::Vector};
-  typ.value.Vector = {
-      .elem = elem_offset,
-      .min_length = type->min_length,
-      .max_length = type->max_length,
-      .ppl_count = type->ppl_count,
-      .length_offset = type->length_offset,
-      .length_size = type->length_size,
-      .ref_offset = type->ref_offset,
-      .ref_size = type->ref_size,
-      .reference_mode = type->reference_mode,
-      .inline_payload_offset = type->inline_payload_offset,
-      .partial_payload_offset = type->partial_payload_offset,
-      .size = type->size,
-      .alignment = type->alignment,
-  };
-  pool.emplace_back(typ);
+  pool.emplace_back(  //
+      Type::Vector{},
+      Vector{
+          .elem = elem_offset,
+          .min_length = type->min_length,
+          .max_length = type->max_length,
+          .ppl_count = type->ppl_count,
+          .length_offset = type->length_offset,
+          .length_size = type->length_size,
+          .ref_offset = type->ref_offset,
+          .ref_size = type->ref_size,
+          .reference_mode = type->reference_mode,
+          .inline_payload_offset = type->inline_payload_offset,
+          .partial_payload_offset = type->partial_payload_offset,
+          .size = type->size,
+          .alignment = type->alignment,
+      });
 }
 
 types::ValueType unreflect(const Vector& type, int32_t index,
@@ -290,27 +290,22 @@ TermAttribute* reflectTermAttributes(ArrayRef<types::TermAttribute> attrs,
   auto* attrs_it = attrs_alloc;
   for (auto& attr : attrs) {
     (*attrs_it++) = std::visit(
-        overloaded{
-            [&](const types::TermAttribute::Undef& undef) {
-              return TermAttribute{.tag = TermAttribute::Kind::undef};
-            },
-            [&](const types::TermAttribute::VectorSplit& vs) {
-              using VectorSplit = types::TermAttribute::VectorSplit;
-              return TermAttribute{
-                  .value = {.vector_split =
-                                {
-                                    .type =
-                                        vs.type == VectorSplit::Type::kInline
-                                            ? VectorSplitType::kInline
-                                            : VectorSplitType::kOutline,
-                                    .inline_length = vs.inline_length,
-                                    .path = reflectPath(vs.path, alloc),
-                                    .is_default = vs.is_default,
-                                }},
-                  .tag = TermAttribute::Kind::vector_split,
-              };
-            },
-        },
+        overloaded{[&](const types::TermAttribute::Undef& undef) {
+                     return TermAttribute{};
+                   },
+                   [&](const types::TermAttribute::VectorSplit& vs) {
+                     return TermAttribute{
+                         TermAttribute::vector_split{},
+                         VectorSplit{
+                             .type = vs.type == types::TermAttribute::
+                                                    VectorSplit::Type::kInline
+                                         ? VectorSplitType::kInline
+                                         : VectorSplitType::kOutline,
+                             .inline_length = vs.inline_length,
+                             .path = reflectPath(vs.path, alloc),
+                             .is_default = vs.is_default,
+                         }};
+                   }},
         attr.value);
   }
   return attrs_alloc;
@@ -393,18 +388,18 @@ void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   auto* terms = reflectTerms(type->terms, alloc, pool, cache);
-  Type typ{.tag = Type::Kind::InlineVariant};
-  typ.value.InlineVariant = {
-      .name = reflectName(type.name(), alloc),
-      .terms = {terms, type->terms.size()},
-      .term_offset = type->term_offset,
-      .term_size = type->term_size,
-      .tag_offset = type->tag_offset,
-      .tag_width = type->tag_width,
-      .size = type->size,
-      .alignment = type->alignment,
-  };
-  pool.emplace_back(typ);
+  pool.emplace_back(          //
+      Type::InlineVariant(),  //
+      InlineVariant{
+          .name = reflectName(type.name(), alloc),
+          .terms = {terms, type->terms.size()},
+          .term_offset = type->term_offset,
+          .term_size = type->term_size,
+          .tag_offset = type->tag_offset,
+          .tag_width = type->tag_width,
+          .size = type->size,
+          .alignment = type->alignment,
+      });
 }
 
 types::ValueType unreflect(const InlineVariant& type, int32_t index,
@@ -429,16 +424,16 @@ void reflect(types::OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
              std::vector<Type>& pool,
              std::unordered_map<const void*, int32_t>& cache) {
   auto* terms = reflectTerms(type->terms, alloc, pool, cache);
-  Type typ{.tag = Type::Kind::OutlineVariant};
-  typ.value.OutlineVariant = {
-      .name = reflectName(type.name(), alloc),
-      .terms = {terms, type->terms.size()},
-      .tag_width = type->tag_width,
-      .tag_alignment = type->tag_alignment,
-      .term_offset = type->term_offset,
-      .term_alignment = type->term_alignment,
-  };
-  pool.emplace_back(typ);
+  pool.emplace_back(           //
+      Type::OutlineVariant{},  //
+      OutlineVariant{
+          .name = reflectName(type.name(), alloc),
+          .terms = {terms, type->terms.size()},
+          .tag_width = type->tag_width,
+          .tag_alignment = type->tag_alignment,
+          .term_offset = type->term_offset,
+          .term_alignment = type->term_alignment,
+      });
 }
 
 types::ValueType unreflect(const OutlineVariant& type, int32_t index,

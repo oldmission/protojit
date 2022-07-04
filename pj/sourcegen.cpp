@@ -10,6 +10,10 @@
 
 namespace pj {
 
+std::ostream& operator<<(std::ostream& os, llvm::StringRef str) {
+  return os << std::string_view(str);
+}
+
 std::string convertSign(Sign sign) {
   switch (sign) {
     case Sign::kSigned:
@@ -56,6 +60,26 @@ void SourceGenerator::printIntTypeRef(Width width, Sign sign, bool wrap,
   if (wrap && !decl.empty()) {
     os << ">::type";
   }
+}
+
+llvm::StringRef SourceGenerator::classNameFor(types::ValueType type) {
+  if (auto named = type.dyn_cast<types::NominalType>()) {
+    return named.name().back();
+  }
+
+  if (type.isa<types::ArrayType>()) {
+    return "array";
+  }
+
+  if (type.isa<types::UnitType>()) {
+    return "Unit";
+  }
+
+  if (type.isa<types::VectorType>()) {
+    return "span";
+  }
+
+  return {};
 }
 
 void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
@@ -324,6 +348,78 @@ void SourceGenerator::addStruct(types::StructType type, bool is_external) {
   addStructBuilder(type, is_external);
 }
 
+void SourceGenerator::addVariantFunctions(types::VariantType type) {
+  // Add default constructor with no args that sets undef tag.
+  auto& os = stream();
+  os << type.name().back() << "() : tag(Kind::undef) {}\n";
+
+  // Add a destructor. This needs to call the destructor for whichever term is
+  // set.
+  os << "~" << type.name().back() << "() { deinitialize(); }\n";
+
+  // Add constructors for each non-undef term.
+  // Each constructor gets a token type that distinguishes it from the others
+  // during function resolution.
+  for (auto& term : type.terms()) {
+    os << "struct " << term.name << " {};\n"
+       << "template <typename... Args>\n"
+       << type.name().back() << "(" << term.name
+       << " _, Args&&... args) : tag(Kind::" << term.name << ") {\n"
+       << "  new (&value." << term.name << ") ";
+    printTypeRef(term.type);
+    os << "(std::forward<Args>(args)...);\n"
+       << "}";
+  }
+
+  // Add a copy constructor. This just default constructs and calls copy-assign.
+  os << type.name().back() << "(const " << type.name().back()
+     << "& other) : tag(Kind::undef) {\n"
+     << "  *this = other;\n"
+     << "}\n";
+
+  // Add a copy assignment operator. First deinitialize whatever term is
+  // currently set, then copy over the tag and copy-construct the associated
+  // term.
+  os << type.name().back() << "& operator=(const " << type.name().back()
+     << "& other) {\n"
+     << "deinitialize();\n"
+     << "tag = other.tag;\n"
+     << "switch(tag) {\n";
+
+  for (auto& term : type.terms()) {
+    os << "case Kind::" << term.name << ":\n"
+       << "  new (&value." << term.name << ") ";
+    printTypeRef(term.type);
+    os << "(other.value." << term.name << ");\n"
+       << "break;\n";
+  }
+
+  os << "default:;\n"
+     << "}\n"
+     << "return *this;\n"
+     << "}\n";
+
+  // deinitialize() {...}
+  os << "private:\n"
+     << "void deinitialize() {\n"
+     << "switch (tag) {\n";
+
+  for (auto& term : type.terms()) {
+    os << "case Kind::" << term.name << ":\n";
+    auto class_name = classNameFor(term.type);
+    if (!class_name.empty()) {
+      os << "value." << term.name << ".";
+      printTypeRef(term.type);
+      os << "::~" << class_name << "();\n";
+    }
+    os << "break;\n";
+  }
+
+  os << "default:;\n"
+     << "}\n"
+     << "}";
+}
+
 void SourceGenerator::addVariantDef(types::VariantType type, bool has_value,
                                     Width tag_width, bool decl_only) {
   region_ = Region::kDefs;
@@ -337,7 +433,9 @@ void SourceGenerator::addVariantDef(types::VariantType type, bool has_value,
     os << "struct " << std::string_view(name.back());
     if (!decl_only) {
       os << " {\n";
-      os << "union {\n";
+      os << "union Union {\n"
+         << "  Union() {}\n"
+         << "char __;\n";
       for (const auto& term : type.terms()) {
         if (term.type) {
           printTypeRef(term.type);
@@ -363,7 +461,9 @@ void SourceGenerator::addVariantDef(types::VariantType type, bool has_value,
     if (!has_value) {
       os << "\n};\n";
     } else {
-      os << "} tag;\n};\n";
+      os << "} tag;\n";
+      addVariantFunctions(type);
+      os << "};\n";
     }
   } else {
     os << ";\n";

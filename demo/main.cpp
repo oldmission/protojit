@@ -40,8 +40,8 @@ std::string CatName = "Onyx";
 std::string DogName = "Toast";
 
 v1::Adoption SampleCatV1{
-    .animal = {.specifics = {.value = {.cat = {.coat = v1::CatCoat::SHORT}},
-                             .tag = v1::Specifics::Kind::cat},
+    .animal = {.specifics = {v1::Specifics::cat(),
+                             v1::Cat{.coat = v1::CatCoat::SHORT}},
                .name = v1::Name{CatName.data(), CatName.length()},
                .age = 24,
                .weight = 7,
@@ -52,9 +52,9 @@ v1::Adoption SampleCatV1{
 
 auto kBeagleBreed = std::array{v1::DogBreed::BEAGLE};
 v1::Adoption SampleDogV1{
-    .animal = {.specifics = {.value = {.dog = {.breed = {kBeagleBreed.data(),
-                                                         kBeagleBreed.size()}}},
-                             .tag = v1::Specifics::Kind::dog},
+    .animal = {.specifics = {v1::Specifics::dog(),
+                             v1::Dog{.breed = {kBeagleBreed.data(),
+                                               kBeagleBreed.size()}}},
                .name = v1::Name{DogName.data(), DogName.length()},
                .age = 36,
                .weight = 45,
@@ -64,10 +64,9 @@ v1::Adoption SampleDogV1{
 };
 
 v2::Adoption SampleCatV2{
-    .animal = {.specifics = {.value = {.cat = {.personality =
-                                                   v2::CatPersonality::NERVOUS,
-                                               .coat = v2::CatCoat::SHORT}},
-                             .tag = v2::Specifics::Kind::cat},
+    .animal = {.specifics = {v2::Specifics::cat(),
+                             v2::Cat{.personality = v2::CatPersonality::NERVOUS,
+                                     .coat = v2::CatCoat::SHORT}},
                .name = v2::Name{CatName.data(), CatName.length()},
                .age = 24,
                .weight = 7,
@@ -79,10 +78,10 @@ v2::Adoption SampleCatV2{
 
 auto kTwoBreeds = std::array{v2::DogBreed::BEAGLE, v2::DogBreed::HUSKY};
 v2::Adoption SampleDogV2{
-    .animal = {.specifics = {.value = {.dog = {.coat = v2::DogCoat::SHORT,
-                                               .breed = {kTwoBreeds.data(),
-                                                         kTwoBreeds.size()}}},
-                             .tag = v2::Specifics::Kind::dog},
+    .animal = {.specifics = {v2::Specifics::dog(),
+                             v2::Dog{.coat = v2::DogCoat::SHORT,
+                                     .breed = {kTwoBreeds.data(),
+                                               kTwoBreeds.size()}}},
                .name = v2::Name{DogName.data(), DogName.length()},
                .age = 36,
                .weight = 45,
@@ -152,7 +151,7 @@ void read(pj::runtime::Context& ctx) {
 
     // Decode the message, increasing the size of the decode buffer if
     // necessary.
-    Adoption<V> dst{.animal = {.specifics = {.value = {.cat = {}}}}};
+    Adoption<V> dst;
 
     pj::DecodeHandler<Adoption<V>, void> handlers[2] = {handle_cat, handle_dog};
 
