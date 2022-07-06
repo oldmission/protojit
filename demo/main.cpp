@@ -154,7 +154,8 @@ void read(pj::runtime::Context& ctx) {
     // necessary.
     Adoption<V> dst{.animal = {.specifics = {.value = {.cat = {}}}}};
 
-    pj::DecodeHandler<Adoption<V>, void> handlers[2] = {handle_cat, handle_dog};
+    auto handlers = std::array<pj::DecodeHandler<Adoption<V>, void>, 2>{
+        handle_cat, handle_dog};
 
     while (true) {
       auto bbuf = reader.template decode<void>(

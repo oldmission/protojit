@@ -495,21 +495,27 @@ void SourceGenerator::addVariant(types::VariantType type, bool is_external) {
 std::ostream& SourceGenerator::printDecoderSig(std::ostream& os,
                                                const std::string& name,
                                                const Portal::Decoder& decoder,
-                                               bool state_template,
+                                               bool is_cpp,
                                                bool is_declaration) {
-  if (state_template) {
+  if (is_cpp) {
     os << "template <typename S";
     if (!is_declaration) {
       os << " = void";
     }
     os << ">";
   }
-  std::string state = state_template ? "S" : "void";
+  std::string state = is_cpp ? "S" : "void";
   os << "BoundedBuffer " << name << "("
      << "const char* msg, " << getNameAsString(decoder.dst)
-     << "* result, BoundedBuffer buffer,"
-     << "::pj::DecodeHandler<" << getNameAsString(decoder.dst) << ", " << state
-     << "> handlers[], " << state << "* state)";
+     << "* result, BoundedBuffer buffer,";
+  if (is_cpp) {
+    os << "std::array<::pj::DecodeHandler<" << getNameAsString(decoder.dst)
+       << ", " << state << ">, " << decoder.handlers.size() << "> handlers, ";
+  } else {
+    os << "::pj::DecodeHandler<" << getNameAsString(decoder.dst) << ", "
+       << state << "> handlers[], ";
+  }
+  os << state << "* state)";
   return os;
 }
 
@@ -674,14 +680,14 @@ void SourceGenerator::addPortal(const SourceId& ns, const Portal& portal,
          << decoder.name << "_;\n";
 
     printDecoderSig(fn_decls, decoder.name, decoder,
-                    /*state_template=*/true, /*is_declaration=*/true)
+                    /*is_cpp=*/true, /*is_declaration=*/true)
         << ";\n";
 
     printDecoderSig(builders_, ns.back() + "::" + decoder.name, decoder,
-                    /*state_template=*/true, /*is_declaration=*/false)
+                    /*is_cpp=*/true, /*is_declaration=*/false)
         << "{\n";
     builders_ << "return " << decoder.name
-              << "_(msg, result, buffer, handlers, state);\n"
+              << "_(msg, result, buffer, handlers.data(), state);\n"
               << "}\n";
   }
 
@@ -800,7 +806,7 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
   }
 
   for (auto& decoder : portal.decoders) {
-    printDecoderSig(defs_, decoder.name, decoder, /*state_template=*/true,
+    printDecoderSig(defs_, decoder.name, decoder, /*is_cpp=*/true,
                     /*is_declaration=*/true)
         << ";";
 
@@ -808,14 +814,14 @@ void SourceGenerator::addPrecompilation(const SourceId& name,
 
     builders_ << "extern \"C\" ";
     printDecoderSig(builders_, decoder_name, decoder,
-                    /*state_template=*/false, /*is_declaration=*/false)
+                    /*is_cpp=*/false, /*is_declaration=*/false)
         << ";\n";
 
     printDecoderSig(builders_, name.back() + "::" + decoder.name, decoder,
-                    /*state_template=*/true, /*is_declaration=*/false)
+                    /*is_cpp=*/true, /*is_declaration=*/false)
         << "{\n";
     builders_ << "return " << decoder_name
-              << "(msg, result, buffer, handlers, state);\n"
+              << "(msg, result, buffer, handlers.data(), state);\n"
               << "}\n";
 
     // Generate cpp in a new scope because we are declaring a variable.
