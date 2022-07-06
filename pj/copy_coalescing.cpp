@@ -292,7 +292,7 @@ struct CopySet {
       }
 
       auto try_extend_piece = [&]() {
-        if (!isPowerOf2_64(piece->len) &&
+        if (!piece->is_poison && !isPowerOf2_64(piece->len) &&
             piece->len < target.max_promotion_size) {
           // If we can't combine them, try to extend the size of this piece to a
           // power of two. This requires:
