@@ -104,7 +104,42 @@ namespace pj {
 
 using namespace ir;
 
+std::once_flag g_has_initialized_llvm;
+
+void initializeLLVM() {
+  llvm::InitializeNativeTarget();
+  llvm::InitializeNativeTargetAsmPrinter();
+
+#ifndef NDEBUG
+  const char* env = getenv("PROTOJIT_INTERNAL_DEBUG_TYPES");
+  if (env != nullptr && env[0] != '\0') {
+    if (!std::strcmp(env, "ON") || !std::strcmp(env, "1")) {
+      llvm::DebugFlag = 1;
+    } else {
+      std::istringstream str(env);
+      std::string type;
+      std::vector<std::string> types;
+      std::vector<const char*> types_p;
+      while (getline(str, type, ',')) {
+        types.push_back(type);
+      }
+
+      for (const std::string& type : types) {
+        types_p.push_back(type.c_str());
+      }
+
+      if (types.size() > 0) {
+        llvm::DebugFlag = 1;
+        llvm::setCurrentDebugTypes(types_p.data(), types_p.size());
+      }
+    }
+  }
+#endif
+}
+
 ProtoJitContext::ProtoJitContext() : builder_(&ctx_) {
+  std::call_once(g_has_initialized_llvm, initializeLLVM);
+
   resetModule();
   ctx_.getOrLoadDialect<ProtoJitDialect>();
 }
@@ -304,44 +339,8 @@ static std::unique_ptr<llvm::TargetMachine> getTargetMachine(bool pic) {
   return machine;
 }
 
-std::once_flag g_has_initialized_llvm;
-
-void initializeLLVM() {
-  llvm::InitializeNativeTarget();
-  llvm::InitializeNativeTargetAsmPrinter();
-
-#ifndef NDEBUG
-  const char* env = getenv("PROTOJIT_INTERNAL_DEBUG_TYPES");
-  if (env != nullptr && env[0] != '\0') {
-    if (!std::strcmp(env, "ON") || !std::strcmp(env, "1")) {
-      llvm::DebugFlag = 1;
-    } else {
-      std::istringstream str(env);
-      std::string type;
-      std::vector<std::string> types;
-      std::vector<const char*> types_p;
-      while (getline(str, type, ',')) {
-        types.push_back(type);
-      }
-
-      for (const std::string& type : types) {
-        types_p.push_back(type.c_str());
-      }
-
-      if (types.size() > 0) {
-        llvm::DebugFlag = 1;
-        llvm::setCurrentDebugTypes(types_p.data(), types_p.size());
-      }
-    }
-  }
-#endif
-}
-
 std::pair<std::unique_ptr<llvm::LLVMContext>, std::unique_ptr<llvm::Module>>
-
 ProtoJitContext::compileToLLVM(bool pic, size_t opt_level) {
-  std::call_once(g_has_initialized_llvm, initializeLLVM);
-
   ctx_.getOrLoadDialect<mlir::LLVM::LLVMExtraDialect>();
   ctx_.getOrLoadDialect<mlir::StandardOpsDialect>();
   ctx_.getOrLoadDialect<mlir::scf::SCFDialect>();
