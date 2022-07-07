@@ -71,7 +71,7 @@ struct Header {
 
 struct MessageA {
   id: uint64;
-  number: uint64;
+  number:uint64;
 }
 
 struct MessageB {
@@ -80,12 +80,12 @@ struct MessageB {
 }
 
 variant DefaultA {
-  default unknown: Header;
+  unknown: Header default;
   a: MessageA;
 }
 
 variant DefaultAB {
-  default unknown: Header;
+  unknown: Header default;
   a: MessageA;
   b: MessageB;
 }

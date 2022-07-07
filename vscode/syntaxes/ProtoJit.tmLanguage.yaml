@@ -27,6 +27,7 @@ patterns:
             \\bhandlers\\b|\
             \\bimport\\b|\
             \\blanguage\\b|\
+            \\bdefault\\b|\
             \\bprotocol"
     name: keyword.other
   - match: "\\bint\\d+\\b|\

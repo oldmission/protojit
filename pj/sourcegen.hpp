@@ -117,6 +117,7 @@ class SourceGenerator {
                        std::string decl = {});
   void printTypeRef(types::ValueType type, bool wrap = false,
                     std::string decl = {});
+  llvm::StringRef classNameFor(types::ValueType type);
   void printPlanName(std::ostream& os, const SourceId& plan);
 
   std::ostream& printDecoderSig(std::ostream& os, const std::string& name,
@@ -139,6 +140,7 @@ class SourceGenerator {
   void addVariantBuilder(types::VariantType type, bool has_value,
                          Width tag_width, bool is_external);
   void addVariant(types::VariantType type, bool is_external);
+  void addVariantFunctions(types::VariantType type);
 
   Region region_;
   Domain domain_ = Domain::kUnset;

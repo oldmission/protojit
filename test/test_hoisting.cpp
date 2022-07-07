@@ -11,9 +11,8 @@ TEST_P(PJVariantTest, HoistingInline) {
 
   using Name = decltype(FirstInner::name);
 
-  A a{.value = {.f = {.x = {.name = Name{&name[0], name.size()}}}},
-      .tag = A::Kind::f};
-  A b{.value = {.f = {}}, .tag = A::Kind::undef};
+  A a{A::f, First{.x = {.name = Name{&name[0], name.size()}}}};
+  A b{};
 
   auto results = transcode(Options<A>{
       .from = &a,
@@ -35,9 +34,8 @@ TEST_P(PJVariantTest, HoistingOutline) {
 
   using Name = decltype(FirstInner::name);
 
-  A a{.value = {.f = {.x = {.name = Name{&name[0], name.size()}}}},
-      .tag = A::Kind::f};
-  A b{.value = {.f = {}}, .tag = A::Kind::undef};
+  A a{A::f, First{.x = {.name = Name{&name[0], name.size()}}}};
+  A b{};
 
   auto results = transcode(Options<A>{
       .from = &a, .to = &b, .tag_path = "_", .expect_dec_buffer = true});
@@ -62,9 +60,8 @@ TEST_P(PJVariantTest, MultipleHoistingDifferentTermInline) {
 
   using Name = decltype(SecondInner::name);
 
-  B a{.value = {.s = {.x = {.name = Name{&name[0], name.size()}}}},
-      .tag = B::Kind::s};
-  B b{.value = {.f = {}}, .tag = B::Kind::undef};
+  B a{B::s, Second{.x = {.name = Name{&name[0], name.size()}}}};
+  B b{};
 
   auto results = transcode(Options<B>{
       .from = &a,
@@ -91,9 +88,8 @@ TEST_P(PJVariantTest, MultipleHoistingDifferentTermOutline) {
 
   using Name = decltype(SecondInner::name);
 
-  B a{.value = {.s = {.x = {.name = Name{&name[0], name.size()}}}},
-      .tag = B::Kind::s};
-  B b{.value = {.f = {}}, .tag = B::Kind::undef};
+  B a{B::s, Second{.x = {.name = Name{&name[0], name.size()}}}};
+  B b;
 
   auto results = transcode(Options<B>{
       .from = &a, .to = &b, .tag_path = "_", .expect_dec_buffer = true});
@@ -121,12 +117,10 @@ TEST_P(PJVariantTest, MultipleHoistingSameTermInline) {
   using FirstName = decltype(FirstInner::name);
   using SecondName = decltype(SecondInner::name);
 
-  C a{.value = {.t = {.x = {.name =
-                                FirstName{&first_name[0], first_name.size()}},
-                      .y = {.name = SecondName{&second_name[0],
-                                               second_name.size()}}}},
-      .tag = C::Kind::t};
-  C b{.value = {.f = {}}, .tag = C::Kind::undef};
+  C a{C::t,
+      Third{.x = {.name = FirstName{&first_name[0], first_name.size()}},
+            .y = {.name = SecondName{&second_name[0], second_name.size()}}}};
+  C b{};
 
   auto results = transcode(Options<C>{
       .from = &a,
@@ -152,12 +146,10 @@ TEST_P(PJVariantTest, MultipleHoistingSameTermPartialOutline) {
   using FirstName = decltype(FirstInner::name);
   using SecondName = decltype(SecondInner::name);
 
-  C a{.value = {.t = {.x = {.name =
-                                FirstName{&first_name[0], first_name.size()}},
-                      .y = {.name = SecondName{&second_name[0],
-                                               second_name.size()}}}},
-      .tag = C::Kind::t};
-  C b{.value = {.f = {}}, .tag = C::Kind::undef};
+  C a{C::t,
+      Third{.x = {.name = FirstName{&first_name[0], first_name.size()}},
+            .y = {.name = SecondName{&second_name[0], second_name.size()}}}};
+  C b{};
 
   auto results = transcode(Options<C>{
       .from = &a, .to = &b, .tag_path = "_", .expect_dec_buffer = true});
