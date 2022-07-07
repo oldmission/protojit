@@ -491,15 +491,14 @@ static void handleVariantField(const ActionInput& in, ParseState* state,
   }
 }
 
-struct VariantFieldDecl
-    : if_must<sor<if_must<DefaultDecl, Id>, Id>, opt<tok<':'>, Type>,
-              ExplicitTagDecl, tok<';'>> {};
+struct VariantFieldDecl : if_must<Id, opt<tok<':'>, Type>, ExplicitTagDecl,
+                                  opt<DefaultDecl>, tok<';'>> {};
 
 BEGIN_ACTION(VariantFieldDecl) { handleVariantField(in, state, false); }
 END_ACTION()
 
 struct EnumFieldDecl
-    : if_must<sor<if_must<DefaultDecl, Id>, Id>, ExplicitTagDecl, tok<';'>> {};
+    : if_must<Id, ExplicitTagDecl, opt<DefaultDecl>, tok<';'>> {};
 
 BEGIN_ACTION(EnumFieldDecl) { handleVariantField(in, state, true); }
 END_ACTION()
