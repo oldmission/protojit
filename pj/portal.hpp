@@ -4,7 +4,11 @@
 #include <cstdint>
 #include <tuple>
 
-#include "runtime.hpp"
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/RuntimeDyld.h>
+#include <llvm/ExecutionEngine/SectionMemoryManager.h>
+
+#include <pj/runtime.hpp>
 
 namespace pj {
 
@@ -12,8 +16,8 @@ struct Artifact {};
 
 class Portal {
  public:
-  Portal() {}
-  virtual ~Portal() {}
+  Portal(std::unique_ptr<llvm::orc::LLJIT>&& jit) : jit_(std::move(jit)) {}
+  ~Portal() {}
 
   template <typename T>
   SizeFunction<T> GetSizeFunction(const char* name) const {
@@ -33,7 +37,17 @@ class Portal {
     return reinterpret_cast<T>(ResolveTargetArtifact(name));
   }
 
-  virtual Artifact* ResolveTargetArtifact(const char* name) const = 0;
+  Artifact* ResolveTargetArtifact(const char* name) const {
+    auto result = jit_->lookup(name);
+    if (!result) {
+      return nullptr;
+    } else {
+      return reinterpret_cast<Artifact*>(result->getAddress());
+    }
+  }
+
+ private:
+  std::unique_ptr<llvm::orc::LLJIT> jit_;
 };
 
 }  // namespace pj

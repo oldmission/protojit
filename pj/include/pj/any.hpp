@@ -1,8 +1,7 @@
 #pragma once
 
-#include "pj/reflect.pj.hpp"
-#include "protojit.hpp"
-#include "util.hpp"
+#include <pj/reflect.pj.hpp>
+#include <pj/util.hpp>
 
 namespace pj {
 

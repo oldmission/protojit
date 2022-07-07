@@ -3,7 +3,8 @@
 // instead.
 
 language cpp """
-  #include "pj/offset_span.hpp"
+  #include <pj/offset_span.hpp>
+  #include <pj/arch_base.hpp>
 """
 
 space pj {
@@ -163,7 +164,7 @@ struct Protocol {
   types: TypeVector;
 }
 
-protocol Schema : Protocol;
+specification Schema : Protocol;
 
 }  // space reflect
 }  // space pj

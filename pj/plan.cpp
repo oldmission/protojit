@@ -2,11 +2,12 @@
 
 #include <llvm/Support/Debug.h>
 
+#include <pj/util.hpp>
+
 #include "convert_internal.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
 #include "array_ref.hpp"
-#include "util.hpp"
 #include "variant_outlining.hpp"
 #include "vector_hoisting.hpp"
 #include "wire_layout.hpp"

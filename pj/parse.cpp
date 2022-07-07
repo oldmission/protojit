@@ -154,9 +154,8 @@ struct ParseState {
   template <typename I>
   std::optional<
       std::pair<SourceId, std::pair<types::ValueType, types::PathAttr>>>
-  resolveProtocol(const I& in, const SourceId& id,
-                  bool error_on_failure = true) {
-    return resolve(in, id, parse_scope.protocol_defs, error_on_failure);
+  resolveSpec(const I& in, const SourceId& id, bool error_on_failure = true) {
+    return resolve(in, id, parse_scope.spec_defs, error_on_failure);
   }
 
   template <typename I, typename M>
@@ -708,17 +707,16 @@ void checkVariantPath(const ActionInput& in, types::ValueType head,
   throw parse_error("Path does not point to a variant type", in.position());
 }
 
-struct ProtoDecl
-    : if_must<KEYWORD("protocol"), Id, tok<':'>, ScopedId, PathDecl, tok<';'>> {
-};
+struct SpecDecl : if_must<KEYWORD("specification"), Id, tok<':'>, ScopedId,
+                          PathDecl, tok<';'>> {};
 
-BEGIN_ACTION(ProtoDecl) {
+BEGIN_ACTION(SpecDecl) {
   auto head_name = __ popScopedId(false);
-  auto protocol_name = __ popScopedId();
+  auto spec_name = __ popScopedId();
 
-  if (__ resolveProtocol(in, protocol_name, /*error_on_failure=*/false)) {
-    throw parse_error("Protocol name " + protocol_name.back() +
-                          " re-defines existing protocol",
+  if (__ resolveSpec(in, spec_name, /*error_on_failure=*/false)) {
+    throw parse_error("Specification name " + spec_name.back() +
+                          " re-defines existing specification",
                       in.position());
   }
 
@@ -734,9 +732,8 @@ BEGIN_ACTION(ProtoDecl) {
     checkVariantPath(in, head, tag_path, /*check_term=*/false);
   }
 
-  __ protos.emplace_back(protocol_name, std::make_pair(head, tag_path));
-  __ parse_scope.protocol_defs.emplace(protocol_name,
-                                       std::make_pair(head, tag_path));
+  __ protos.emplace_back(spec_name, std::make_pair(head, tag_path));
+  __ parse_scope.spec_defs.emplace(spec_name, std::make_pair(head, tag_path));
 
   __ paths.clear();
 }
@@ -838,7 +835,7 @@ struct ProtoParam : ScopedId {};
 BEGIN_ACTION(ProtoParam) {
   assert(!__ proto_param.has_value());
   auto id = __ popScopedId(/*include_space=*/false);
-  __ proto_param = __ resolveProtocol(in, id)->first;
+  __ proto_param = __ resolveSpec(in, id)->first;
 }
 END_ACTION()
 
@@ -921,7 +918,7 @@ BEGIN_ACTION(LanguageDecl) {
 END_ACTION()
 
 struct TopDecl
-    : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, ProtoDecl, TypeDecl,
+    : sor<ImportDecl, StructDecl, VariantDecl, EnumDecl, SpecDecl, TypeDecl,
           SpaceDecl, LanguageDecl, PortalDecl, PrecompDecl> {};
 
 struct ParseFile : must<star<TopDecl>, eof> {};
@@ -947,7 +944,7 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
       .ctx = scope.ctx,
       .imports = parsed.imports,
       .decls = parsed.decls,
-      .protos = parsed.proto_defs,
+      .protos = parsed.spec_defs,
       .precomps = parsed.precomps,
       .portals = parsed.portals,
   };

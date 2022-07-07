@@ -69,6 +69,6 @@ struct Adoption {
   fee: uint16;
 }
 
-protocol AdoptionProto : Adoption @ animal.specifics._;
+specification AdoptionProto : Adoption @ animal.specifics._;
 
 }

@@ -1,7 +1,10 @@
 #pragma once
 
 #include <cstdint>
-#include "pj/protojit.hpp"
+
+#include "pj/integer.hpp"
+#include "pj/runtime.h"
+#include "pj/traits.hpp"
 
 struct CoordinateA {
   int64_t x;
@@ -25,8 +28,7 @@ template <>
 struct BuildPJType<Point> {
   static const PJStructType* build(PJContext* ctx, const PJDomain* domain) {
     const PJStructField* fields[2];
-    const auto* int_type =
-        BuildPJType<integer<32, PJ_SIGN_SIGNED>>::build(ctx, domain);
+    const auto* int_type = BuildPJType<pj_int32>::build(ctx, domain);
     fields[0] = PJCreateStructField(/*name=*/"x", /*type=*/int_type,
                                     /*offset=*/offsetof(Point, x) << 3);
     fields[1] = PJCreateStructField(/*name=*/"y", /*type=*/int_type,

@@ -13,27 +13,27 @@ name: Protocol JIT
 scopeName: source.protojit
 patterns:
   - match: "\\bstruct\\b|\
-            \\bvariant\\b|\
-            \\btype\\b|\
-            \\bspace\\b|\
-            \\bexternal\\b|\
-            \\benum\\b|\
-            \\bimport\\b|\
-            \\bportal\\b|\
-            \\bsizer\\b|\
-            \\bencoder\\b|\
-            \\bdecoder\\b|\
-            \\bprecompile\\b|\
-            \\bhandlers\\b|\
-            \\bimport\\b|\
-            \\blanguage\\b|\
-            \\bdefault\\b|\
-            \\bprotocol"
+      \\bvariant\\b|\
+      \\btype\\b|\
+      \\bspace\\b|\
+      \\bexternal\\b|\
+      \\benum\\b|\
+      \\bimport\\b|\
+      \\bportal\\b|\
+      \\bsizer\\b|\
+      \\bencoder\\b|\
+      \\bdecoder\\b|\
+      \\bprecompile\\b|\
+      \\bhandlers\\b|\
+      \\bimport\\b|\
+      \\blanguage\\b|\
+      \\bdefault\\b|\
+      \\bspecification"
     name: keyword.other
   - match: "\\bint\\d+\\b|\
-            \\buint\\d+\\b|\
-            \\bany\\b|\
-            \\bchar\\d+"
+      \\buint\\d+\\b|\
+      \\bany\\b|\
+      \\bchar\\d+"
     name: storage.type
   - match: "//.*$"
     name: comment

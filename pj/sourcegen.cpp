@@ -97,17 +97,19 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
 
   if (type.isa<types::AnyType>()) {
     os << "pj::Any";
-    need_any_ = true;
+    base_headers_.emplace("any");
     return;
   }
 
   if (auto I = type.dyn_cast<types::IntType>()) {
     printIntTypeRef(I->width, I->sign, wrap, decl);
+    base_headers_.emplace("integer");
     return;
   }
 
   if (auto U = type.dyn_cast<types::UnitType>()) {
     os << "pj::Unit";
+    base_headers_.emplace("unit");
     return;
   }
 
@@ -115,6 +117,7 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
     os << "pj::array<";
     printTypeRef(A->elem, true);
     os << ", " << A->length << ">";
+    base_headers_.emplace("array");
     return;
   }
 
@@ -124,6 +127,7 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
     auto max_length = V->max_length == kNone ? "::pj::unbounded_length"
                                              : std::to_string(V->max_length);
     os << ", " << max_length << ", " << V->min_length << ">";
+    base_headers_.emplace("span");
     return;
   }
 
@@ -989,16 +993,16 @@ void SourceGenerator::generate(
   output << "#pragma once\n"
          << "#include <cstddef>\n"
          << "#include <string_view>\n"
-         << "#include \"pj/protojit.hpp\"\n"
-         << "#include \"pj/runtime.hpp\"\n"
+         << "#include \"pj/runtime.h\"\n"
+         << "#include \"pj/traits.hpp\"\n"
          << "\n";
 
   for (auto& import : imports) {
     output << "#include \"" << import.c_str() << ".hpp\"\n";
   }
 
-  if (need_any_) {
-    output << "#include \"pj/any.hpp\"\n";
+  for (auto& header : base_headers_) {
+    output << "#include \"pj/" << header << ".hpp\"\n";
   }
 
   output << defs_.str();

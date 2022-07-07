@@ -47,6 +47,6 @@ struct Adoption {
   fee: uint8;
 }
 
-protocol AdoptionProto : Adoption;
+specification AdoptionProto : Adoption;
 
 }

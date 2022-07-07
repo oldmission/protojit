@@ -1,10 +1,10 @@
-#include "runtime.h"
+#include <pj/runtime.hpp>
+
 #include "arch.hpp"
 #include "array_ref.hpp"
 #include "context.hpp"
 #include "defer.hpp"
 #include "plan.hpp"
-#include "runtime.hpp"
 #include "types.hpp"
 
 #include <cstring>

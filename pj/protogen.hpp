@@ -83,7 +83,7 @@ struct ParsedProtoFile {
   using Precomp = std::pair<SourceId, SourceId>;
 
   std::vector<Decl> decls;
-  std::vector<std::pair<SourceId, Protocol>> proto_defs;
+  std::vector<std::pair<SourceId, Protocol>> spec_defs;
   std::set<SourceId, SourceIdLess> portals;
   std::map<SourceId, Precomp, SourceIdLess> precomps;
   std::vector<std::filesystem::path> imports;
@@ -94,7 +94,7 @@ struct ParsingScope {
   std::map<std::filesystem::path, ParsedProtoFile> parsed_files;
   std::map<SourceId, types::ValueType, SourceIdLess> type_defs;
   std::map<SourceId, std::pair<types::ValueType, types::PathAttr>, SourceIdLess>
-      protocol_defs;
+      spec_defs;
   std::map<SourceId, Portal, SourceIdLess> portal_defs;
 
   std::set<std::filesystem::path> pending_files;
