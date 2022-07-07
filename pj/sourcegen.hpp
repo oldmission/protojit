@@ -152,7 +152,7 @@ class SourceGenerator {
   std::unordered_set<const void*> generated_;
   std::vector<std::string> entrypoints_;
   std::set<SourceId, SourceIdLess> protos_;
-  bool need_any_ = false;
+  std::set<std::string> base_headers_;
 
   SourceId outer_namespace_;
   size_t counter_;

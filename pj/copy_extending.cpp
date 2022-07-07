@@ -13,9 +13,10 @@
 #include <llvm/Target/TargetMachine.h>
 #include "llvm/IR/ConstantRange.h"
 
+#include <pj/util.hpp>
+
 #include "llvm_utils.hpp"
 #include "passes.hpp"
-#include "util.hpp"
 
 namespace llvm {
 void initializeCopyExtendingPass(PassRegistry&);

@@ -16,4 +16,4 @@ struct UInt64 {
   i: uint64;
 }
 
-protocol Proto : Int32;
+specification Proto : Int32;

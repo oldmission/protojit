@@ -1,8 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <string_view>
-#include "pj/protojit.hpp"
-#include "pj/runtime.hpp"
+
+#include "pj/runtime.h"
+#include "pj/traits.hpp"
 
 namespace v0_1 {
 namespace pj {

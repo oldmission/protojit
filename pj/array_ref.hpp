@@ -1,8 +1,7 @@
 #pragma once
 
-#include "util.hpp"
-
 #include <llvm/ADT/ArrayRef.h>
+#include <pj/util.hpp>
 
 namespace pj {
 

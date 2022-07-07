@@ -65,7 +65,24 @@ gentbl_cc_library(
 )
 
 cc_library(
-    name = "core",
+    name = "core_noany",
+    hdrs = [
+        "include/pj/arch_base.hpp",
+        "include/pj/array.hpp",
+        "include/pj/integer.hpp",
+        "include/pj/offset_span.hpp",
+        "include/pj/runtime.h",
+        "include/pj/runtime.hpp",
+        "include/pj/span.hpp",
+        "include/pj/traits.hpp",
+        "include/pj/unit.hpp",
+        "include/pj/util.hpp",
+    ],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "compiler_support",
     srcs = [
         "enums.cpp.inc",
         "enums.hpp.inc",
@@ -77,24 +94,16 @@ cc_library(
     ],
     hdrs = [
         "arch.hpp",
-        "arch_base.hpp",
-        "array.hpp",
         "array_ref.hpp",
         "defer.hpp",
         "exceptions.hpp",
-        "integer.hpp",
         "ir.hpp",
-        "offset_span.hpp",
-        "protojit.hpp",
-        "span.hpp",
-        "traits.hpp",
         "type_domain.hpp",
         "type_support.hpp",
         "types.hpp",
-        "unit.hpp",
-        "util.hpp",
     ],
     deps = [
+        ":core_noany",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:StandardOps",
@@ -119,7 +128,7 @@ cc_library(
         "plan.hpp",
     ],
     linkopts = ["-lstdc++"],
-    deps = [":core"],
+    deps = [":compiler_support"],
 )
 
 cc_binary(
@@ -135,7 +144,7 @@ cc_binary(
     ],
     linkopts = ["-lstdc++fs"],
     deps = [
-        ":core",
+        ":compiler_support",
         ":plan",
         "@pegtl//:headers",
     ],
@@ -144,25 +153,30 @@ cc_binary(
 genrule(
     name = "reflect_pj",
     srcs = ["reflect.pj"],
-    outs = ["reflect.pj.hpp"],
+    outs = ["include/pj/reflect.pj.hpp"],
     cmd = "$(location //pj:pjc) $(location reflect.pj) --hpp $@",
     tools = [":pjc"],
 )
 
 cc_library(
-    name = "reflect",
-    srcs = [
-        "reflect.cpp",
-        "reflect.pj.hpp",
-    ],
+    name = "core",
     hdrs = [
-        "any.hpp",
-        "reflect.hpp",
-        "runtime.h",
-        "runtime.hpp",
+        "core_noany",
+        "include/pj/any.hpp",
+        "include/pj/reflect.pj.hpp",
     ],
+    deps = [":core_noany"],
+)
+
+cc_library(
+    name = "reflect",
+    srcs = ["reflect.cpp"],
+    hdrs = ["reflect.hpp"],
     linkopts = ["-lstdc++fs"],
-    deps = [":core"],
+    deps = [
+        ":compiler_support",
+        ":core",
+    ],
 )
 
 cc_library(
@@ -173,28 +187,25 @@ cc_library(
         "gdb.cpp",
         "generate_ir.cpp",
         "llvm_extra.cpp",
+        "llvm_extra.cpp.inc",
+        "llvm_extra.hpp.inc",
+        "llvm_extra_conversions.cpp.inc",
         "llvm_gen2.cpp",
         "llvm_utils.cpp",
-        "scope.cpp",
+        "llvm_utils.hpp",
         "side_effect_analysis.cpp",
+        "side_effect_analysis.hpp",
         "sizing.cpp",
     ],
     hdrs = [
-        "llvm_extra.cpp.inc",
         "llvm_extra.hpp",
-        "llvm_extra.hpp.inc",
-        "llvm_extra_conversions.cpp.inc",
-        "llvm_utils.hpp",
         "passes.hpp",
-        "portal.hpp",
-        "portal_impl.hpp",
-        "scope.hpp",
-        "side_effect_analysis.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [
-        "core",
-        "reflect",
+        ":compiler_support",
+        ":core",
+        ":reflect",
         "@llvm-project//mlir:ExecutionEngine",
         "@llvm-project//mlir:ExecutionEngineUtils",
         "@llvm-project//mlir:LLVMDialect",
@@ -206,7 +217,7 @@ cc_library(
     ],
 )
 
-# Contains UNREACHABLE versions of API methods getProtoSize, encodeProto, and
+# Contains stub implementations of API methods getProtoSize, encodeProto, and
 # decodeProto. They are weak symbols, and are overriden by the ones provided by
 # schema_precompile when it is linked in. This library containing only the weak
 # symbols is used to bootstrap the generation of the precompiled methods
@@ -216,15 +227,11 @@ cc_library(
     srcs = [
         "context.cpp",
         "context.hpp",
+        "portal.hpp",
         "runtime.cpp",
+        "schema/precompile.hpp",
         "schema/reflect.pj.v0_1.hpp",
         "schema/versions.hpp",
-    ],
-    hdrs = [
-        "protojit.hpp",
-        "runtime.h",
-        "runtime.hpp",
-        "schema/precompile.hpp",
     ],
     linkopts = ["-lstdc++"],
     deps = [
@@ -260,12 +267,6 @@ cc_import(
 
 cc_library(
     name = "runtime",
-    srcs = [],
-    hdrs = [
-        "protojit.hpp",
-        "runtime.h",
-        "runtime.hpp",
-    ],
     linkopts = ["-lstdc++"],
     deps = [
         ":runtime_bootstrap",
@@ -279,7 +280,9 @@ cc_shared_library(
     # Yes... all transitive dependencies have to be listed here :(
     static_deps = [
         ":core",
+        ":core_noany",
         ":compiler",
+        ":compiler_support",
         ":plan",
         ":reflect",
         ":runtime_bootstrap",

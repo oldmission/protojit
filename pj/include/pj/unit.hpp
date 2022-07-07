@@ -1,3 +1,5 @@
+#pragma once
+
 #include "runtime.h"
 #include "traits.hpp"
 

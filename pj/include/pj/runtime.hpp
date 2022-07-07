@@ -4,8 +4,8 @@
 #include <tuple>
 #include <vector>
 
-#include "pj/reflect.pj.hpp"
-#include "protojit.hpp"
+#include <pj/traits.hpp>
+
 #include "runtime.h"
 
 namespace pj {

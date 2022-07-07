@@ -3,9 +3,11 @@
 
 #include <functional>
 
+#include <pj/any.hpp>
+#include <pj/array.hpp>
+#include <pj/span.hpp>
+
 #include "harness.hpp"
-#include "pj/any.hpp"
-#include "pj/protojit.hpp"
 #include "test/any.pj.hpp"
 
 namespace pj {

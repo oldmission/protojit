@@ -1,7 +1,8 @@
 #pragma once
 
-#include "arch.hpp"
-#include "exceptions.hpp"
+#include <utility>
+
+#include <pj/arch_base.hpp>
 
 namespace pj {
 
@@ -11,7 +12,7 @@ namespace pj {
 
 #define UNREACHABLE()                           \
   assert(false && "Unreachable!"); /* NOLINT */ \
-  throw ::pj::InternalError("Unreachable!");
+  throw std::logic_error("unreachable!");
 
 #ifndef NDEBUG
 #define ASSERT(X) assert(X)

@@ -4,10 +4,11 @@
 #include <sstream>
 #include <variant>
 
+#include <pj/util.hpp>
+
 #include "arch.hpp"
 #include "array_ref.hpp"
 #include "type_support.hpp"
-#include "util.hpp"
 
 namespace pj {
 namespace types {

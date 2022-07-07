@@ -7,10 +7,11 @@
 #include <mlir/IR/BlockAndValueMapping.h>
 #include <mlir/Pass/Pass.h>
 
+#include <pj/util.hpp>
+
 #include "defer.hpp"
 #include "ir.hpp"
 #include "reflect.hpp"
-#include "util.hpp"
 
 namespace pj {
 struct FnKey {

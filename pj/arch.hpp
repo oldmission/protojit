@@ -3,7 +3,7 @@
 #include <llvm/ADT/Hashing.h>
 #include <llvm/Support/raw_ostream.h>
 
-#include "arch_base.hpp"
+#include <pj/arch_base.hpp>
 
 namespace pj {
 

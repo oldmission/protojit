@@ -54,7 +54,7 @@ struct Adoption {
   fee: uint8;
 }
 
-protocol AdoptionProto : Adoption @ animal.specifics._;
+specification AdoptionProto : Adoption @ animal.specifics._;
 
 portal Reader : AdoptionProto {
   decoder decode : Adoption {
@@ -157,7 +157,7 @@ struct Adoption {
   fee: uint16;
 }
 
-protocol AdoptionProto : Adoption @ animal.specifics._;
+specification AdoptionProto : Adoption @ animal.specifics._;
 
 portal Reader : AdoptionProto {
   decoder decode : Adoption {

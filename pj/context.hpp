@@ -8,9 +8,10 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 
+#include <pj/util.hpp>
+
 #include "portal.hpp"
 #include "types.hpp"
-#include "util.hpp"
 
 namespace pj {
 

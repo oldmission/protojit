@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "arch.hpp"
 #include "runtime.hpp"
 #include "traits.hpp"
 
@@ -76,7 +75,7 @@ struct BuildPJType<offset_span<wrapped>> {
         ctx,
         /*elem=*/BuildPJType<wrapped>::build(ctx, domain),
         /*min_length=*/0,
-        /*max_length=*/kNone,
+        /*max_length=*/-1,
         /*wire_min_length=*/0,
         /*ppl_count=*/0,
         /*length_offset=*/offsetof(Span, size_) * 8,
@@ -84,10 +83,10 @@ struct BuildPJType<offset_span<wrapped>> {
         /*ref_offset=*/offsetof(Span, offset_) * 8,
         /*ref_size=*/sizeof(Span::offset_) * 8,
         /*reference_mode=*/PJ_REFERENCE_MODE_OFFSET,
-        /*inline_payload_offset=*/kNone,
-        /*inline_payload_size=*/kNone,
-        /*partial_payload_offset=*/kNone,
-        /*partial_payload_size=*/kNone,
+        /*inline_payload_offset=*/-1,
+        /*inline_payload_size=*/-1,
+        /*partial_payload_offset=*/-1,
+        /*partial_payload_size=*/-1,
         /*size=*/sizeof(Span) * 8,
         /*alignment=*/alignof(Span) * 8,
         /*outlined_payload_alignment=*/alignof(T) * 8  //

@@ -1,6 +1,5 @@
 #include "pj/reflect.hpp"
 #include "pj/array_ref.hpp"
-#include "pj/protojit.hpp"
 #include "pj/reflect.pj.hpp"
 
 namespace pj {

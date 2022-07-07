@@ -11,10 +11,11 @@
 #include <functional>
 #include <iterator>
 
+#include <pj/util.hpp>
+
 #include "arch.hpp"
 #include "array_ref.hpp"
 #include "type_domain.hpp"
-#include "util.hpp"
 
 namespace pj {
 namespace types {

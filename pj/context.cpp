@@ -39,16 +39,15 @@
 
 #include <cstring>
 
+#include <pj/runtime.h>
+#include <pj/util.hpp>
+
 #include "ir.hpp"
 #include "llvm_extra.hpp"
 #include "passes.hpp"
 #include "plan.hpp"
 #include "portal.hpp"
-#include "portal_impl.hpp"
-#include "protojit.hpp"
 #include "reflect.hpp"
-#include "runtime.h"
-#include "util.hpp"
 
 #include "schema/precompile.hpp"
 
@@ -571,7 +570,7 @@ std::unique_ptr<Portal> ProtoJitContext::compile(size_t opt_level) {
     abort();
   }
 
-  return std::make_unique<PortalImpl>(std::move(jit));
+  return std::make_unique<Portal>(std::move(jit));
 }
 
 }  // namespace pj

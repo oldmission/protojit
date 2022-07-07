@@ -9,12 +9,13 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/X86TargetParser.h>
 #include <llvm/Target/TargetMachine.h>
-#include "llvm/Analysis/AliasSetTracker.h"
+#include <llvm/Analysis/AliasSetTracker.h>
+
+#include <pj/util.hpp>
 
 #include "defer.hpp"
 #include "llvm_utils.hpp"
 #include "passes.hpp"
-#include "util.hpp"
 
 namespace llvm {
 void initializeCopyCoalescingPass(PassRegistry&);

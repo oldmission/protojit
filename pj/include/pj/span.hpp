@@ -1,9 +1,9 @@
 #include <cstddef>
 #include <stdexcept>
 
-#include "arch.hpp"
-#include "runtime.h"
-#include "traits.hpp"
+#include <pj/runtime.h>
+#include <pj/arch_base.hpp>
+#include <pj/traits.hpp>
 
 namespace pj {
 

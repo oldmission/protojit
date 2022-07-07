@@ -87,9 +87,10 @@ int main(int argc, char** argv) {
   const auto& proto = GenerateProtocol.getValue();
   if (!proto.empty()) {
     auto name = decodeScopedName(proto);
-    auto it = parse_scope.protocol_defs.find(name);
-    if (it == parse_scope.protocol_defs.end()) {
-      std::cerr << "Protocol provided with option --gen-proto not found.\n";
+    auto it = parse_scope.spec_defs.find(name);
+    if (it == parse_scope.spec_defs.end()) {
+      std::cerr
+          << "Specification provided with option --gen-proto not found.\n";
       return 1;
     }
 
@@ -114,20 +115,20 @@ int main(int argc, char** argv) {
       }
     }
 
-    for (auto& [name, proto] : parsed_file.proto_defs) {
+    for (auto& [name, proto] : parsed_file.spec_defs) {
       sourcegen.addProtocol(name, proto);
     }
 
     for (auto& name : parsed_file.portals) {
       sourcegen.addPortal(
           name, parse_scope.portal_defs.at(name),
-          parse_scope.protocol_defs.at(parse_scope.portal_defs.at(name).proto));
+          parse_scope.spec_defs.at(parse_scope.portal_defs.at(name).proto));
     }
 
     for (auto& [name, precomp] : parsed_file.precomps) {
       sourcegen.addPrecompilation(
           name, parse_scope.portal_defs.at(precomp.first), precomp.second,
-          parse_scope.protocol_defs.at(precomp.second));
+          parse_scope.spec_defs.at(precomp.second));
     }
   }
 

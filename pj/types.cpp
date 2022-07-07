@@ -1,7 +1,8 @@
 #include <sstream>
 
+#include <pj/util.hpp>
+
 #include "types.hpp"
-#include "util.hpp"
 
 namespace pj {
 namespace types {

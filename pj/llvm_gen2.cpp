@@ -8,16 +8,15 @@
 
 #include <llvm/Target/TargetMachine.h>
 
+#include <pj/runtime.hpp>
+#include <pj/util.hpp>
+
 #include "defer.hpp"
 #include "ir.hpp"
 #include "llvm_extra.hpp"
 #include "pj/reflect.pj.hpp"
-#include "portal.hpp"
-#include "protojit.hpp"
 #include "reflect.hpp"
-#include "runtime.hpp"
 #include "side_effect_analysis.hpp"
-#include "util.hpp"
 
 namespace pj {
 using namespace mlir;
@@ -390,11 +389,6 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
 
   if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
     auto src = src_type.cast<IntType>(), dst = dst_type.cast<IntType>();
-
-    if (src->width != dst->width && src->sign != dst->sign) {
-      // If signness is different, cannot convert size.
-      return failure();
-    }
 
     Value src_ptr = _.create<BitcastOp>(loc, LLVMPointerType::get(src.toMLIR()),
                                         operands[0]);
