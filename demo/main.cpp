@@ -58,7 +58,8 @@ auto kBeagleBreed = std::array{v1::DogBreed::BEAGLE};
 v1::Adoption SampleDogV1{
     .animal = {.specifics = {v1::Specifics::dog,
                              v1::Dog{.breed = {kBeagleBreed.data(),
-                                               kBeagleBreed.size()}}},
+                                               kBeagleBreed.size()},
+                                     .short_int = 42}},
                .name = v1::Name{DogName.data(), DogName.length()},
                .age = 36.2,
                .weight = 45,
@@ -138,12 +139,17 @@ void read(pj::runtime::Context& ctx) {
   std::ifstream fs{File.getValue()};
 
   auto reader = Reader<V>{readSchema(fs).data()};
+  reader.getProtocol().printLayout();
 
   auto handle_cat = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got cat adoption message" << std::endl;
   };
   auto handle_dog = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got dog adoption message" << std::endl;
+    if constexpr (V == Ver::v1) {
+      std::cout << "Got short_int: "
+                << adoption->animal.specifics.value.dog.short_int << std::endl;
+    }
   };
 
   std::vector<char> data_buf;
