@@ -654,56 +654,59 @@ namespace gen {
 template <>
 struct BuildPJType<::v0_1::pj::reflect::Vector> {
   static const auto* build(PJContext* ctx, const PJDomain* domain) {
-    const PJStructField* fields[13];
+    const PJStructField* fields[14];
     const auto* _93 = PJCreateIntType(ctx, /*width=*/32, /*alignment=*/8,
                                       /*sign=*/PJ_SIGN_SIGNED);
     fields[0] =
         PJCreateStructField(/*name=*/"elem", /*type=*/_93, /*offset=*/0);
-    const auto* _94 = PJCreateIntType(ctx, /*width=*/64, /*alignment=*/8,
-                                      /*sign=*/PJ_SIGN_UNSIGNED);
+    const auto* _94 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
     fields[1] =
-        PJCreateStructField(/*name=*/"min_length", /*type=*/_94, /*offset=*/32);
+        PJCreateStructField(/*name=*/"elem_width", /*type=*/_94, /*offset=*/32);
     const auto* _95 = PJCreateIntType(ctx, /*width=*/64, /*alignment=*/8,
-                                      /*sign=*/PJ_SIGN_SIGNED);
+                                      /*sign=*/PJ_SIGN_UNSIGNED);
     fields[2] =
-        PJCreateStructField(/*name=*/"max_length", /*type=*/_95, /*offset=*/96);
+        PJCreateStructField(/*name=*/"min_length", /*type=*/_95, /*offset=*/96);
     const auto* _96 = PJCreateIntType(ctx, /*width=*/64, /*alignment=*/8,
                                       /*sign=*/PJ_SIGN_SIGNED);
-    fields[3] =
-        PJCreateStructField(/*name=*/"ppl_count", /*type=*/_96, /*offset=*/160);
-    const auto* _97 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[4] = PJCreateStructField(/*name=*/"length_offset", /*type=*/_97,
-                                    /*offset=*/224);
+    fields[3] = PJCreateStructField(/*name=*/"max_length", /*type=*/_96,
+                                    /*offset=*/160);
+    const auto* _97 = PJCreateIntType(ctx, /*width=*/64, /*alignment=*/8,
+                                      /*sign=*/PJ_SIGN_SIGNED);
+    fields[4] =
+        PJCreateStructField(/*name=*/"ppl_count", /*type=*/_97, /*offset=*/224);
     const auto* _98 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[5] = PJCreateStructField(/*name=*/"length_size", /*type=*/_98,
+    fields[5] = PJCreateStructField(/*name=*/"length_offset", /*type=*/_98,
                                     /*offset=*/288);
     const auto* _99 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[6] = PJCreateStructField(/*name=*/"ref_offset", /*type=*/_99,
+    fields[6] = PJCreateStructField(/*name=*/"length_size", /*type=*/_99,
                                     /*offset=*/352);
     const auto* _100 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[7] =
-        PJCreateStructField(/*name=*/"ref_size", /*type=*/_100, /*offset=*/416);
-    const auto* _101 =
+    fields[7] = PJCreateStructField(/*name=*/"ref_offset", /*type=*/_100,
+                                    /*offset=*/416);
+    const auto* _101 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
+    fields[8] =
+        PJCreateStructField(/*name=*/"ref_size", /*type=*/_101, /*offset=*/480);
+    const auto* _102 =
         BuildPJType<::v0_1::pj::ReferenceMode>::build(ctx, domain);
-    fields[8] = PJCreateStructField(/*name=*/"reference_mode", /*type=*/_101,
-                                    /*offset=*/480);
-    const auto* _102 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[9] = PJCreateStructField(/*name=*/"inline_payload_offset",
-                                    /*type=*/_102, /*offset=*/488);
+    fields[9] = PJCreateStructField(/*name=*/"reference_mode", /*type=*/_102,
+                                    /*offset=*/544);
     const auto* _103 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[10] = PJCreateStructField(/*name=*/"partial_payload_offset",
+    fields[10] = PJCreateStructField(/*name=*/"inline_payload_offset",
                                      /*type=*/_103, /*offset=*/552);
     const auto* _104 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[11] =
-        PJCreateStructField(/*name=*/"size", /*type=*/_104, /*offset=*/616);
+    fields[11] = PJCreateStructField(/*name=*/"partial_payload_offset",
+                                     /*type=*/_104, /*offset=*/616);
     const auto* _105 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[12] = PJCreateStructField(/*name=*/"alignment", /*type=*/_105,
-                                     /*offset=*/680);
-    const char* _106[3] = {"pj", "reflect", "Vector"};
-    const PJStructType* _107 = PJCreateStructType(
-        ctx, /*name_size=*/3, /*name=*/_106, /*type_domain=*/domain,
-        /*num_fields=*/13, /*fields=*/fields, /*size=*/744, /*alignment=*/8);
-    return _107;
+    fields[12] =
+        PJCreateStructField(/*name=*/"size", /*type=*/_105, /*offset=*/680);
+    const auto* _106 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
+    fields[13] = PJCreateStructField(/*name=*/"alignment", /*type=*/_106,
+                                     /*offset=*/744);
+    const char* _107[3] = {"pj", "reflect", "Vector"};
+    const PJStructType* _108 = PJCreateStructType(
+        ctx, /*name_size=*/3, /*name=*/_107, /*type_domain=*/domain,
+        /*num_fields=*/14, /*fields=*/fields, /*size=*/808, /*alignment=*/8);
+    return _108;
   }
 };
 }  // namespace gen
@@ -715,37 +718,37 @@ template <>
 struct BuildPJType<::v0_1::pj::reflect::Type> {
   static const auto* build(PJContext* ctx, const PJDomain* domain) {
     const PJTerm* terms[8];
-    const auto* _108 =
-        BuildPJType<::v0_1::pj::reflect::Array>::build(ctx, domain);
-    terms[0] = PJCreateTerm(/*name=*/"Array", /*type=*/_108, /*tag=*/6);
     const auto* _109 =
-        BuildPJType<::v0_1::pj::reflect::InlineVariant>::build(ctx, domain);
-    terms[1] = PJCreateTerm(/*name=*/"InlineVariant", /*type=*/_109, /*tag=*/4);
+        BuildPJType<::v0_1::pj::reflect::Array>::build(ctx, domain);
+    terms[0] = PJCreateTerm(/*name=*/"Array", /*type=*/_109, /*tag=*/6);
     const auto* _110 =
-        BuildPJType<::v0_1::pj::reflect::Int>::build(ctx, domain);
-    terms[2] = PJCreateTerm(/*name=*/"Int", /*type=*/_110, /*tag=*/1);
+        BuildPJType<::v0_1::pj::reflect::InlineVariant>::build(ctx, domain);
+    terms[1] = PJCreateTerm(/*name=*/"InlineVariant", /*type=*/_110, /*tag=*/4);
     const auto* _111 =
+        BuildPJType<::v0_1::pj::reflect::Int>::build(ctx, domain);
+    terms[2] = PJCreateTerm(/*name=*/"Int", /*type=*/_111, /*tag=*/1);
+    const auto* _112 =
         BuildPJType<::v0_1::pj::reflect::OutlineVariant>::build(ctx, domain);
     terms[3] =
-        PJCreateTerm(/*name=*/"OutlineVariant", /*type=*/_111, /*tag=*/5);
-    const auto* _112 =
-        BuildPJType<::v0_1::pj::reflect::Struct>::build(ctx, domain);
-    terms[4] = PJCreateTerm(/*name=*/"Struct", /*type=*/_112, /*tag=*/3);
+        PJCreateTerm(/*name=*/"OutlineVariant", /*type=*/_112, /*tag=*/5);
     const auto* _113 =
-        BuildPJType<::v0_1::pj::reflect::Unit>::build(ctx, domain);
-    terms[5] = PJCreateTerm(/*name=*/"Unit", /*type=*/_113, /*tag=*/2);
+        BuildPJType<::v0_1::pj::reflect::Struct>::build(ctx, domain);
+    terms[4] = PJCreateTerm(/*name=*/"Struct", /*type=*/_113, /*tag=*/3);
     const auto* _114 =
+        BuildPJType<::v0_1::pj::reflect::Unit>::build(ctx, domain);
+    terms[5] = PJCreateTerm(/*name=*/"Unit", /*type=*/_114, /*tag=*/2);
+    const auto* _115 =
         BuildPJType<::v0_1::pj::reflect::Vector>::build(ctx, domain);
-    terms[6] = PJCreateTerm(/*name=*/"Vector", /*type=*/_114, /*tag=*/7);
-    const PJUnitType* _115 = PJCreateUnitType(ctx);
-    terms[7] = PJCreateTerm(/*name=*/"undef", /*type=*/_115, /*tag=*/0);
-    const char* _116[3] = {"pj", "reflect", "Type"};
-    const PJInlineVariantType* _117 = PJCreateInlineVariantType(
-        ctx, /*name_size=*/3, /*name=*/_116, /*type_domain=*/domain,
+    terms[6] = PJCreateTerm(/*name=*/"Vector", /*type=*/_115, /*tag=*/7);
+    const PJUnitType* _116 = PJCreateUnitType(ctx);
+    terms[7] = PJCreateTerm(/*name=*/"undef", /*type=*/_116, /*tag=*/0);
+    const char* _117[3] = {"pj", "reflect", "Type"};
+    const PJInlineVariantType* _118 = PJCreateInlineVariantType(
+        ctx, /*name_size=*/3, /*name=*/_117, /*type_domain=*/domain,
         /*num_terms=*/8, /*terms=*/terms, /*default_term=*/7, /*term_offset=*/0,
-        /*term_size=*/744, /*tag_offset=*/744, /*tag_width=*/8, /*size=*/752,
+        /*term_size=*/808, /*tag_offset=*/808, /*tag_width=*/8, /*size=*/816,
         /*alignment=*/8);
-    return _117;
+    return _118;
   }
 };
 }  // namespace gen
@@ -757,21 +760,21 @@ template <>
 struct BuildPJType<::v0_1::pj::reflect::Protocol> {
   static const auto* build(PJContext* ctx, const PJDomain* domain) {
     const PJStructField* fields[4];
-    const auto* _118 = PJCreateIntType(ctx, /*width=*/32, /*alignment=*/8,
-                                       /*sign=*/PJ_SIGN_SIGNED);
-    fields[0] =
-        PJCreateStructField(/*name=*/"pj_version", /*type=*/_118, /*offset=*/0);
     const auto* _119 = PJCreateIntType(ctx, /*width=*/32, /*alignment=*/8,
                                        /*sign=*/PJ_SIGN_SIGNED);
+    fields[0] =
+        PJCreateStructField(/*name=*/"pj_version", /*type=*/_119, /*offset=*/0);
+    const auto* _120 = PJCreateIntType(ctx, /*width=*/32, /*alignment=*/8,
+                                       /*sign=*/PJ_SIGN_SIGNED);
     fields[1] =
-        PJCreateStructField(/*name=*/"head", /*type=*/_119, /*offset=*/32);
-    const auto* _120 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
-    fields[2] = PJCreateStructField(/*name=*/"buffer_offset", /*type=*/_120,
+        PJCreateStructField(/*name=*/"head", /*type=*/_120, /*offset=*/32);
+    const auto* _121 = BuildPJType<::v0_1::pj::Width>::build(ctx, domain);
+    fields[2] = PJCreateStructField(/*name=*/"buffer_offset", /*type=*/_121,
                                     /*offset=*/64);
-    const auto* _122 =
+    const auto* _123 =
         BuildPJType<::v0_1::pj::reflect::Type>::build(ctx, domain);
-    const auto* _121 = PJCreateVectorType(
-        ctx, /*elem=*/_122, /*min_length=*/0, /*max_length=*/-1,
+    const auto* _122 = PJCreateVectorType(
+        ctx, /*elem=*/_123, /*min_length=*/0, /*max_length=*/-1,
         /*wire_min_length=*/0, /*ppl_count=*/0, /*length_offset=*/0,
         /*length_size=*/64, /*ref_offset=*/64, /*ref_size=*/64,
         /*reference_mode=*/PJ_REFERENCE_MODE_OFFSET,
@@ -779,12 +782,12 @@ struct BuildPJType<::v0_1::pj::reflect::Protocol> {
         /*partial_payload_offset=*/128, /*partial_payload_size=*/0,
         /*size=*/128, /*alignment=*/8, /*outlined_payload_alignment=*/8);
     fields[3] =
-        PJCreateStructField(/*name=*/"types", /*type=*/_121, /*offset=*/128);
-    const char* _123[3] = {"pj", "reflect", "Protocol"};
-    const PJStructType* _124 = PJCreateStructType(
-        ctx, /*name_size=*/3, /*name=*/_123, /*type_domain=*/domain,
+        PJCreateStructField(/*name=*/"types", /*type=*/_122, /*offset=*/128);
+    const char* _124[3] = {"pj", "reflect", "Protocol"};
+    const PJStructType* _125 = PJCreateStructType(
+        ctx, /*name_size=*/3, /*name=*/_124, /*type_domain=*/domain,
         /*num_fields=*/4, /*fields=*/fields, /*size=*/256, /*alignment=*/8);
-    return _124;
+    return _125;
   }
 };
 }  // namespace gen
@@ -796,9 +799,9 @@ template <>
 struct BuildPJProtocol<::v0_1::pj::reflect::Schema> {
   using Head = ::v0_1::pj::reflect::Protocol;
   static const auto* build(PJContext* ctx, const PJDomain* domain) {
-    const auto* _125 =
+    const auto* _126 =
         BuildPJType<::v0_1::pj::reflect::Protocol>::build(ctx, domain);
-    return PJCreateProtocolType(ctx, _125, 0);
+    return PJCreateProtocolType(ctx, _126, 0);
   }
 };
 }  // namespace gen
