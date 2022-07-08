@@ -13,6 +13,7 @@ enum DogBreed {
 struct Dog {
   // Multiple breeds indicates a mix.
   breed: DogBreed[1:];
+  short_int: uint64;
 }
 
 enum CatCoat {

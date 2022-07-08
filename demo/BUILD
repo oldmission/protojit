@@ -12,4 +12,5 @@ cc_binary(
     srcs = ["main.cpp"],
     linkopts = ["-lstdc++fs"],
     deps = [":adoption"],
+    linkstatic = True,
 )

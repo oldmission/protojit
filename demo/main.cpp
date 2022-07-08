@@ -11,7 +11,7 @@
 
 namespace cl = llvm::cl;
 
-enum class RunMode { kRead, kWrite };
+enum class RunMode { kRead, kWrite, kWriteExisting };
 enum class Ver { v1, v2 };
 
 cl::OptionCategory DemoOptionsCategory("Protocol JIT Demo");
@@ -19,7 +19,9 @@ cl::OptionCategory DemoOptionsCategory("Protocol JIT Demo");
 cl::opt<RunMode> Mode(
     "mode",
     cl::values(clEnumValN(RunMode::kRead, "read", "Read from existing file"),
-               clEnumValN(RunMode::kWrite, "write", "Write to a new file")),
+               clEnumValN(RunMode::kWrite, "write", "Write to a new file"),
+               clEnumValN(RunMode::kWriteExisting, "writeexisting",
+                          "Write to a new file, using an existing schema")),
     cl::Required, cl::cat(DemoOptionsCategory));
 
 cl::opt<Ver> Version(
@@ -54,7 +56,8 @@ auto kBeagleBreed = std::array{v1::DogBreed::BEAGLE};
 v1::Adoption SampleDogV1{
     .animal = {.specifics = {v1::Specifics::dog,
                              v1::Dog{.breed = {kBeagleBreed.data(),
-                                               kBeagleBreed.size()}}},
+                                               kBeagleBreed.size()},
+                                     .short_int = 42}},
                .name = v1::Name{DogName.data(), DogName.length()},
                .age = 36,
                .weight = 45,
@@ -107,10 +110,9 @@ void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
   std::ofstream{file}.write(buf.data(), buf.size());
 }
 
-template <Ver V>
-Reader<V> getReaderForSchema(const std::string& schema_file) {
+std::vector<char> readFile(const std::string& file) {
   std::vector<char> buf;
-  std::ifstream fs{schema_file};
+  std::ifstream fs{file};
 
   size_t size = 0;
   do {
@@ -119,18 +121,23 @@ Reader<V> getReaderForSchema(const std::string& schema_file) {
     size += fs.gcount();
   } while (!fs.eof());
 
-  return Reader<V>{buf.data()};
+  return buf;
 }
 
 template <Ver V>
 void read(pj::runtime::Context& ctx) {
-  auto reader = getReaderForSchema<V>(SchemaFile.getValue());
+  auto reader = Reader<V>{readFile(SchemaFile.getValue()).data()};
+  reader.getProtocol().printLayout();
 
   auto handle_cat = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got cat adoption message" << std::endl;
   };
   auto handle_dog = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got dog adoption message" << std::endl;
+    if constexpr (V == Ver::v1) {
+      std::cout << "Got short_int: "
+                << adoption->animal.specifics.value.dog.short_int << std::endl;
+    }
   };
 
   std::vector<char> data_buf;
@@ -170,9 +177,17 @@ void read(pj::runtime::Context& ctx) {
 
 template <Ver V>
 void write(pj::runtime::Context& ctx) {
-  Writer<V> writer;
+  auto writer = [&]() {
+    if (Mode.getValue() == RunMode::kWrite) {
+      return Writer<V>{};
+    } else {
+      return Writer<V>{readFile(SchemaFile.getValue()).data()};
+    }
+  }();
 
-  writeSchemaToFile(ctx, writer.getProtocol(), SchemaFile.getValue());
+  if (Mode.getValue() == RunMode::kWrite) {
+    writeSchemaToFile(ctx, writer.getProtocol(), SchemaFile.getValue());
+  }
 
   auto [cat, dog] = [&]() {
     if constexpr (V == Ver::v1) {
