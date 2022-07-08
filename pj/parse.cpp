@@ -349,7 +349,8 @@ BEGIN_ACTION(VarArrayModifier) {
       .elem = __ type,
       .min_length =
           __ array_min_len < 0 ? 0 : static_cast<uint64_t>(__ array_min_len),
-      .max_length = __ array_max_len};
+      .max_length = __ array_max_len,
+      .elem_width = Bytes(0)};
   validate(data, in.position());
 
   __ type = types::VectorType::get(&__ ctx, data);
