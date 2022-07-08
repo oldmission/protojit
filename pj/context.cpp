@@ -175,14 +175,14 @@ void ProtoJitContext::encodeProto(types::ProtocolType proto, char* buf) {
   char* buf_start = buf;
   buf += 8;
 
-#define ENCODE_FOR_VERSION(V, N)                                         \
-  {                                                                      \
-    uint64_t version = N;                                                \
-    uint64_t size = RoundUp(schema::GET_PROTO_SIZE(V)(&reflected), 8ul); \
-    std::memcpy(&buf[0], &version, 8);                                   \
-    std::memcpy(&buf[8], &size, 8);                                      \
-    schema::ENCODE_PROTO(V)(&reflected, &buf[16]);                       \
-    buf += 16 + size;                                                    \
+#define ENCODE_FOR_VERSION(V, N)                           \
+  {                                                        \
+    uint64_t version = N;                                  \
+    uint64_t size = schema::GET_PROTO_SIZE(V)(&reflected); \
+    std::memcpy(&buf[0], &version, 8);                     \
+    std::memcpy(&buf[8], &size, 8);                        \
+    schema::ENCODE_PROTO(V)(&reflected, &buf[16]);         \
+    buf += 16 + size;                                      \
   }
   FOR_EACH_COMPATIBLE_VERSION(ENCODE_FOR_VERSION)
 #undef ENCODE_FOR_VERSION
