@@ -32,6 +32,7 @@ std::string getPathAsString(const Path& path) {
 struct ParseState {
   ParsingScope& parse_scope;
   mlir::MLIRContext& ctx;
+  const bool parse_as_spec;
 
   std::vector<std::filesystem::path>& imports;
   std::vector<ParsedProtoFile::Decl>& decls;
@@ -390,12 +391,15 @@ BEGIN_ACTION(TypeDecl) {
   __ type = nullptr;
 
   if (__ is_external) {
-    // Don't define this type as the type written in the .pj source;
-    // rather, define it as an empty struct with the given name. Also
-    // don't add it as a declaration; it is up to the user provide one.
-    ArrayRefConverter<llvm::StringRef> name_converter{name};
-    type = types::StructType::get(
-        &__ ctx, types::InternalDomainAttr::get(&__ ctx), name_converter.get());
+    if (!__ parse_as_spec) {
+      // Don't define this type as the type written in the .pj source;
+      // rather, define it as an empty struct with the given name. Also
+      // don't add it as a declaration; it is up to the user provide one.
+      ArrayRefConverter<llvm::StringRef> name_converter{name};
+      type = types::StructType::get(&__ ctx,
+                                    types::InternalDomainAttr::get(&__ ctx),
+                                    name_converter.get());
+    }
   } else {
     __ decls.emplace_back(ParsedProtoFile::Decl{
         .kind = ParsedProtoFile::DeclKind::kType,
@@ -639,7 +643,7 @@ BEGIN_ACTION(ImportDecl) {
   }
 
   if (found) {
-    parseProtoFile(__ parse_scope, found_path);
+    parseProtoFile(__ parse_scope, found_path, __ parse_as_spec);
     __ imports.emplace_back(found_path);
   } else {
     throw parse_error("Cannot find import", in.position());
@@ -924,7 +928,8 @@ struct TopDecl
 
 struct ParseFile : must<star<TopDecl>, eof> {};
 
-void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
+void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path,
+                    bool parse_as_spec) {
   if (scope.pending_files.count(path)) {
     std::cerr << "Cycle in imports:\n";
     for (auto& p : scope.stack) {
@@ -943,6 +948,7 @@ void parseProtoFile(ParsingScope& scope, const std::filesystem::path& path) {
   ParseState state{
       .parse_scope = scope,
       .ctx = scope.ctx,
+      .parse_as_spec = parse_as_spec,
       .imports = parsed.imports,
       .decls = parsed.decls,
       .protos = parsed.spec_defs,

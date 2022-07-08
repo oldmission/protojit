@@ -103,7 +103,8 @@ struct ParsingScope {
   std::set<std::filesystem::path> import_dirs;
 };
 
-void parseProtoFile(ParsingScope& scope, const std::filesystem::path&);
+void parseProtoFile(ParsingScope& scope, const std::filesystem::path&,
+                    bool parse_as_spec);
 
 void generateHeader(const ArchDetails& arch, const ParsedProtoFile& file,
                     std::ostream& output);

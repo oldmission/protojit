@@ -73,8 +73,11 @@ int main(int argc, char** argv) {
     parse_scope.import_dirs.emplace(dir);
   }
 
+  const auto& proto = GenerateProtocol.getValue();
+
   try {
-    pj::parseProtoFile(parse_scope, input_path);
+    pj::parseProtoFile(parse_scope, input_path,
+                       /*parse_as_spec=*/!proto.empty());
   } catch (tao::pegtl::parse_error& e) {
     std::cerr << "Parse error: " << e.what() << "\n";
     return 1;
@@ -84,7 +87,6 @@ int main(int argc, char** argv) {
 
   pj::SourceGenerator sourcegen{decodeScopedName(OuterNamespace.getValue())};
 
-  const auto& proto = GenerateProtocol.getValue();
   if (!proto.empty()) {
     auto name = decodeScopedName(proto);
     auto it = parse_scope.spec_defs.find(name);
