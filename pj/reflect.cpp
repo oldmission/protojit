@@ -265,6 +265,7 @@ types::ValueType unreflect(const Vector& type, int32_t index,
                 .partial_payload_offset = type.partial_payload_offset,
                 .size = type.size,
                 .alignment = type.alignment,
+                .elem_width = type.elem_width,
             });
 }
 
