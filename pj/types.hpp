@@ -672,7 +672,8 @@ struct Vector {
   bool hasDetails() const { return true; }
   void printDetails(llvm::raw_ostream& os) const {
     os << "length: u" << length_size.bits() << " @ " << length_offset.bits();
-    if (max_length < 0 || (max_length >= 0 && max_length > min_length)) {
+    if (max_length < 0 ||
+        (max_length >= 0 && static_cast<uint64_t>(max_length) > min_length)) {
       os << ", ref: u" << ref_size.bits() << " @ " << ref_offset.bits();
       if (ppl_count > 0) {
         os << ", ppl: " << elem << "[" << ppl_count;

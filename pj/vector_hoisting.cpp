@@ -11,7 +11,9 @@ using namespace types;
 std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
     Type type) {
   if (auto vec = type.dyn_cast<VectorType>()) {
-    if (vec->wire_min_length == 0 || vec->wire_min_length == vec->max_length) {
+    if (vec->wire_min_length == 0 ||
+        (vec->max_length > 0 &&
+         vec->wire_min_length == static_cast<uint64_t>(vec->max_length))) {
       return {};
     }
     return Split{

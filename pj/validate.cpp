@@ -60,7 +60,8 @@ void validate(const Vector& type, position pos) {
   if (type.min_length < 0) {
     throw parse_error("Minimum length cannot be negative", pos);
   }
-  if (type.max_length >= 0 && type.min_length > type.max_length) {
+  if (type.max_length >= 0 &&
+      type.min_length > static_cast<uint64_t>(type.max_length)) {
     throw parse_error("Minimum length greater than maximum length", pos);
   }
 }

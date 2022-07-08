@@ -61,7 +61,7 @@ struct ParseState {
 
   // Populated after parsing Len, MinLen, and MaxLen rules.
   uint64_t array_len = kNone;
-  uint64_t array_min_len = kNone;
+  int64_t array_min_len = kNone;
   int64_t array_max_len = kNone;
 
   // Set by ExternalDecl, cleared by StructDecl.
@@ -346,7 +346,8 @@ BEGIN_ACTION(VarArrayModifier) {
 
   types::Vector data{
       .elem = __ type,
-      .min_length = (__ array_min_len == kNone) ? 0 : __ array_min_len,
+      .min_length =
+          __ array_min_len < 0 ? 0 : static_cast<uint64_t>(__ array_min_len),
       .max_length = __ array_max_len};
   validate(data, in.position());
 

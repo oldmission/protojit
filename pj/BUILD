@@ -1,7 +1,35 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_cc//examples:experimental_cc_shared_library.bzl", "cc_shared_library")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 
 package(default_visibility = ["//visibility:public"])
+
+# A lot of code in LLVM is not clean under GCC's warnings. These flags allow us to
+# enable -Werror under GCC for just the protojit source during testing, but leave it
+# off for LLVM.
+string_flag(
+    name = "build_type",
+    build_setting_default = "release",
+)
+
+config_setting(
+    name = "release",
+    flag_values = {
+        ":build_type": "release",
+    },
+)
+
+config_setting(
+    name = "test",
+    flag_values = {
+        ":build_type": "test",
+    },
+)
+
+COPTS = select({
+    ":release": [],
+    ":test": ["-Werror"],
+})
 
 td_library(
     name = "TypesTdFiles",
@@ -79,6 +107,7 @@ cc_library(
         "include/pj/util.hpp",
     ],
     includes = ["include"],
+    copts = COPTS,
 )
 
 cc_library(
@@ -109,6 +138,7 @@ cc_library(
         "@llvm-project//mlir:StandardOps",
         "@llvm-project//mlir:Transforms",
     ],
+    copts = COPTS,
 )
 
 cc_library(
@@ -129,6 +159,7 @@ cc_library(
     ],
     linkopts = ["-lstdc++"],
     deps = [":compiler_support"],
+    copts = COPTS,
 )
 
 cc_binary(
@@ -148,6 +179,7 @@ cc_binary(
         ":plan",
         "@pegtl//:headers",
     ],
+    copts = COPTS,
 )
 
 genrule(
@@ -166,6 +198,7 @@ cc_library(
         "include/pj/reflect.pj.hpp",
     ],
     deps = [":core_noany"],
+    copts = COPTS,
 )
 
 cc_library(
@@ -177,6 +210,7 @@ cc_library(
         ":compiler_support",
         ":core",
     ],
+    copts = COPTS,
 )
 
 cc_library(
@@ -215,6 +249,7 @@ cc_library(
         "@llvm-project//mlir:StandardToLLVM",
         "@llvm-project//mlir:Transforms",
     ],
+    copts = COPTS,
 )
 
 # Contains stub implementations of API methods getProtoSize, encodeProto, and
@@ -239,6 +274,7 @@ cc_library(
         ":plan",
         ":reflect",
     ],
+    copts = COPTS,
 )
 
 cc_binary(
@@ -249,6 +285,7 @@ cc_binary(
         "schema/versions.hpp",
     ],
     deps = [":runtime_bootstrap"],
+    copts = COPTS,
 )
 
 genrule(
@@ -272,6 +309,7 @@ cc_library(
         ":runtime_bootstrap",
         ":schema_precompile",
     ],
+    copts = COPTS,
 )
 
 cc_shared_library(
