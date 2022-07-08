@@ -264,7 +264,7 @@ LogicalResult FuncOpLowering::matchAndRewrite(
       mlir::Identifier::get(LLVM::LLVMDialect::getNoAliasAttrName(), ctx),
       UnitAttr::get(ctx)};
 
-  for (intptr_t i = 0, j = 0; i < op.getNumArguments(); ++i) {
+  for (size_t i = 0, j = 0; i < op.getNumArguments(); ++i) {
     if (j < buf_args.size() && i == buf_args[j]) {
       // pointer
       new_fn_types.push_back(pass->bytePtrType());
@@ -318,7 +318,7 @@ LogicalResult FuncOpLowering::matchAndRewrite(
 
   _.setInsertionPointToStart(new_entry);
 
-  for (intptr_t i = 0, j = 0, k = 0; i < op.getNumArguments(); ++i) {
+  for (size_t i = 0, j = 0, k = 0; i < op.getNumArguments(); ++i) {
     if (j < buf_args.size() && i == buf_args[j]) {
       auto old_arg = op.getArgument(i);
       auto ptr = func.getArgument(k), size = func.getArgument(k + 1);

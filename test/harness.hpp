@@ -133,7 +133,7 @@ class PJGenericTest
           results.dec_buffer_size += 1;
           continue;
         }
-        if (bbuf.size == results.dec_buffer_size) {
+        if (static_cast<uintptr_t>(bbuf.size) == results.dec_buffer_size) {
           results.dec_buffer = nullptr;
         }
         break;

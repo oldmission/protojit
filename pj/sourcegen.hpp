@@ -87,7 +87,7 @@ class SourceGenerator {
     for (std::string_view space : outer_namespace_) {
       stream() << "namespace " << space << "{\n";
     }
-    for (intptr_t i = 0; i < name.size() - !is_namespace_name; ++i) {
+    for (size_t i = 0; i < name.size() - !is_namespace_name; ++i) {
       stream() << "namespace " << std::string_view(name[i]) << "{\n";
     }
   }

@@ -1,6 +1,7 @@
 #include <map>
 
 #include <llvm/Analysis/AliasAnalysis.h>
+#include <llvm/Analysis/AliasSetTracker.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
@@ -9,7 +10,6 @@
 #include <llvm/Pass.h>
 #include <llvm/Support/X86TargetParser.h>
 #include <llvm/Target/TargetMachine.h>
-#include <llvm/Analysis/AliasSetTracker.h>
 
 #include <pj/util.hpp>
 
@@ -257,7 +257,7 @@ struct CopySet {
   void generate(const DataLayout& layout, const CopyTargetInfo& target,
                 TargetLibraryInfo& tli, AliasSetTracker& ast,
                 BasicBlock::iterator pos) const {
-    if (pieces.size() == 0) {
+    if (store_starts.size() == 0) {
       return;
     }
 
@@ -281,7 +281,11 @@ struct CopySet {
     for (auto& [_, piece] : store_starts) pieces.push_back(piece);
 
     auto* it = pieces.begin();
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
     auto* piece = *it++;
+#pragma GCC diagnostic pop
 
     for (; it != pieces.end(); ++it) {
       // Combine this piece into the prior one if they are exactly adjacent.
