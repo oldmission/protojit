@@ -293,7 +293,9 @@ TermAttribute* reflectTermAttributes(ArrayRef<types::TermAttribute> attrs,
   for (auto& attr : attrs) {
     (*attrs_it++) = std::visit(
         overloaded{[&](const types::TermAttribute::Undef& undef) {
-                     return TermAttribute{};
+                     return TermAttribute{
+                         TermAttribute::undef,
+                         Undef{.is_default = undef.is_default}};
                    },
                    [&](const types::TermAttribute::VectorSplit& vs) {
                      return TermAttribute{
@@ -305,7 +307,7 @@ TermAttribute* reflectTermAttributes(ArrayRef<types::TermAttribute> attrs,
                                          : VectorSplitType::kOutline,
                              .inline_length = vs.inline_length,
                              .path = reflectPath(vs.path, alloc),
-                             .is_default = vs.is_default,
+                             .is_default = vs.is_default(),
                          }};
                    }},
         attr.value);
@@ -320,13 +322,14 @@ ArrayRef<types::TermAttribute> unreflectTermAttributes(
   auto* attrs_it = attrs_alloc;
   for (const TermAttribute& attr : attrs) {
     switch (attr.tag) {
-      case TermAttribute::Kind::undef:
-        // TODO: decode is_default if available using reflection.
-        (*attrs_it++) = types::TermAttribute{
-            .value = types::TermAttribute::Undef{.is_default = false},
-        };
+      case TermAttribute::Kind::undef: {
+        const auto& undef = attr.value.undef;
+        (*attrs_it++) =
+            types::TermAttribute{.value = types::TermAttribute::Undef{
+                                     .is_default = !!undef.is_default}};
         break;
-      case TermAttribute::Kind::vector_split:
+      }
+      case TermAttribute::Kind::vector_split: {
         using VectorSplit = types::TermAttribute::VectorSplit;
         const auto& vs = attr.value.vector_split;
         (*attrs_it++) = types::TermAttribute{
@@ -337,10 +340,10 @@ ArrayRef<types::TermAttribute> unreflectTermAttributes(
                                 : VectorSplit::Type::kOutline,
                     .inline_length = vs.inline_length,
                     .path = unreflectPath(vs.path, ctx),
-                    .is_default = !!vs.is_default,
                 },
         };
         break;
+      }
     }
   }
   return {attrs_alloc, attrs.size()};
@@ -395,6 +398,7 @@ void reflect(types::InlineVariantType type, llvm::BumpPtrAllocator& alloc,
       InlineVariant{
           .name = reflectName(type.name(), alloc),
           .terms = {terms, type->terms.size()},
+          .default_term = type->default_term,
           .term_offset = type->term_offset,
           .term_size = type->term_size,
           .tag_offset = type->tag_offset,
@@ -432,6 +436,7 @@ void reflect(types::OutlineVariantType type, llvm::BumpPtrAllocator& alloc,
       OutlineVariant{
           .name = reflectName(type.name(), alloc),
           .terms = {terms, type->terms.size()},
+          .default_term = type->default_term,
           .tag_width = type->tag_width,
           .tag_alignment = type->tag_alignment,
           .term_offset = type->term_offset,

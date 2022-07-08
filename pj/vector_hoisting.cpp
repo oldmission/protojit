@@ -9,7 +9,7 @@ using namespace mlir;
 using namespace types;
 
 std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
-    Type type) {
+    llvm::StringRef name, Type type) {
   if (auto vec = type.dyn_cast<VectorType>()) {
     if (vec->wire_min_length == 0 ||
         (vec->max_length > 0 &&
@@ -36,14 +36,15 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
                 .elem_width =
                     RoundUp(vec->elem.headSize(), vec->elem.headAlignment()),
             }),
-        .path = PathAttr::fromString(&ctx_, "_")};
+        .path = PathAttr::fromString(&ctx_, name)};
   }
 
   if (auto str = type.dyn_cast<StructType>()) {
     std::optional<Split> split;
     uintptr_t i;
     for (i = 0; i < str->fields.size(); ++i) {
-      if ((split = splitFirstEligibleVector(str->fields[i].type))) {
+      if ((split = splitFirstEligibleVector(str->fields[i].name,
+                                            str->fields[i].type))) {
         break;
       }
     }
@@ -76,7 +77,7 @@ std::optional<VectorHoisting::Split> VectorHoisting::splitFirstEligibleVector(
     return Split{.inline_length = split->inline_length,
                  .short_type = get_struct(split->short_type),
                  .long_type = get_struct(split->long_type),
-                 .path = split->path.expand(str->fields[i].name)};
+                 .path = split->path.expand(name)};
   }
 
   return {};
@@ -92,7 +93,7 @@ bool VectorHoisting::hoistVectors(VariantType var) {
 
   for (uintptr_t i = 0; i < terms.size(); ++i) {
     const Term& t = terms[i];
-    auto split = splitFirstEligibleVector(t.type);
+    auto split = splitFirstEligibleVector(t.name, t.type);
     if (!split) {
       continue;
     }
@@ -116,13 +117,12 @@ bool VectorHoisting::hoistVectors(VariantType var) {
                                   TermAttribute::VectorSplit::Type type) {
       ArrayRefConverter<TermAttribute> attributes{t.attributes,
                                                   t.attributes.size()};
-      attributes.storage().push_back(TermAttribute{
-          .value = TermAttribute::VectorSplit{
-              .type = type,
-              .inline_length = split->inline_length,
-              .path = split->path,
-              .is_default = type == TermAttribute::VectorSplit::kOutline,
-          }});
+      attributes.storage().push_back(
+          TermAttribute{.value = TermAttribute::VectorSplit{
+                            .type = type,
+                            .inline_length = split->inline_length,
+                            .path = split->path,
+                        }});
       t.attributes = attributes.get();
       return attributes;
     };

@@ -44,7 +44,8 @@ class VectorHoisting : public TypePass {
     types::PathAttr path;
   };
 
-  std::optional<Split> splitFirstEligibleVector(mlir::Type type);
+  std::optional<Split> splitFirstEligibleVector(llvm::StringRef name,
+                                                mlir::Type type);
   bool hoistVectors(types::VariantType var);
   bool findVariantAndHoist(mlir::Type type);
 

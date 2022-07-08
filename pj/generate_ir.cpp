@@ -96,7 +96,8 @@ struct GeneratePass
   Value projectPath(mlir::OpBuilder& _, mlir::Location loc, Value base,
                     PathAttr path_attr, bool frozen);
 
-  Value generateTermCondition(mlir::OpBuilder& _, mlir::Location loc, Value src,
+  Value generateTermCondition(mlir::OpBuilder& _, mlir::Location loc,
+                              Value src_variant,
                               ArrayRef<TermAttribute> dst_attributes);
 
   void transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
@@ -195,40 +196,50 @@ mlir::FuncOp GeneratePass::getOrCreateFn(mlir::Location loc,
 Value GeneratePass::projectPath(mlir::OpBuilder& _, mlir::Location loc,
                                 Value base, PathAttr path_attr, bool frozen) {
   auto path = path_attr.getValue();
-  if (path.size() == 1) {
+  if (path.size() == 0) {
     return base;
   }
-  // If there are remaining fields in path, it must be a struct type.
-  auto type = base.getType().cast<StructType>();
-  auto it =
-      std::find_if(type->fields.begin(), type->fields.end(),
-                   [&](const StructField& f) { return f.name == path[0]; });
-  assert(it != type->fields.end());
-  auto body = _.create<ProjectOp>(loc, it->type, base, it->offset, frozen);
+  // If there are remaining fields in path, it must be a struct type or a
+  // variant type.
+  auto [type, offset] = [&]() {
+    if (auto strct = base.getType().dyn_cast<StructType>()) {
+      auto it =
+          std::find_if(strct->fields.begin(), strct->fields.end(),
+                       [&](const StructField& f) { return f.name == path[0]; });
+      return std::make_pair(it->type, it->offset);
+    } else {
+      auto var = base.getType().cast<VariantType>();
+      auto it = std::find_if(var.terms().begin(), var.terms().end(),
+                             [&](const Term& t) { return t.name == path[0]; });
+      return std::make_pair(it->type, var.term_offset());
+    }
+  }();
+  auto body = _.create<ProjectOp>(loc, type, base, offset, frozen);
   return projectPath(_, loc, body, path_attr.narrow(), frozen);
 }
 
 Value GeneratePass::generateTermCondition(
-    mlir::OpBuilder& _, mlir::Location loc, Value src,
+    mlir::OpBuilder& _, mlir::Location loc, Value src_variant,
     ArrayRef<TermAttribute> dst_attributes) {
   auto cond = buildBool(loc, _, true);
   for (const TermAttribute& attr : dst_attributes) {
-    Value cur_cond;
-    std::visit(overloaded{[&](const TermAttribute::Undef& undef) {
-                            cur_cond = buildBool(loc, _, undef.is_default);
-                          },
-                          [&](const TermAttribute::VectorSplit& vs) {
-                            auto vec = projectPath(_, loc, src, vs.path, true);
-                            auto length =
-                                _.create<LengthOp>(loc, _.getIndexType(), vec);
-                            cur_cond = _.create<CmpIOp>(
-                                loc,
-                                vs.type == TermAttribute::VectorSplit::kInline
-                                    ? CmpIPredicate::ule
-                                    : CmpIPredicate::ugt,
-                                length, buildIndex(loc, _, vs.inline_length));
-                          }},
-               attr.value);
+    auto handle_undef = [&](const TermAttribute::Undef& undef) -> Value {
+      return buildBool(loc, _, undef.is_default);
+    };
+
+    auto handle_vector_split =
+        [&](const TermAttribute::VectorSplit& vs) -> Value {
+      auto vec = projectPath(_, loc, src_variant, vs.path, true);
+      auto length = _.create<LengthOp>(loc, _.getIndexType(), vec);
+      return _.create<CmpIOp>(loc,
+                              vs.type == TermAttribute::VectorSplit::kInline
+                                  ? CmpIPredicate::ule
+                                  : CmpIPredicate::ugt,
+                              length, buildIndex(loc, _, vs.inline_length));
+    };
+
+    auto cur_cond = std::visit(
+        overloaded{handle_undef, handle_vector_split}, attr.value);
     cond = _.create<AndOp>(loc, cond, cur_cond);
   }
   return cond;
@@ -245,14 +256,11 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
   const Term& default_term = dst_type.terms()[dst_type.default_term()];
 
   if (!dst_terms.empty()) {
-    auto src_body = _.create<ir::ProjectOp>(loc, src_term_type, src,
-                                            src_type.term_offset(), true);
-
     mlir::OpBuilder::InsertPoint ip;
     Value start_buf = buffer;
     for (uintptr_t i = 0; i < dst_terms.size(); ++i) {
       const Term* dst_term = dst_terms[i];
-      auto cond = generateTermCondition(_, loc, src_body, dst_term->attributes);
+      auto cond = generateTermCondition(_, loc, src, dst_term->attributes);
       auto if_op = _.create<scf::IfOp>(loc, start_buf.getType(), cond,
                                        /*withElseRegion=*/true);
       if (i == 0) {
@@ -276,6 +284,8 @@ void GeneratePass::transcodeTerm(mlir::OpBuilder& _, mlir::Location loc,
               buildIndex(loc, _,
                          dst_term->type.cast<ValueType>().headSize().bytes()));
         }
+        auto src_body = _.create<ir::ProjectOp>(loc, src_term_type, src,
+                                                src_type.term_offset(), true);
         cur_buf = _.create<TranscodeOp>(loc, cur_buf.getType(), src_body,
                                         dst_body, cur_buf, PathAttr::none(ctx),
                                         ArrayAttr::get(ctx, {}));
