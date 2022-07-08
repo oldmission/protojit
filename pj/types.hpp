@@ -196,7 +196,8 @@ struct TermAttribute {
     enum Type { kInline, kOutline } type;
     uint64_t inline_length;
     PathAttr path;  // Relative path from term type to the vector.
-    bool is_default;
+
+    bool is_default() const { return type == kOutline; }
 
     bool operator==(const VectorSplit& other) const {
       return type == other.type && inline_length == other.inline_length &&

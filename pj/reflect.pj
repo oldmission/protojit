@@ -61,6 +61,11 @@ struct Struct {
   alignment: Width;
 }
 
+struct Undef {
+  // TODO: add booleans
+  is_default: uint8;
+}
+
 enum VectorSplitType {
   kInline;
   kOutline;
@@ -70,12 +75,11 @@ struct VectorSplit {
   type: VectorSplitType;
   inline_length: uint64;
   path: QualifiedName;
-  // TODO: add booleans
   is_default: uint8;
 }
 
 variant TermAttribute {
-  // TODO: support decoding undef to Undef
+  undef: Undef default;
   vector_split: VectorSplit;
 }
 
