@@ -213,22 +213,23 @@ Value GeneratePass::generateTermCondition(
     ArrayRef<TermAttribute> dst_attributes) {
   auto cond = buildBool(loc, _, true);
   for (const TermAttribute& attr : dst_attributes) {
-    Value cur_cond;
-    std::visit(overloaded{[&](const TermAttribute::Undef& undef) {
-                            cur_cond = buildBool(loc, _, undef.is_default);
-                          },
-                          [&](const TermAttribute::VectorSplit& vs) {
-                            auto vec = projectPath(_, loc, src, vs.path, true);
-                            auto length =
-                                _.create<LengthOp>(loc, _.getIndexType(), vec);
-                            cur_cond = _.create<CmpIOp>(
-                                loc,
-                                vs.type == TermAttribute::VectorSplit::kInline
-                                    ? CmpIPredicate::ule
-                                    : CmpIPredicate::ugt,
-                                length, buildIndex(loc, _, vs.inline_length));
-                          }},
-               attr.value);
+    auto handle_undef = [&](const TermAttribute::Undef& undef) -> Value {
+      return buildBool(loc, _, undef.is_default);
+    };
+
+    auto handle_vector_split =
+        [&](const TermAttribute::VectorSplit& vs) -> Value {
+      auto vec = projectPath(_, loc, src, vs.path, true);
+      auto length = _.create<LengthOp>(loc, _.getIndexType(), vec);
+      return _.create<CmpIOp>(loc,
+                              vs.type == TermAttribute::VectorSplit::kInline
+                                  ? CmpIPredicate::ule
+                                  : CmpIPredicate::ugt,
+                              length, buildIndex(loc, _, vs.inline_length));
+    };
+
+    auto cur_cond =
+        std::visit(overloaded{handle_undef, handle_vector_split}, attr.value);
     cond = _.create<AndOp>(loc, cond, cur_cond);
   }
   return cond;

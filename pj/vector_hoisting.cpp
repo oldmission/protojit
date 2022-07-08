@@ -116,13 +116,12 @@ bool VectorHoisting::hoistVectors(VariantType var) {
                                   TermAttribute::VectorSplit::Type type) {
       ArrayRefConverter<TermAttribute> attributes{t.attributes,
                                                   t.attributes.size()};
-      attributes.storage().push_back(TermAttribute{
-          .value = TermAttribute::VectorSplit{
-              .type = type,
-              .inline_length = split->inline_length,
-              .path = split->path,
-              .is_default = type == TermAttribute::VectorSplit::kOutline,
-          }});
+      attributes.storage().push_back(
+          TermAttribute{.value = TermAttribute::VectorSplit{
+                            .type = type,
+                            .inline_length = split->inline_length,
+                            .path = split->path,
+                        }});
       t.attributes = attributes.get();
       return attributes;
     };

@@ -57,8 +57,6 @@ TEST_P(PJVariantTest, VariantAddCaseBig) {
 
   transcode(Options<Var1, Var3>{
       .from = &F, .to = &T, .src_path = "x", .tag_path = "_"});
-
-  EXPECT_EQ(F.value.x, 42);
 }
 
 TEST_P(PJVariantTest, VariantMissingHandler) {
