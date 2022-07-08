@@ -78,9 +78,22 @@ struct VectorSplit {
   is_default: uint8;
 }
 
+enum ShortIntType {
+  kShort;
+  kOriginal;
+}
+
+struct ShortInt {
+  type: ShortIntType;
+  threshold: uint64;
+  path: QualifiedName;
+  is_default: uint8;
+}
+
 variant TermAttribute {
   undef: Undef default;
   vector_split: VectorSplit;
+  short_int: ShortInt;
 }
 
 type TermAttributeVector external = TermAttribute[:];

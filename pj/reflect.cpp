@@ -292,24 +292,38 @@ TermAttribute* reflectTermAttributes(ArrayRef<types::TermAttribute> attrs,
   auto* attrs_it = attrs_alloc;
   for (auto& attr : attrs) {
     (*attrs_it++) = std::visit(
-        overloaded{[&](const types::TermAttribute::Undef& undef) {
-                     return TermAttribute{
-                         TermAttribute::undef,
-                         Undef{.is_default = undef.is_default}};
-                   },
-                   [&](const types::TermAttribute::VectorSplit& vs) {
-                     return TermAttribute{
-                         TermAttribute::vector_split,
-                         VectorSplit{
-                             .type = vs.type == types::TermAttribute::
-                                                    VectorSplit::Type::kInline
-                                         ? VectorSplitType::kInline
-                                         : VectorSplitType::kOutline,
-                             .inline_length = vs.inline_length,
-                             .path = reflectPath(vs.path, alloc),
-                             .is_default = vs.is_default(),
-                         }};
-                   }},
+        overloaded{
+            [&](const types::TermAttribute::Undef& undef) {
+              return TermAttribute{TermAttribute::undef,
+                                   Undef{.is_default = undef.is_default}};
+            },
+            [&](const types::TermAttribute::VectorSplit& vs) {
+              return TermAttribute{
+                  TermAttribute::vector_split,
+                  VectorSplit{
+                      .type = vs.type == types::TermAttribute::VectorSplit::
+                                             Type::kInline
+                                  ? VectorSplitType::kInline
+                                  : VectorSplitType::kOutline,
+                      .inline_length = vs.inline_length,
+                      .path = reflectPath(vs.path, alloc),
+                      .is_default = vs.is_default(),
+                  }};
+            },
+            [&](const types::TermAttribute::ShortInt& si) {
+              return TermAttribute{
+                  TermAttribute::short_int,
+                  ShortInt{
+                      .type =
+                          si.type ==
+                                  types::TermAttribute::ShortInt::Type::kShort
+                              ? ShortIntType::kShort
+                              : ShortIntType::kOriginal,
+                      .threshold = si.threshold,
+                      .path = reflectPath(si.path, alloc),
+                      .is_default = si.is_default(),
+                  }};
+            }},
         attr.value);
   }
   return attrs_alloc;
@@ -334,12 +348,27 @@ ArrayRef<types::TermAttribute> unreflectTermAttributes(
         const auto& vs = attr.value.vector_split;
         (*attrs_it++) = types::TermAttribute{
             .value =
-                types::TermAttribute::VectorSplit{
+                VectorSplit{
                     .type = vs.type == VectorSplitType::kInline
                                 ? VectorSplit::Type::kInline
                                 : VectorSplit::Type::kOutline,
                     .inline_length = vs.inline_length,
                     .path = unreflectPath(vs.path, ctx),
+                },
+        };
+        break;
+      }
+      case TermAttribute::Kind::short_int: {
+        using ShortInt = types::TermAttribute::ShortInt;
+        const auto& si = attr.value.short_int;
+        (*attrs_it++) = types::TermAttribute{
+            .value =
+                ShortInt{
+                    .type = si.type == ShortIntType::kShort
+                                ? ShortInt::Type::kShort
+                                : ShortInt::Type::kOriginal,
+                    .threshold = si.threshold,
+                    .path = unreflectPath(si.path, ctx),
                 },
         };
         break;

@@ -81,6 +81,11 @@ def SizeOp : ProtoJit_Op<"size", [SingleBlockImplicitTerminator<"::pj::ir::Yield
   let regions = (region SizedRegion<1>:$body);
 }
 
+def CastToIntOp : ProtoJit_Op<"castint", [NoSideEffect]> {
+  let arguments = (ins IntType:$value);
+  let results = (outs AnyInteger);
+}
+
 // Extract a reference to some component of a value from a fixed offset. The
 // "frozen" attributes indicates that the component is accessible and constant.
 def ProjectOp : ProtoJit_Op<"project", [NoSideEffect]> {

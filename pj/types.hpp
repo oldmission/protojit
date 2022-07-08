@@ -205,7 +205,19 @@ struct TermAttribute {
     }
   };
 
-  std::variant<Undef, VectorSplit> value;
+  struct ShortInt {
+    enum Type { kShort, kOriginal } type;
+    uint64_t threshold;
+    PathAttr path;  // Relative path from term type to the int.
+
+    bool is_default() const { return type == kOriginal; }
+
+    bool operator==(const ShortInt& other) const {
+      return type == other.type && path == other.path;
+    }
+  };
+
+  std::variant<Undef, VectorSplit, ShortInt> value;
 
   bool operator==(const TermAttribute& other) const {
     return value == other.value;
