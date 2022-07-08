@@ -137,19 +137,81 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
 std::string SourceGenerator::createTypeHandle(std::string decl,
                                               types::ValueType type) {
   ASSERT(region_ == Region::kBuilders);
-  ASSERT(domain_ == Domain::kHost);
 
   std::string handle = getUniqueName();
+  auto& os = stream();
 
-  stream() << "const auto* " << handle << " = BuildPJType<";
-  if (decl.empty() || type.isa<types::IntType>() ||
-      type.isa<types::UnitType>()) {
-    printTypeRef(type, /*wrap=*/true, decl);
-  } else {
-    stream() << "decltype(" << decl << ")";
+  if (domain_ == Domain::kHost || type.isa<types::NominalType>()) {
+    os << "const auto* " << handle << " = BuildPJType<";
+    if (domain_ == Domain::kWire || decl.empty() ||
+        type.isa<types::IntType>() || type.isa<types::UnitType>()) {
+      printTypeRef(type, /*wrap=*/true, decl);
+    } else {
+      os << "decltype(" << decl << ")";
+    }
+    os << ">::build(ctx, domain);\n";
+    return handle;
   }
-  stream() << ">::build(ctx, domain);\n";
-  return handle;
+
+  // Copy the type information exactly as-is.
+  if (auto I = type.dyn_cast<types::IntType>()) {
+    os << "const auto* " << handle << " = PJCreateIntType(ctx";
+    os << ", /*width=*/" << I->width.bits();
+    os << ", /*alignment=*/" << I->alignment.bits();
+    os << ", /*sign=*/" << convertSign(I->sign) << ");\n";
+    return handle;
+  }
+
+  if (auto U = type.dyn_cast<types::UnitType>()) {
+    os << "const PJUnitType* " << handle << " = PJCreateUnitType(ctx);\n";
+    return handle;
+  }
+
+  if (auto A = type.dyn_cast<types::ArrayType>()) {
+    std::string elem_handle = createTypeHandle("", A->elem);
+    os << "const auto* " << handle << " = PJCreateArrayType(ctx";
+    os << ", /*elem=*/" << elem_handle;
+    os << ", /*length=*/" << A->length;
+    os << ", /*elem_size=*/" << A->elem_size.bits();
+    os << ", /*alignment=*/" << A->alignment.bits() << ");\n";
+    return handle;
+  }
+
+  if (auto V = type.dyn_cast<types::VectorType>()) {
+    std::string elem_handle = createTypeHandle("", V->elem);
+    os << "const auto* " << handle << " = PJCreateVectorType(ctx";
+    os << ", /*elem=*/" << elem_handle;
+    os << ", /*min_length=*/" << V->min_length;
+    os << ", /*max_length=*/" << V->max_length;
+    os << ", /*wire_min_length=*/" << V->min_length;
+    os << ", /*ppl_count=*/" << V->ppl_count;
+    os << ", /*length_offset=*/" << V->length_offset.bits();
+    os << ", /*length_size=*/" << V->length_size.bits();
+    os << ", /*ref_offset=*/" << V->ref_offset.bits();
+    os << ", /*ref_size=*/" << V->ref_size.bits();
+    os << ", /*reference_mode=*/";
+    switch (V->reference_mode) {
+      case ReferenceMode::kOffset:
+        os << "PJ_REFERENCE_MODE_OFFSET";
+        break;
+      case ReferenceMode::kPointer:
+        os << "PJ_REFERENCE_MODE_POINTER";
+        break;
+      default:
+        UNREACHABLE();
+    }
+    os << ", /*inline_payload_offset=*/" << V->inline_payload_offset.bits();
+    os << ", /*inline_payload_size=*/" << V->inline_payload_size.bits();
+    os << ", /*partial_payload_offset=*/" << V->partial_payload_offset.bits();
+    os << ", /*partial_payload_size=*/" << V->partial_payload_size.bits();
+    os << ", /*size=*/" << V->size.bits();
+    os << ", /*alignment=*/" << V->alignment.bits();
+    os << ", /*outlined_payload_alignment=*/"
+       << V->outlined_payload_alignment.bits() << ");\n";
+    return handle;
+  }
+
+  UNREACHABLE();
 }
 
 void SourceGenerator::addProtocol(const SourceId& name,
