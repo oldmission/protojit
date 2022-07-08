@@ -50,6 +50,12 @@ std::string TermAttribute::toString() const {
                         << (split.type == VectorSplit::kInline ? "inline, "
                                                                : "outline, ")
                         << split.inline_length << ", " << split.path.toString();
+                 },
+                 [&](const ShortInt& si) {
+                   sstr << "SHORT_INT "
+                        << (si.type == ShortInt::kShort ? "short, "
+                                                        : "original, ")
+                        << si.threshold << ", " << si.path.toString();
                  }},
       value);
   return sstr.str();

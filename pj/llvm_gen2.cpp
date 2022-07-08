@@ -31,6 +31,7 @@ using namespace types;
   V(FuncOp)                     \
   V(InvokeCallbackOp)           \
   V(DecodeCatchOp)              \
+  V(CastToIntOp)                \
   V(ProjectOp)                  \
   V(TranscodePrimitiveOp)       \
   V(TagOp)                      \
@@ -333,6 +334,18 @@ LogicalResult FuncOpLowering::matchAndRewrite(
   _.eraseOp(op);
   pass->module().push_back(func);
   _.notifyOperationInserted(func);
+  return success();
+}
+
+LogicalResult CastToIntOpLowering::matchAndRewrite(
+    CastToIntOp op, llvm::ArrayRef<Value> operands,
+    ConversionPatternRewriter& _) const {
+  auto loc = op.getLoc();
+  auto src_type = op.value().getType().cast<IntType>();
+  auto ptr = _.create<BitcastOp>(loc, LLVMPointerType::get(src_type.toMLIR()),
+                                 op.value());
+  auto value = _.create<LoadOp>(loc, ptr, src_type->alignment.bytes());
+  _.replaceOp(op, {value});
   return success();
 }
 

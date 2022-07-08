@@ -147,6 +147,8 @@ cc_library(
     srcs = [
         "convert_internal.cpp",
         "convert_internal.hpp",
+        "int_shortening.cpp",
+        "int_shortening.hpp",
         "plan.cpp",
         "variant_outlining.cpp",
         "variant_outlining.hpp",
@@ -267,6 +269,7 @@ cc_library(
         "runtime.cpp",
         "schema/precompile.hpp",
         "schema/reflect.pj.v0_1.hpp",
+        "schema/reflect.pj.v0_2.hpp",
         "schema/versions.hpp",
     ],
     linkopts = ["-lstdc++"],
@@ -284,6 +287,7 @@ cc_binary(
     srcs = [
         "schema/precompile.cpp",
         "schema/reflect.pj.v0_1.hpp",
+        "schema/reflect.pj.v0_2.hpp",
         "schema/versions.hpp",
     ],
     deps = [":runtime_bootstrap"],

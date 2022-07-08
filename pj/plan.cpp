@@ -4,10 +4,11 @@
 
 #include <pj/util.hpp>
 
+#include "array_ref.hpp"
 #include "convert_internal.hpp"
 #include "defer.hpp"
+#include "int_shortening.hpp"
 #include "plan.hpp"
-#include "array_ref.hpp"
 #include "variant_outlining.hpp"
 #include "vector_hoisting.hpp"
 #include "wire_layout.hpp"
@@ -88,6 +89,15 @@ ProtocolType plan_protocol(mlir::MLIRContext& ctx, mlir::Type type,
   LLVM_DEBUG(
       llvm::errs() << "==================================================\n"
                       "After vector hoisting:\n"
+                      "==================================================\n";
+      proto.head.printTree(llvm::errs()));
+
+  IntShortening shorten{ctx};
+  shorten.run(proto);
+
+  LLVM_DEBUG(
+      llvm::errs() << "==================================================\n"
+                      "After int shortening:\n"
                       "==================================================\n";
       proto.head.printTree(llvm::errs()));
 

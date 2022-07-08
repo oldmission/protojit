@@ -228,8 +228,25 @@ Value GeneratePass::generateTermCondition(
                               length, buildIndex(loc, _, vs.inline_length));
     };
 
-    auto cur_cond =
-        std::visit(overloaded{handle_undef, handle_vector_split}, attr.value);
+    auto handle_short_int = [&](const TermAttribute::ShortInt& si) -> Value {
+      auto value = projectPath(_, loc, src, si.path, true);
+      auto src_size = value.getType().cast<ValueType>().headSize().bits();
+
+      auto integer_type = _.getIntegerType(src_size);
+      value = _.create<CastToIntOp>(loc, integer_type, value);
+      auto threshold = _.create<ConstantOp>(
+          loc, _.getIntegerAttr(integer_type, si.threshold));
+
+      return _.create<CmpIOp>(loc,
+                              si.type == TermAttribute::ShortInt::kShort
+                                  ? CmpIPredicate::ult
+                                  : CmpIPredicate::uge,
+                              value, threshold);
+    };
+
+    auto cur_cond = std::visit(
+        overloaded{handle_undef, handle_vector_split, handle_short_int},
+        attr.value);
     cond = _.create<AndOp>(loc, cond, cur_cond);
   }
   return cond;
