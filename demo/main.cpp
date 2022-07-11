@@ -28,12 +28,8 @@ cl::opt<Ver> Version(
                clEnumValN(Ver::v2, "v2", "Version 2 of the protocol")),
     cl::Required, cl::cat(DemoOptionsCategory));
 
-cl::opt<std::string> SchemaFile(
-    "schema", cl::desc("The schema file that will be used or written to"),
-    cl::Required, cl::cat(DemoOptionsCategory));
-
-cl::opt<std::string> DataFile(
-    "file", cl::desc("The file data will be read or written from"),
+cl::opt<std::string> File(
+    "file", cl::desc("The file that will be read from or written to"),
     cl::Required, cl::cat(DemoOptionsCategory));
 
 std::string CatName = "Onyx";
@@ -99,32 +95,37 @@ template <Ver V>
 using Adoption = std::conditional_t<V == Ver::v1, v1::Adoption, v2::Adoption>;
 
 void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
-                       const std::string& file) {
+                       std::ofstream& fs) {
   std::vector<char> buf;
   buf.resize(ctx.getProtoSize(proto));
   ctx.encodeProto(proto, buf.data());
 
-  std::ofstream{file}.write(buf.data(), buf.size());
+  fs.write(buf.data(), buf.size());
 }
 
 template <Ver V>
-Reader<V> getReaderForSchema(const std::string& schema_file) {
+Reader<V> getReaderForSchema(std::ifstream& fs) {
   std::vector<char> buf;
-  std::ifstream fs{schema_file};
+  buf.resize(8);
 
-  size_t size = 0;
-  do {
-    buf.resize(size + 1024);
-    fs.read(buf.data() + size, 1024);
-    size += fs.gcount();
-  } while (!fs.eof());
+  fs.read(buf.data(), 8);
+  assert(fs.gcount() == 8);
+
+  int64_t length;
+  std::memcpy(&length, buf.data(), 8);
+
+  buf.resize(length);
+  fs.read(buf.data() + 8, length - 8);
+  assert(fs.gcount() == length - 8);
 
   return Reader<V>{buf.data()};
 }
 
 template <Ver V>
 void read(pj::runtime::Context& ctx) {
-  auto reader = getReaderForSchema<V>(SchemaFile.getValue());
+  std::ifstream fs{File.getValue()};
+
+  auto reader = getReaderForSchema<V>(fs);
 
   auto handle_cat = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got cat adoption message" << std::endl;
@@ -137,7 +138,6 @@ void read(pj::runtime::Context& ctx) {
   data_buf.resize(1024);
   std::vector<char> dec_buf;
   dec_buf.resize(1024);
-  std::ifstream fs{DataFile.getValue()};
 
   do {
     // Extract one message from the file.
@@ -172,7 +172,8 @@ template <Ver V>
 void write(pj::runtime::Context& ctx) {
   Writer<V> writer;
 
-  writeSchemaToFile(ctx, writer.getProtocol(), SchemaFile.getValue());
+  std::ofstream fs{File.getValue()};
+  writeSchemaToFile(ctx, writer.getProtocol(), fs);
 
   auto [cat, dog] = [&]() {
     if constexpr (V == Ver::v1) {
@@ -195,8 +196,7 @@ void write(pj::runtime::Context& ctx) {
   *reinterpret_cast<uint64_t*>(&buf[8 + cat_size_aligned]) = dog_size;
   writer.encode_dog(dog, &buf[8 + cat_size_aligned + 8]);
 
-  std::ofstream{DataFile.getValue()}.write(buf.data(), buf.size());
-  std::cout << "Encoded and outputted data to file" << std::endl;
+  fs.write(buf.data(), buf.size());
 }
 
 int main(int argc, char** argv) {
