@@ -471,6 +471,8 @@ types::ValueType reflectableTypeFor(types::ValueType type,
   if (auto array = type.dyn_cast<types::ArrayType>()) {
     types::Array ary = types::Array(array);
     ary.elem = reflectableTypeFor(array->elem, domain);
+    ary.elem_size = RoundUp(ary.elem.headSize(), ary.elem.headAlignment());
+    ary.alignment = ary.elem.headAlignment();
     return types::ArrayType::get(array.getContext(), ary);
   }
   if (auto vec = type.dyn_cast<types::VectorType>()) {
@@ -500,22 +502,32 @@ types::ValueType reflectableTypeFor(types::ValueType type,
   }
   if (auto str = type.dyn_cast<types::StructType>()) {
     llvm::SmallVector<types::StructField, 4> fields;
+    // TODO: deduplicate this logic with WireLayout.
+    auto offset = Bytes(0);
+    auto alignment = Bytes(1);
     for (auto& f : str->fields) {
+      auto field_type = reflectableTypeFor(f.type, domain);
+      offset = RoundUp(offset, field_type.headAlignment());
       fields.emplace_back(types::StructField{
-          .type = reflectableTypeFor(f.type, domain),
+          .type = field_type,
           .name = f.name,
-          .offset = f.offset,
+          .offset = offset,
       });
+      offset += field_type.headSize();
+      alignment = std::max(alignment, field_type.headAlignment());
     }
     types::Struct result = str;
     result.fields = fields;
+    result.size = offset;
+    result.alignment = alignment;
     auto typ = types::StructType::get(type.getContext(), domain, str.name());
     typ.setTypeData(result);
     return typ;
   }
   if (auto var = type.dyn_cast<types::VariantType>()) {
     llvm::SmallVector<types::Term, 4> terms;
-    Width term_max_size = Bits(0);
+    Width term_max_size = Bytes(0);
+    Width term_max_alignment = Bytes(1);
     for (auto& t : var.terms()) {
       auto back = terms.emplace_back(types::Term{
           .name = t.name,
@@ -523,31 +535,23 @@ types::ValueType reflectableTypeFor(types::ValueType type,
           .tag = t.tag,
       });
       term_max_size = std::max(term_max_size, back.type.headSize());
+      term_max_alignment =
+          std::max(term_max_alignment, back.type.headAlignment());
     }
-    if (auto inl = type.dyn_cast<types::InlineVariantType>()) {
-      types::InlineVariant result = inl;
-      result.terms = terms;
-      auto typ =
-          types::InlineVariantType::get(type.getContext(), domain, inl.name());
-      typ.setTypeData(result);
-      return typ;
-    }
-    if (auto outl = type.dyn_cast<types::OutlineVariantType>()) {
-      types::InlineVariant result{
-          .terms = terms,
-          .default_term = outl->default_term,
-          .term_offset = Bytes(0),
-          .term_size = term_max_size,
-          .tag_offset = term_max_size,
-          .tag_width = outl.tag_width(),
-          .size = term_max_size + outl.tag_width(),
-          .alignment = outl->term_alignment,
-      };
-      auto typ =
-          types::InlineVariantType::get(type.getContext(), domain, outl.name());
-      typ.setTypeData(result);
-      return typ;
-    }
+    types::InlineVariant result{
+        .terms = terms,
+        .default_term = var.default_term(),
+        .term_offset = Bytes(0),
+        .term_size = term_max_size,
+        .tag_offset = term_max_size,
+        .tag_width = var.tag_width(),
+        .size = term_max_size + var.tag_width(),
+        .alignment = term_max_alignment,
+    };
+    auto typ =
+        types::InlineVariantType::get(type.getContext(), domain, var.name());
+    typ.setTypeData(result);
+    return typ;
   }
   UNREACHABLE();
 }

@@ -44,6 +44,11 @@ struct Any {
     }
   }
 
+  bool operator==(const Any& o) const {
+    return o.protocol_ == protocol_ && o.data_ == data_ && o.offset_ == offset_;
+  }
+  bool operator!=(const Any& o) const { return !(o == *this); }
+
  protected:
   Any(const reflect::Protocol* protocol, const char* data, int32_t offset)
       : protocol_(protocol), data_(data), offset_(offset) {}
@@ -71,7 +76,7 @@ struct AnyStruct : public Any {
   AnyField begin() const;
   AnyField end() const;
 
-  reflect::QualifiedName name() { return strct().name; }
+  reflect::QualifiedName name() const { return strct().name; }
 
   size_t numFields() const { return type().value.Struct.fields.size(); }
   AnyField getField(size_t i) const;
@@ -79,7 +84,7 @@ struct AnyStruct : public Any {
  private:
   friend AnyField;
 
-  const reflect::Struct& strct() { return type().value.Struct; }
+  const reflect::Struct& strct() const { return type().value.Struct; }
 
   Any getFieldData(size_t index) const {
     return Any(protocol_,
@@ -90,13 +95,23 @@ struct AnyStruct : public Any {
 
 struct AnyField {
   AnyField operator*() { return *this; }
+  AnyField* operator->() { return this; }
+  AnyField& operator++() {
+    ++index_;
+    return *this;
+  }
 
-  std::string_view name() {
+  bool operator==(const AnyField& o) const {
+    return o.owner_ == owner_ && o.index_ == index_;
+  }
+  bool operator!=(const AnyField& o) const { return !(o == *this); }
+
+  std::string_view name() const {
     auto name = owner_.strct().fields[index_].name;
     return {&name[0], name.size()};
   }
 
-  Any value() { return owner_.getFieldData(index_); }
+  Any value() const { return owner_.getFieldData(index_); }
 
  private:
   friend AnyStruct;
@@ -174,6 +189,15 @@ struct AnyVariant : public Any {
     ASSERT(type().tag == reflect::Type::Kind::InlineVariant);
   }
 
+  bool isEnum() const {
+    return std::all_of(variant().terms.begin(), variant().terms.end(),
+                       [this](const auto& term) {
+                         auto type =
+                             protocol_->types.base()[offset_ + term.type];
+                         return type.tag == reflect::Type::Kind::Unit;
+                       });
+  }
+
   uint64_t termTag() const {
     return getIntValueUnsigned<uint64_t>(data_ + variant().tag_offset.bytes(),
                                          variant().tag_width);
@@ -225,8 +249,8 @@ struct AnySequence : public Any {
         type().value.Vector.length_size);
   }
 
-  iterator begin() const;
-  iterator end() const;
+  iterator begin() const { return iterator(*this, 0); }
+  iterator end() const { return iterator(*this, size()); }
   Any operator[](size_t i) const {
     if (type().tag == reflect::Type::Kind::Array) {
       return Any(protocol_, data_ + i * type().value.Array.elem_size.bytes(),
@@ -245,12 +269,33 @@ struct AnySequence : public Any {
                offset_ + type().value.Vector.elem);
   }
 
+  bool isString() {
+    int32_t elem_offset;
+    if (type().tag == reflect::Type::Kind::Array) {
+      elem_offset = type().value.Array.elem;
+    } else {
+      ASSERT(type().tag == reflect::Type::Kind::Vector);
+      elem_offset = type().value.Vector.elem;
+    }
+    auto elem = protocol_->types.base()[offset_ + elem_offset];
+    return elem.tag == reflect::Type::Kind::Int &&
+           elem.value.Int.sign == Sign::kSignless &&
+           elem.value.Int.width == Bytes(1);
+  }
+
  private:
   struct iterator {
     Any operator*() const { return AnySequence(parent_)[index_]; }
     void operator++() { ++index_; }
 
+    bool operator==(const iterator& o) const {
+      return o.parent_ == parent_ && o.index_ == index_;
+    }
+    bool operator!=(const iterator& o) const { return !(o == *this); }
+
    private:
+    iterator(Any parent, size_t index) : parent_(parent), index_(index) {}
+
     friend AnySequence;
     Any parent_;
     size_t index_;
