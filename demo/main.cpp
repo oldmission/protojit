@@ -11,7 +11,7 @@
 
 namespace cl = llvm::cl;
 
-enum class RunMode { kRead, kWrite };
+enum class RunMode { kRead, kWrite, kWriteExisting };
 enum class Ver { v1, v2 };
 
 cl::OptionCategory DemoOptionsCategory("Protocol JIT Demo");
@@ -19,7 +19,9 @@ cl::OptionCategory DemoOptionsCategory("Protocol JIT Demo");
 cl::opt<RunMode> Mode(
     "mode",
     cl::values(clEnumValN(RunMode::kRead, "read", "Read from existing file"),
-               clEnumValN(RunMode::kWrite, "write", "Write to a new file")),
+               clEnumValN(RunMode::kWrite, "write", "Write to a new file"),
+               clEnumValN(RunMode::kWriteExisting, "writeexisting",
+                          "Write to a new file, using an existing schema")),
     cl::Required, cl::cat(DemoOptionsCategory));
 
 cl::opt<Ver> Version(
@@ -31,6 +33,12 @@ cl::opt<Ver> Version(
 cl::opt<std::string> File(
     "file", cl::desc("The file that will be read from or written to"),
     cl::Required, cl::cat(DemoOptionsCategory));
+
+cl::opt<std::string> SchemaFile(
+    "schema",
+    cl::desc(
+        "The file that will be used as the schema for the writeexisting mode"),
+    cl::Optional, cl::cat(DemoOptionsCategory));
 
 std::string CatName = "Onyx";
 std::string DogName = "Toast";
@@ -103,8 +111,12 @@ void writeSchemaToFile(pj::runtime::Context& ctx, pj::runtime::Protocol proto,
   fs.write(buf.data(), buf.size());
 }
 
-template <Ver V>
-Reader<V> getReaderForSchema(std::ifstream& fs) {
+std::vector<char> readSchema(std::ifstream& fs) {
+  if (!fs.is_open()) {
+    std::cerr << "File does not exist!" << std::endl;
+    exit(1);
+  }
+
   std::vector<char> buf;
   buf.resize(8);
 
@@ -118,14 +130,14 @@ Reader<V> getReaderForSchema(std::ifstream& fs) {
   fs.read(buf.data() + 8, length - 8);
   assert(fs.gcount() == length - 8);
 
-  return Reader<V>{buf.data()};
+  return buf;
 }
 
 template <Ver V>
 void read(pj::runtime::Context& ctx) {
   std::ifstream fs{File.getValue()};
 
-  auto reader = getReaderForSchema<V>(fs);
+  auto reader = Reader<V>{readSchema(fs).data()};
 
   auto handle_cat = [](const Adoption<V>* adoption, void*) {
     std::cout << "Got cat adoption message" << std::endl;
@@ -170,7 +182,14 @@ void read(pj::runtime::Context& ctx) {
 
 template <Ver V>
 void write(pj::runtime::Context& ctx) {
-  Writer<V> writer;
+  auto writer = [&]() {
+    if (Mode.getValue() == RunMode::kWrite) {
+      return Writer<V>{};
+    } else {
+      std::ifstream fs{SchemaFile.getValue()};
+      return Writer<V>{readSchema(fs).data()};
+    }
+  }();
 
   std::ofstream fs{File.getValue()};
   writeSchemaToFile(ctx, writer.getProtocol(), fs);
@@ -202,6 +221,19 @@ void write(pj::runtime::Context& ctx) {
 int main(int argc, char** argv) {
   cl::HideUnrelatedOptions(DemoOptionsCategory);
   cl::ParseCommandLineOptions(argc, argv);
+
+  if (!SchemaFile.getValue().empty() &&
+      Mode.getValue() != RunMode::kWriteExisting) {
+    std::cerr
+        << "--schema option should only be specified in writeexisting mode"
+        << std::endl;
+    return 1;
+  } else if (SchemaFile.getValue().empty() &&
+             Mode.getValue() == RunMode::kWriteExisting) {
+    std::cerr << "--schema option must be provided in writeexisting mode"
+              << std::endl;
+    return 1;
+  }
 
   pj::runtime::Context ctx;
 
