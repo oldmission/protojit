@@ -49,13 +49,31 @@ void ProtoJitDialect::printAttribute(Attribute attr,
 
 ProtoJitDialect::ProtoJitDialect(MLIRContext* ctx)
     : Dialect(getDialectNamespace(), ctx, TypeID::get<ProtoJitDialect>()) {
-  addAttributes<WidthAttr, HostDomainAttr, WireDomainAttr, ReflectDomainAttr,
-                InternalDomainAttr, PathAttr, DispatchHandlerAttr>();
+  addAttributes<WidthAttr,           //
+                HostDomainAttr,      //
+                WireDomainAttr,      //
+                ReflectDomainAttr,   //
+                InternalDomainAttr,  //
+                PathAttr,            //
+                DispatchHandlerAttr  //
+                >();
 
-  addTypes<HandlersArrayType, UserStateType, UnitType, IntType, StructType,
-           InlineVariantType, OutlineVariantType, ArrayType, VectorType,
-           AnyType, ProtocolType, BoundedBufferType, RawBufferType,
-           DummyBufferType>();
+  addTypes<HandlersArrayType,   //
+           UserStateType,       //
+           UnitType,            //
+           IntType,             //
+           FloatType,           //
+           StructType,          //
+           InlineVariantType,   //
+           OutlineVariantType,  //
+           ArrayType,           //
+           VectorType,          //
+           AnyType,             //
+           ProtocolType,        //
+           BoundedBufferType,   //
+           RawBufferType,       //
+           DummyBufferType      //
+           >();
 
   addOperations<
 #define GET_OP_LIST

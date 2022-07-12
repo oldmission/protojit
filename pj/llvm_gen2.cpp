@@ -384,38 +384,46 @@ LogicalResult TranscodePrimitiveOpLowering::matchAndRewrite(
     TranscodePrimitiveOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
-  auto src_type = op.src().getType().cast<ValueType>();
-  auto dst_type = op.dst().getType().cast<ValueType>();
+  auto src_type = op.src().getType().cast<PrimitiveType>();
+  auto dst_type = op.dst().getType().cast<PrimitiveType>();
 
-  if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
-    auto src = src_type.cast<IntType>(), dst = dst_type.cast<IntType>();
+  assert(src_type.getTypeID() == dst_type.getTypeID());
 
-    Value src_ptr = _.create<BitcastOp>(loc, LLVMPointerType::get(src.toMLIR()),
-                                        operands[0]);
-    Value dst_ptr = _.create<BitcastOp>(loc, LLVMPointerType::get(dst.toMLIR()),
-                                        operands[1]);
+  Value src_ptr = _.create<BitcastOp>(
+      loc, LLVMPointerType::get(src_type.toMLIR()), operands[0]);
+  Value dst_ptr = _.create<BitcastOp>(
+      loc, LLVMPointerType::get(dst_type.toMLIR()), operands[1]);
 
-    Value val = _.create<LoadOp>(loc, src_ptr, src->alignment.bytes());
+  Value val = _.create<LoadOp>(loc, src_ptr, src_type.headAlignment().bytes());
 
+  if (auto src_int = src_type.dyn_cast<IntType>()) {
+    auto dst_int = dst_type.cast<IntType>();
     // Zero, sign extend, or truncate if necessary.
-    if (src->width < dst->width) {
-      if (src->sign == Sign::kSigned) {
-        val = _.create<SExtOp>(loc, dst.toMLIR(), val);
+    if (src_int->width < dst_int->width) {
+      if (src_int->sign == Sign::kSigned) {
+        val = _.create<SExtOp>(loc, dst_int.toMLIR(), val);
       } else {
-        val = _.create<ZExtOp>(loc, dst.toMLIR(), val);
+        val = _.create<ZExtOp>(loc, dst_int.toMLIR(), val);
       }
     } else {
-      val = _.create<TruncOp>(loc, dst.toMLIR(), val);
+      val = _.create<TruncOp>(loc, dst_int.toMLIR(), val);
     }
-
-    ASSERT(llvm::isPowerOf2_64(dst->alignment.bytes()));
-    _.create<StoreOp>(op.getLoc(), val, dst_ptr, dst->alignment.bytes());
-
-    _.eraseOp(op);
-    return success();
+  } else if (auto src_float = src_type.dyn_cast<FloatType>()) {
+    auto dst_float = dst_type.cast<FloatType>();
+    // Truncate or extend if the types are different width.
+    if (src_float->width < dst_float->width) {
+      val = _.create<LLVM::FPExtOp>(loc, dst_float.toMLIR(), val);
+    } else if (src_float->width > dst_float->width) {
+      val = _.create<LLVM::FPTruncOp>(loc, dst_float.toMLIR(), val);
+    }
   }
 
-  return failure();
+  ASSERT(llvm::isPowerOf2_64(dst_type.headAlignment().bytes()));
+  _.create<StoreOp>(op.getLoc(), val, dst_ptr,
+                    dst_type.headAlignment().bytes());
+
+  _.eraseOp(op);
+  return success();
 }
 
 LogicalResult TagOpLowering::matchAndRewrite(
@@ -1021,14 +1029,17 @@ LogicalResult DefaultOpLowering::matchAndRewrite(
     DefaultOp op, llvm::ArrayRef<Value> operands,
     ConversionPatternRewriter& _) const {
   auto loc = op.getLoc();
+  auto dst_type = op.dst().getType();
 
-  if (auto type = op.dst().getType().dyn_cast<IntType>()) {
+  if (auto type = dst_type.dyn_cast<PrimitiveType>()) {
     Value ptr =
         _.create<BitcastOp>(loc, LLVMPointerType::get(type.toMLIR()), op.dst());
-    auto zero = _.create<LLVM::ConstantOp>(loc, type.toMLIR(),
-                                           _.getIntegerAttr(type.toMLIR(), 0));
-    ASSERT(llvm::isPowerOf2_64(type->alignment.bytes()));
-    _.create<StoreOp>(loc, zero, ptr, type->alignment.bytes());
+
+    auto default_val =
+        _.create<LLVM::ConstantOp>(loc, type.toMLIR(), type.getDefaultValue());
+
+    ASSERT(llvm::isPowerOf2_64(type.headAlignment().bytes()));
+    _.create<StoreOp>(loc, default_val, ptr, type.headAlignment().bytes());
 
     _.eraseOp(op);
     return success();

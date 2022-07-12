@@ -1,4 +1,4 @@
-import test.ints;
+import test.primitives;
 import test.spaces;
 
 struct X {

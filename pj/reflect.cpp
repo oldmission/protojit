@@ -8,6 +8,7 @@ namespace reflect {
 
 #define FOR_EACH_REFLECTABLE_PROTOJIT_TYPE(V) \
   V(Int)                                      \
+  V(Float)                                    \
   V(Unit)                                     \
   V(Struct)                                   \
   V(InlineVariant)                            \
@@ -117,6 +118,31 @@ types::ValueType unreflect(const Int& type, int32_t index,
                                        .alignment = type.alignment,
                                        .sign = type.sign,
                                    });
+}
+
+void reflect(types::FloatType type, llvm::BumpPtrAllocator& alloc,
+             std::vector<Type>& pool,
+             std::unordered_map<const void*, int32_t>& cache) {
+  Type result(
+      Type::Float,  //
+      Float{
+          .width = type->width == types::Float::k32 ? reflect::FloatWidth::k32
+                                                    : reflect::FloatWidth::k64,
+          .alignment = type->alignment,
+      });
+  pool.emplace_back(result);
+}
+
+types::ValueType unreflect(const Float& type, int32_t index,
+                           mlir::MLIRContext& ctx, types::WireDomainAttr domain,
+                           ArrayRef<Type> pool) {
+  return types::FloatType::get(
+      &ctx,
+      types::Float{
+          .width = type.width == reflect::FloatWidth::k32 ? types::Float::k32
+                                                          : types::Float::k64,
+          .alignment = type.alignment,
+      });
 }
 
 void reflect(types::UnitType type, llvm::BumpPtrAllocator& alloc,
@@ -465,7 +491,8 @@ types::ValueType unreflect(const OutlineVariant& type, int32_t index,
 
 types::ValueType reflectableTypeFor(types::ValueType type,
                                     types::ReflectDomainAttr domain) {
-  if (type.isa<types::IntType>() || type.isa<types::UnitType>()) {
+  if (type.isa<types::IntType>() || type.isa<types::FloatType>() ||
+      type.isa<types::UnitType>()) {
     return type;
   }
   if (auto array = type.dyn_cast<types::ArrayType>()) {

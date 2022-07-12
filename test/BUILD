@@ -12,9 +12,9 @@ cc_library(
 )
 
 pj_test(
-    name = "test_ints",
-    srcs = ["test_ints.cpp"],
-    protos = ["ints.pj"],
+    name = "test_primitives",
+    srcs = ["test_primitives.cpp"],
+    protos = ["primitives.pj"],
 )
 
 pj_test(
@@ -46,7 +46,7 @@ pj_test(
     srcs = ["test_imports.cpp"],
     protos = ["imports.pj"],
     deps = [
-        "test_ints_pj",
+        "test_primitives_pj",
         "test_spaces_pj",
     ],
 )
@@ -83,7 +83,7 @@ pj_test(
     name = "test_any",
     srcs = ["test_any.cpp"],
     protos = ["any.pj"],
-    deps = [":test_ints_pj"],
+    deps = [":test_primitives_pj"],
 )
 
 # TODO: restore test
@@ -101,7 +101,7 @@ pj_test(
     name = "test_portals",
     srcs = ["test_portals.cpp"],
     protos = ["portals.pj"],
-    deps = [":test_ints_pj"],
+    deps = [":test_primitives_pj"],
 )
 
 cc_library(

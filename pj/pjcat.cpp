@@ -27,6 +27,10 @@ void print(const pj::Any& any) {
       }
       break;
     }
+    case pj::Any::Kind::Float: {
+      std::cout << pj::AnyFloat{any}.getValue<double>();
+      break;
+    }
     case pj::Any::Kind::Unit: {
       std::cout << "{}";
       break;

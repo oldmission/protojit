@@ -1084,7 +1084,8 @@ LogicalResult TranscodeOpLowering::matchAndRewrite(
     return success();
   }
 
-  if (src_type.isa<IntType>() && dst_type.isa<IntType>()) {
+  if (src_type.isa<PrimitiveType>() && dst_type.isa<PrimitiveType>() &&
+      src_type.getTypeID() == dst_type.getTypeID()) {
     _.create<TranscodePrimitiveOp>(loc, operands[0], operands[1]);
     _.replaceOp(op, operands[2]);
     return success();
@@ -1200,7 +1201,7 @@ void GeneratePass::runOnOperation() {
   target.addIllegalOp<EncodeFunctionOp, DecodeFunctionOp, SizeFunctionOp,
                       TranscodeOp>();
   target.addDynamicallyLegalOp<DefaultOp>([](DefaultOp op) {
-    return op.dst().getType().isa<IntType>() ||
+    return op.dst().getType().isa<PrimitiveType>() ||
            op.dst().getType().isa<VectorType>();
   });
 

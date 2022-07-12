@@ -23,8 +23,14 @@ def BufferType :
 def ValueType :
     Type<CPred<"$_self.isa<::pj::types::ValueType>()">, "value">;
 
+def PrimitiveType :
+    Type<CPred<"$_self.isa<::pj::types::PrimitiveType>()">, "primitive">;
+
 def IntType :
     Type<CPred<"$_self.isa<::pj::types::IntType>()">, "int">;
+
+def FloatType :
+    Type<CPred<"$_self.isa<::pj::types::FloatType>()">, "float">;
 
 def UnitType :
     Type<CPred<"$_self.isa<::pj::types::UnitType>()">, "unit">;

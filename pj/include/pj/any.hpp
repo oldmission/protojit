@@ -1,11 +1,15 @@
 #pragma once
 
+#include <algorithm>
+#include <cstring>
+
 #include <pj/reflect.pj.hpp>
 #include <pj/util.hpp>
 
 namespace pj {
 
 struct AnyInt;
+struct AnyFloat;
 struct AnyUnit;
 struct AnyStruct;
 struct AnyVariant;
@@ -16,6 +20,7 @@ struct Any {
 
   enum class Kind {
     Int,
+    Float,
     Unit,
     Struct,
     Variant,
@@ -28,6 +33,8 @@ struct Any {
     switch (type().tag) {
       case reflect::Type::Kind::Int:
         return Kind::Int;
+      case reflect::Type::Kind::Float:
+        return Kind::Float;
       case reflect::Type::Kind::Struct:
         return Kind::Struct;
       case reflect::Type::Kind::InlineVariant:
@@ -129,11 +136,11 @@ inline AnyField AnyStruct::getField(size_t i) const {
   return AnyField(*this, i);
 }
 
-#define CASE(TYPE, W)                       \
-  case W: {                                 \
-    TYPE##W##_t result;                     \
-    memcpy(&result, data_, sizeof(result)); \
-    return result;                          \
+#define CASE(TYPE, W)                            \
+  case W: {                                      \
+    TYPE##W##_t result;                          \
+    std::memcpy(&result, data_, sizeof(result)); \
+    return result;                               \
   }
 
 template <typename T>
@@ -181,6 +188,41 @@ struct AnyInt : public Any {
   template <typename T>
   T getValue() {
     return getIntValue<T>(data_, sign(), width());
+  }
+};
+
+struct AnyFloat : public Any {
+  AnyFloat(Any value) : Any(value) {
+    ASSERT(type().tag == reflect::Type::Kind::Float);
+  }
+
+  Width width() const {
+    switch (type().value.Float.width) {
+      case reflect::FloatWidth::k32:
+        return Bits(32);
+      case reflect::FloatWidth::k64:
+        return Bits(64);
+    }
+    UNREACHABLE();
+  }
+
+  template <typename T>
+  T getValue() {
+    static_assert(sizeof(float) == 4);
+    static_assert(sizeof(double) == 8);
+    switch (type().value.Float.width) {
+      case reflect::FloatWidth::k32: {
+        float value;
+        std::memcpy(&value, data_, 4);
+        return value;
+      }
+      case reflect::FloatWidth::k64: {
+        double value;
+        std::memcpy(&value, data_, 8);
+        return value;
+      }
+    }
+    UNREACHABLE();
   }
 };
 

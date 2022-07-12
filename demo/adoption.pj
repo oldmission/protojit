@@ -1,6 +1,6 @@
 space v1 {
 
-type Months = uint8;
+type Months = float32;
 type Pounds = uint8;
 type Name = char8[12:];
 
@@ -73,7 +73,7 @@ portal Writer : AdoptionProto {
 
 space v2 {
 
-type Months = uint8;
+type Months = float32;
 type Pounds = uint8;
 type Name = char8[12:];
 
