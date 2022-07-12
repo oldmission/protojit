@@ -16,12 +16,14 @@ extern "C" {
 typedef intptr_t Bits;
 
 enum PJSign { PJ_SIGN_SIGNED, PJ_SIGN_UNSIGNED, PJ_SIGN_SIGNLESS };
+enum PJFloatWidth { PJ_FLOAT_WIDTH_32, PJ_FLOAT_WIDTH_64 };
 typedef struct PJDomain PJDomain;
 enum PJReferenceMode { PJ_REFERENCE_MODE_POINTER, PJ_REFERENCE_MODE_OFFSET };
 
 typedef struct PJContext PJContext;
 typedef struct PJUnitType PJUnitType;
 typedef struct PJIntType PJIntType;
+typedef struct PJFloatType PJFloatType;
 typedef struct PJStructField PJStructField;
 typedef struct PJStructType PJStructType;
 typedef struct PJAnyType PJAnyType;
@@ -61,6 +63,9 @@ const PJDomain* PJGetWireDomain(PJContext* c);
 
 const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
                                  PJSign sign);
+
+const PJFloatType* PJCreateFloatType(PJContext* c, PJFloatWidth width,
+                                     Bits alignment);
 
 const PJUnitType* PJCreateUnitType(PJContext* c);
 

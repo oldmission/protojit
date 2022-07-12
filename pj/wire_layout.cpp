@@ -10,6 +10,11 @@ ValueType WireLayout::visit(IntType type) {
       Int{.width = type->width, .alignment = Bytes(1), .sign = type->sign});
 }
 
+ValueType WireLayout::visit(FloatType type) {
+  return FloatType::get(&ctx_,
+                        Float{.width = type->width, .alignment = Bytes(1)});
+}
+
 ValueType WireLayout::visit(UnitType type) { return type; }
 
 ValueType WireLayout::visit(StructType type) {

@@ -96,6 +96,17 @@ const PJIntType* PJCreateIntType(PJContext* c, Bits width, Bits alignment,
   return reinterpret_cast<const PJIntType*>(int_type.getAsOpaquePointer());
 }
 
+const PJFloatType* PJCreateFloatType(PJContext* c, PJFloatWidth width,
+                                     Bits alignment) {
+  auto float_type = pj::types::FloatType::get(
+      &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_,
+      pj::types::Float{.width = width == PJ_FLOAT_WIDTH_32
+                                    ? pj::types::Float::k32
+                                    : pj::types::Float::k64,
+                       .alignment = pj::Bits(alignment)});
+  return reinterpret_cast<const PJFloatType*>(float_type.getAsOpaquePointer());
+}
+
 const PJUnitType* PJCreateUnitType(PJContext* c) {
   auto unit_type = pj::types::UnitType::get(
       &reinterpret_cast<pj::ProtoJitContext*>(c)->ctx_);

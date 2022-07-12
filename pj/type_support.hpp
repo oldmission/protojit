@@ -168,9 +168,10 @@ struct StructuralTypeStorage : public ValueTypeStorage {
   KeyTy key;
 };
 
-template <typename D, typename T>
-struct StructuralTypeBase : public ValueType {
-  using ValueType::ValueType;
+template <typename D, typename T, typename Base = ValueType>
+struct StructuralTypeBase : public Base {
+  static_assert(std::is_base_of_v<ValueType, Base>);
+  using Base::Base;
 
   operator const D&() const { return storage()->key; }
 
@@ -178,7 +179,7 @@ struct StructuralTypeBase : public ValueType {
 
  private:
   const StructuralTypeStorage<D, T>* storage() const {
-    return static_cast<const StructuralTypeStorage<D, T>*>(impl);
+    return static_cast<const StructuralTypeStorage<D, T>*>(this->impl);
   }
 };
 

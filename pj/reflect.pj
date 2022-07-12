@@ -41,6 +41,16 @@ struct Int {
   sign: Sign;
 }
 
+enum FloatWidth {
+  k32;
+  k64;
+}
+
+struct Float {
+  width: FloatWidth;
+  alignment: Width;
+}
+
 struct Unit {}
 
 struct StructField {
@@ -148,6 +158,7 @@ struct Vector {
 
 variant Type {
   Int: Int;
+  Float: Float;
   Unit: Unit;
   Struct: Struct;
   InlineVariant: InlineVariant;

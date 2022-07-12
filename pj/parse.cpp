@@ -260,6 +260,28 @@ struct CharType : seq<string<'c', 'h', 'a', 'r'>, num> {};
 BEGIN_ACTION(CharType) { parseInt<4, Sign::kSignless>(in, state); }
 END_ACTION()
 
+struct FloatType : seq<string<'f', 'l', 'o', 'a', 't'>, num> {};
+
+BEGIN_ACTION(FloatType) {
+  assert(in.size() > 5);
+  const char* num_start = in.begin() + 5;
+  intptr_t bits;
+  std::from_chars(num_start, in.end(), bits);
+
+  if (bits != types::Float::k32 && bits != types::Float::k64) {
+    throw parse_error("Only 32-bit and 64-bit floats are supported.",
+                      in.position());
+  }
+
+  types::Float data{
+      .width = static_cast<types::Float::FloatWidth>(bits),
+      .alignment = Bits(bits),
+  };
+
+  __ type = types::FloatType::get(&__ ctx, data);
+}
+END_ACTION()
+
 struct Identifier : identifier {};
 
 BEGIN_ACTION(Identifier) { __ ids.back().emplace_back(in.string_view()); }
@@ -293,7 +315,8 @@ BEGIN_ACTION(AnyType) {
 }
 END_ACTION()
 
-struct NonArrayType : sor<UIntType, IntType, CharType, AnyType, TypeRef> {};
+struct NonArrayType
+    : sor<UIntType, IntType, CharType, FloatType, AnyType, TypeRef> {};
 
 struct Len : num {};
 struct FixedArrayModifier : seq<tok<'['>, Len, tok<']'>> {};

@@ -37,7 +37,7 @@ def TranscodeOp : ProtoJit_Op<"transcode"> {
 }
 
 def TranscodePrimitiveOp : ProtoJit_Op<"transcodeprim"> {
-  let arguments = (ins ValueType:$src, ValueType:$dst);
+  let arguments = (ins PrimitiveType:$src, PrimitiveType:$dst);
 }
 
 def AlignOp : ProtoJit_Op<"align"> {

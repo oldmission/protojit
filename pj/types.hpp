@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <variant>
@@ -17,6 +18,7 @@ using llvm::StringRef;
 
 #define FOR_EACH_VALUE_TYPE(V)       \
   V(::pj::types::IntType)            \
+  V(::pj::types::FloatType)          \
   V(::pj::types::UnitType)           \
   V(::pj::types::StructType)         \
   V(::pj::types::InlineVariantType)  \
@@ -25,6 +27,15 @@ using llvm::StringRef;
   V(::pj::types::VectorType)         \
   V(::pj::types::AnyType)            \
   V(::pj::types::ProtocolType)
+
+struct PrimitiveType : public ValueType {
+  using ValueType::ValueType;
+
+  static bool classof(mlir::Type val);
+
+  mlir::Type toMLIR() const;
+  mlir::Attribute getDefaultValue() const;
+};
 
 struct Int {
   /*** Parsed ***/
@@ -79,19 +90,105 @@ inline Int type_intern(__attribute__((unused))
   return I;
 }
 
-struct IntType
-    : public mlir::Type::TypeBase<IntType, StructuralTypeBase<Int, IntType>,
-                                  StructuralTypeStorage<Int, IntType>> {
+struct IntType : public mlir::Type::TypeBase<
+                     IntType, StructuralTypeBase<Int, IntType, PrimitiveType>,
+                     StructuralTypeStorage<Int, IntType>> {
   using Base::Base;
   using Base::get;
-
-  // void print(llvm::raw_ostream& os) const;
-
-  mlir::Type toMLIR() const {
-    return mlir::IntegerType::get(getContext(), getImpl()->key.width.bits(),
-                                  mlir::IntegerType::Signless);
-  }
 };
+
+struct Float {
+  /*** Parsed ***/
+  enum FloatWidth { k32 = 32, k64 = 64 } width;
+
+  /*** Generated ***/
+  Width alignment;
+
+  bool operator==(const Float& other) const {
+    return width == other.width && alignment == other.alignment;
+  }
+
+  bool isBinaryCompatibleWith(const Float& other) const {
+    return *this == other;
+  }
+
+  Width headSize() const { return Bits(width); }
+  Width headAlignment() const { return alignment; }
+  bool hasMaxSize() const { return true; }
+  ChildVector children() const { return {}; }
+  bool hasDetails() const { return false; }
+  void printDetails(llvm::raw_ostream& os) const {}
+};
+
+inline llvm::raw_ostream& operator<<(llvm::raw_ostream& os, const Float& F) {
+  return os << "f" << F.width << "/" << F.alignment.bits();
+}
+
+inline ::llvm::hash_code hash_value(const Float& F) {
+  using ::llvm::hash_value;
+  return llvm::hash_combine(hash_value(F.width), hash_value(F.alignment));
+}
+
+inline Float type_intern(__attribute__((unused))
+                         mlir::TypeStorageAllocator& allocator,
+                         const Float& F) {
+  ASSERT(F.alignment.bits() != kNone);
+  return F;
+}
+
+struct FloatType
+    : public mlir::Type::TypeBase<
+          FloatType, StructuralTypeBase<Float, FloatType, PrimitiveType>,
+          StructuralTypeStorage<Float, FloatType>> {
+  using Base::Base;
+  using Base::get;
+};
+
+inline bool PrimitiveType::classof(mlir::Type val) {
+  return val.isa<IntType>() || val.isa<FloatType>();
+}
+
+inline mlir::Type PrimitiveType::toMLIR() const {
+  if (auto i = dyn_cast<IntType>()) {
+    return mlir::IntegerType::get(getContext(), i->width.bits(),
+                                  mlir::IntegerType::Signless);
+  } else if (auto f = dyn_cast<FloatType>()) {
+    switch (f->width) {
+      case Float::k32:
+        return mlir::FloatType::getF32(getContext());
+      case Float::k64:
+        return mlir::FloatType::getF64(getContext());
+    }
+    UNREACHABLE();
+  } else {
+    UNREACHABLE();
+  }
+}
+
+inline mlir::Attribute PrimitiveType::getDefaultValue() const {
+  if (auto i = dyn_cast<IntType>()) {
+    assert(i->width.IsNotNone());
+    return mlir::IntegerAttr::get(toMLIR(), 0);
+  } else if (auto f = dyn_cast<FloatType>()) {
+    auto value = [&]() {
+      switch (f->width) {
+        case Float::k32:
+          static_assert(sizeof(float) == 4);
+          static_assert(std::numeric_limits<float>::has_quiet_NaN);
+          return llvm::APFloat{std::numeric_limits<float>::quiet_NaN()};
+        case Float::k64:
+          static_assert(sizeof(double) == 8);
+          static_assert(std::numeric_limits<double>::has_quiet_NaN);
+          return llvm::APFloat{std::numeric_limits<double>::quiet_NaN()};
+        default:
+          UNREACHABLE();
+      }
+    }();
+    return mlir::FloatAttr::get(toMLIR(), value);
+  } else {
+    UNREACHABLE();
+  }
+}
 
 struct UnitTypeStorage : public ValueTypeStorage {
   using KeyTy = std::tuple<>;

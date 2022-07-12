@@ -97,6 +97,7 @@ cc_library(
     hdrs = [
         "include/pj/arch_base.hpp",
         "include/pj/array.hpp",
+        "include/pj/float.hpp",
         "include/pj/integer.hpp",
         "include/pj/offset_span.hpp",
         "include/pj/runtime.h",
@@ -286,6 +287,7 @@ cc_binary(
         "schema/versions.hpp",
     ],
     deps = [":runtime_bootstrap"],
+    linkstatic = False,
     copts = COPTS,
 )
 

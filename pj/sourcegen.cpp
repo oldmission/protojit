@@ -107,6 +107,12 @@ void SourceGenerator::printTypeRef(types::ValueType type, bool wrap,
     return;
   }
 
+  if (auto F = type.dyn_cast<types::FloatType>()) {
+    os << (F->width == types::Float::k32 ? "float" : "double");
+    base_headers_.emplace("float");
+    return;
+  }
+
   if (auto U = type.dyn_cast<types::UnitType>()) {
     os << "pj::Unit";
     base_headers_.emplace("unit");
@@ -144,7 +150,8 @@ std::string SourceGenerator::createTypeHandle(std::string decl,
   if (domain_ == Domain::kHost || type.isa<types::NominalType>()) {
     os << "const auto* " << handle << " = BuildPJType<";
     if (domain_ == Domain::kWire || decl.empty() ||
-        type.isa<types::IntType>() || type.isa<types::UnitType>()) {
+        type.isa<types::IntType>() || type.isa<types::FloatType>() ||
+        type.isa<types::UnitType>()) {
       printTypeRef(type, /*wrap=*/true, decl);
     } else {
       os << "decltype(" << decl << ")";
@@ -159,6 +166,15 @@ std::string SourceGenerator::createTypeHandle(std::string decl,
     os << ", /*width=*/" << I->width.bits();
     os << ", /*alignment=*/" << I->alignment.bits();
     os << ", /*sign=*/" << convertSign(I->sign) << ");\n";
+    return handle;
+  }
+
+  if (auto F = type.dyn_cast<types::FloatType>()) {
+    os << "const auto* " << handle << " = PJCreateFloatType(ctx";
+    os << ", /*width=*/"
+       << (F->width == types::Float::k32 ? "PJ_FLOAT_WIDTH_32"
+                                         : "PJ_FLOAT_WIDTH_64");
+    os << ", /*alignment=*/" << F->alignment.bits();
     return handle;
   }
 

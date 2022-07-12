@@ -1,4 +1,4 @@
-import test.ints;
+import test.primitives;
 
 portal TestPortal : Proto {
   sizer size : Int32;

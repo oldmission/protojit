@@ -16,4 +16,14 @@ struct UInt64 {
   i: uint64;
 }
 
+struct Empty {}
+
+struct Float32 {
+  f: float32;
+}
+
+struct Float64 {
+  f: float64;
+}
+
 specification Proto : Int32;
